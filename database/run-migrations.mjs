@@ -12,7 +12,7 @@ async function main() {
   try {
     const consolidatedSqlPath = new URL("./migrations/consolidated_schema.sql", import.meta.url);
     const sql = await readFile(consolidatedSqlPath, "utf8");
-    console.log("Executing consolidated migrations 001 -> 018...");
+    console.log("Executing consolidated migrations...");
     await pool.query(sql);
     console.log("Migrations successfully completed on PostgreSQL!");
   } catch (error) {

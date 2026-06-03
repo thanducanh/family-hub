@@ -16,12 +16,27 @@ export interface SystemStatus { source: "nas" | "localStorage"; lastSyncedAt: st
 const DATA_KEY = "family-hub:data";
 const PREFERENCES_KEY = "family-hub:preferences";
 
+const emptyData: AppData = {
+  members: [],
+  tasks: [],
+  transactions: [],
+  events: [],
+  notes: []
+};
+
+function getInitialData(): AppData {
+  if (process.env.NODE_ENV === "development") {
+    return structuredClone(mockData);
+  }
+  return structuredClone(emptyData);
+}
+
 export class LocalStorageDataService implements DataService {
   async load(): Promise<AppData> {
-    if (typeof window === "undefined") return mockData;
+    if (typeof window === "undefined") return getInitialData();
     const raw = localStorage.getItem(DATA_KEY);
-    if (!raw) return structuredClone(mockData);
-    try { return normalizeData(JSON.parse(raw) as AppData); } catch { return structuredClone(mockData); }
+    if (!raw) return getInitialData();
+    try { return normalizeData(JSON.parse(raw) as AppData); } catch { return getInitialData(); }
   }
   async save(data: AppData) { localStorage.setItem(DATA_KEY, JSON.stringify(data)); }
   exportData() { return JSON.stringify(loadCache(), null, 2); }
@@ -33,7 +48,7 @@ export class LocalStorageDataService implements DataService {
     return normalized;
   }
   reset() {
-    const data = structuredClone(mockData);
+    const data = getInitialData();
     void this.save(data);
     return data;
   }
@@ -208,10 +223,10 @@ function normalizeId(id: string) {
 }
 
 function loadCache(): AppData {
-  if (typeof window === "undefined") return structuredClone(mockData);
+  if (typeof window === "undefined") return getInitialData();
   const raw = localStorage.getItem(DATA_KEY);
-  if (!raw) return structuredClone(mockData);
-  try { return normalizeData(JSON.parse(raw) as AppData); } catch { return structuredClone(mockData); }
+  if (!raw) return getInitialData();
+  try { return normalizeData(JSON.parse(raw) as AppData); } catch { return getInitialData(); }
 }
 
 function isEmpty(data: AppData) {
