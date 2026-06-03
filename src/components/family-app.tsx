@@ -75,7 +75,8 @@ function Circle({ children, color = "#fb7185" }: { children: React.ReactNode; co
 }
 function Avatar({ member, size = "size-10" }: { member: Member; size?: string }) {
   const displayName = member.nickname || member.name;
-  return member.avatar ? <Image unoptimized width={96} height={96} className={`${size} shrink-0 rounded-full object-cover`} src={member.avatar} alt={displayName} /> : <span className={`grid ${size} shrink-0 place-items-center rounded-full bg-slate-200 text-sm font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-200`}>{displayName[0]?.toUpperCase() || "?"}</span>;
+  const src = member.avatarPreview || member.avatar;
+  return src ? <Image unoptimized width={96} height={96} className={`${size} shrink-0 rounded-full object-cover`} src={src} alt={displayName} /> : <span className={`grid ${size} shrink-0 place-items-center rounded-full bg-slate-200 text-sm font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-200`}>{displayName[0]?.toUpperCase() || "?"}</span>;
 }
 function AvatarEditor({ member, editable, onChange }: { member: Member; editable: boolean; onChange: (avatar: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -643,18 +644,24 @@ function CategoryChart({ data }: { data: [string, number][] }) {
   const colors = ["bg-rose-400", "bg-orange-400", "bg-violet-400", "bg-sky-400", "bg-emerald-400"];
   return <Card className="p-5"><b>Chi tiêu theo danh mục</b>{total ? <><div className="mt-4 flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">{data.map(([label, value], index) => <span key={label} className={`h-full ${colors[index % colors.length]}`} style={{ width: `${value / total * 100}%` }} />)}</div><div className="mt-4 space-y-3">{data.slice(0, 5).map(([label, value], index) => <div key={label} className="flex justify-between text-xs"><span><i className={`mr-2 inline-block size-2 rounded-full ${colors[index % colors.length]}`} />{label}</span><b>{money(value)}</b></div>)}</div></> : <div className="mt-5"><EmptyState /></div>}</Card>; }
 function CompletionChart({ value, done, total }: { value: number; done: number; total: number }) { return <Card className="p-5"><div className="flex items-center justify-between"><b>Tỷ lệ hoàn thành công việc</b><b className="text-emerald-500">{value}%</b></div><div className="mt-8 grid place-items-center"><div className="grid size-36 place-items-center rounded-full bg-emerald-50 text-3xl font-bold text-emerald-500 ring-8 ring-emerald-100 dark:bg-emerald-400/10 dark:ring-emerald-400/20">{value}%</div></div><p className="mt-8 text-center text-xs text-slate-400">{total ? `${done}/${total} công việc đã hoàn thành` : "Chưa có dữ liệu công việc"}</p></Card>; }
+let cachedMembers: Member[] | null = null;
+
 function Members({ data, user, update }: { data: AppData; user: AuthUser; update: (data: AppData) => void }) {
   const [query, setQuery] = useState("");
   const [accountFilter, setAccountFilter] = useState<"all" | "with_account" | "without_account">("all");
   const [detail, setDetail] = useState<Member | "new" | null>(null);
   const [removing, setRemoving] = useState<Member | null>(null);
   const [warning, setWarning] = useState("");
-  const [localMembers, setLocalMembers] = useState<Member[]>([]);
+  const [localMembers, setLocalMembers] = useState<Member[]>(() => cachedMembers || []);
 
   useEffect(() => {
+    if (cachedMembers) {
+      return;
+    }
     void fetch("/api/members").then(async response => {
       const json = await response.json();
       const parsedMembers = (Array.isArray(json) ? json : (json.data ?? [])) as Member[];
+      cachedMembers = parsedMembers;
       setLocalMembers(parsedMembers);
     });
   }, []);
@@ -671,10 +678,22 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
     const result = await readJsonSafe<{ error?: string }>(response);
     if (!response.ok) return setWarning(result?.error || "Không thể ẩn thành viên.");
     update({ ...data, members: data.members.filter(item => item.id !== member.id) });
-    setLocalMembers(current => current.filter(item => item.id !== member.id));
+    setLocalMembers(current => {
+      const updated = current.filter(item => item.id !== member.id);
+      cachedMembers = updated;
+      return updated;
+    });
     setRemoving(null); setWarning("");
   }
-  if (detail) return <MemberProfile member={detail} data={data} user={user} close={() => setDetail(null)} saved={member => { update({ ...data, members: data.members.some(item => item.id === member.id) ? data.members.map(item => item.id === member.id ? member : item) : [...data.members, member] }); setLocalMembers(current => current.some(item => item.id === member.id) ? current.map(item => item.id === member.id ? member : item) : [...current, member]); setDetail(member); }} remove={member => { setDetail(null); setRemoving(member); setWarning(""); }} />;
+  if (detail) return <MemberProfile key={detail === "new" ? "new" : detail.id} member={detail} data={data} user={user} close={() => setDetail(null)} saved={member => {
+    update({ ...data, members: data.members.some(item => item.id === member.id) ? data.members.map(item => item.id === member.id ? member : item) : [...data.members, member] });
+    setLocalMembers(current => {
+      const updated = current.some(item => item.id === member.id) ? current.map(item => item.id === member.id ? member : item) : [...current, member];
+      cachedMembers = updated;
+      return updated;
+    });
+    setDetail(member);
+  }} remove={member => { setDetail(null); setRemoving(member); setWarning(""); }} />;
   return <><div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-semibold">Thành viên</h2><p className="mt-1 text-sm text-slate-400">Family Hub / Thành viên</p></div>{canManage && <button onClick={() => setDetail("new")} className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700">+ Thêm thành viên</button>}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{stats.map(([label, value]) => <Card key={label} className="p-5"><p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-2xl font-bold text-indigo-600">{value}</p></Card>)}</div>
     <Card className="mt-6 p-4"><div className="grid max-w-[680px] gap-3 md:grid-cols-[minmax(0,440px)_220px]"><input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên hoặc số điện thoại" /><select className={filterClass} value={accountFilter} onChange={event => setAccountFilter(event.target.value as typeof accountFilter)}><option value="all">Tất cả</option><option value="with_account">Có tài khoản</option><option value="without_account">Chưa có tài khoản</option></select></div></Card>
@@ -691,6 +710,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
   const [error, setError] = useState("");
   const [linkedUsers, setLinkedUsers] = useState<ManagedUser[]>([]);
   const [form, setForm] = useState<Member>(() => existing ?? { id: crypto.randomUUID(), name: "", nickname: "", birthday: "", gender: "", role: "Khác" as unknown as FamilyRole, phone: "", avatar: "", notes: "", color: "#cbd5e1" });
+  const [detailsLoaded, setDetailsLoaded] = useState(!existing);
   const canManage = user.role === "full_access";
   const tasks = data.tasks.filter(task => task.memberId === form.id);
   const events = data.events.filter(event => event.memberId === form.id);
@@ -703,7 +723,10 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
     if (!existing) return;
     void fetch(`/api/members?id=${existing.id}`).then(async response => {
       const result = await readJsonSafe<{ ok?: boolean; data?: Member }>(response);
-      if (response.ok && result?.data) setForm(result.data);
+      if (response.ok && result?.data) {
+        setForm(current => ({ ...current, ...result.data }));
+      }
+      setDetailsLoaded(true);
     });
   }, [existing]);
   const set = <K extends keyof Member>(key: K, value: Member[K]) => setForm(current => ({ ...current, [key]: value }));
@@ -723,15 +746,21 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
   const menu: [MemberProfileTab, string][] = [["profile", "Thông tin cá nhân"], ["account", "Tài khoản đăng nhập"], ["bank", "Thẻ ngân hàng"], ["bankRaw", "Nội dung gốc ngân hàng"], ["security", "Bảo mật"], ["tasks", "Công việc liên quan"], ["events", "Sự kiện liên quan"], ["notes", "Ghi chú"]];
   return <div><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div>{!personal && <button onClick={close} className="text-sm font-semibold text-indigo-600">← Danh sách thành viên</button>}<h2 className={personal ? "text-2xl font-semibold" : "mt-3 text-2xl font-semibold"}>{personal ? "Hồ sơ cá nhân" : existing ? "Hồ sơ thành viên" : "Thêm thành viên"}</h2><p className="mt-1 text-sm text-slate-400">Family Hub / {personal ? "Hồ sơ cá nhân" : `Thành viên / ${existing ? form.nickname || form.name : "Thêm mới"}`}</p></div>{existing && canManage && !personal && <button onClick={() => remove(existing)} className="rounded-lg border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-500">Xóa thành viên</button>}</div>
     <div className="grid gap-5 lg:grid-cols-[240px_1fr]"><Card className="h-fit p-3"><nav className="space-y-1">{menu.map(([value, label]) => <button key={value} onClick={() => setTab(value)} className={`w-full rounded-lg px-3 py-3 text-left text-sm font-semibold ${tab === value ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-400/15" : "text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5"}`}>{label}</button>)}</nav></Card>
-      <div>{tab === "profile" && <form onSubmit={submit} className="space-y-5"><Card className="flex flex-col gap-5 p-6 sm:flex-row sm:items-center"><AvatarEditor member={form} editable={editing} onChange={avatar => set("avatar", avatar)} /><div className="min-w-0 flex-1"><h3 className="text-xl font-semibold">{form.nickname || form.name || "Thành viên mới"}</h3>{ageAtToday(form.birthday) !== null && <p className="mt-1 text-sm text-slate-400">{ageAtToday(form.birthday)} tuổi</p>}</div>{!editing && <button type="button" onClick={() => setEditing(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Chỉnh sửa</button>}</Card>
-        <Card className="p-6"><h3 className="font-semibold">Thông tin cá nhân</h3>{editing ? <div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Họ tên"><input required disabled={!canManage} className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Nickname"><input className={inputClass} value={form.nickname} onChange={event => set("nickname", event.target.value)} /></Field><Field label="Vai vế gia đình"><select disabled={!canManage} className={inputClass} value={form.role} onChange={event => set("role", event.target.value as FamilyRole)}>{familyRoles.map(role => <option key={role}>{role}</option>)}</select></Field><BirthdaySelect disabled={!canManage} value={form.birthday} onChange={value => set("birthday", value)} /><Field label="Tuổi hiện tại"><input disabled className={inputClass} value={ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa đủ ngày sinh"} readOnly /></Field><Field label="Giới tính"><select disabled={!canManage} className={inputClass} value={form.gender} onChange={event => set("gender", event.target.value as Member["gender"])}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Số điện thoại"><input className={inputClass} value={form.phone} onChange={event => set("phone", event.target.value)} /></Field><div className="md:col-span-2"><Field label="Ghi chú cá nhân"><textarea rows={4} className={inputClass} value={form.notes} onChange={event => set("notes", event.target.value)} /></Field></div><div className="flex flex-wrap gap-3 md:col-span-2"><button type="button" onClick={cancel} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Lưu thay đổi</button></div></div> : <div className="mt-5 grid gap-5 text-sm sm:grid-cols-2">{[["Họ tên", form.name], ["Nickname", form.nickname || "Chưa cập nhật"], ["Ngày sinh", formatBirthday(form.birthday)], ["Tuổi hiện tại", ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa cập nhật"], ["Giới tính", form.gender === "male" ? "Nam" : form.gender === "female" ? "Nữ" : form.gender === "other" ? "Khác" : "Chưa cập nhật"], ["Số điện thoại", form.phone || "Chưa cập nhật"], ["Ghi chú", form.notes || "Chưa có ghi chú."]].map(([label, value]) => <div key={label}><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-medium">{value}</p></div>)}</div>}{error && <p className="mt-4 text-sm text-rose-500">{error}</p>}</Card></form>}
-      {tab === "tasks" && <Card><h3 className="mb-4 font-semibold">Công việc liên quan</h3>{tasks.length ? tasks.map(task => <TaskRow key={task.id} task={task} />) : <EmptyState />}</Card>}
-      {tab === "events" && <Card><h3 className="mb-4 font-semibold">Sự kiện liên quan</h3>{events.length ? events.map(event => <EventRow key={event.id} event={event} />) : <EmptyState />}</Card>}
-      {tab === "notes" && <Card><h3 className="mb-4 font-semibold">Ghi chú</h3>{notes.length ? notes.map(note => <div key={note.id} className="border-b border-[var(--app-border)] py-3 last:border-0"><b>{note.title}</b><p className="mt-1 text-sm text-slate-500">{note.content}</p></div>) : <EmptyState />}</Card>}
-      {tab === "account" && <LoginAccountTab key={`${linkedAccount?.id || "new"}:${linkedAccount?.username || ""}:${linkedAccount?.role || ""}:${String(linkedAccount?.active ?? "")}:${linkedAccount?.memberId || form.id}`} account={linkedAccount} member={form} actor={user} canManage={canManage} isCurrent={linkedAccount?.id === user.id} savedUser={savedUser} refreshed={refreshLinkedAccount} />}
-      {tab === "bank" && <MemberBankAccounts member={form} user={user} />}
-      {tab === "bankRaw" && <MemberBankRawNotes member={form} user={user} />}
-      {tab === "security" && <Card><h3 className="mb-4 font-semibold">Bảo mật</h3>{linkedAccount ? <div className="space-y-3"><div className="rounded-lg border border-[var(--app-border)] px-4 py-3 text-sm"><b>Ghi nhớ đăng nhập</b><p className="mt-1 text-xs text-slate-400">Thiết lập khi đăng nhập trên thiết bị này.</p></div>{personal && <button onClick={openChangePassword} className="w-full rounded-lg border border-[var(--app-border)] px-4 py-3 text-left text-sm font-semibold">Đổi mật khẩu</button>}{personal && <button onClick={logout} className="w-full rounded-lg border border-rose-200 px-4 py-3 text-left text-sm font-semibold text-rose-500">Đăng xuất khỏi thiết bị</button>}</div> : <p className="text-sm text-slate-400">Chưa có tài khoản đăng nhập.</p>}</Card>}</div></div></div>;
+      <div>{!detailsLoaded && ["account", "bank", "bankRaw", "notes"].includes(tab) ? (
+        <Card className="p-6 text-center text-slate-400">Đang tải dữ liệu chi tiết...</Card>
+      ) : (
+        <>
+          {tab === "profile" && <form onSubmit={submit} className="space-y-5"><Card className="flex flex-col gap-5 p-6 sm:flex-row sm:items-center"><AvatarEditor member={form} editable={editing} onChange={avatar => set("avatar", avatar)} /><div className="min-w-0 flex-1"><h3 className="text-xl font-semibold">{form.nickname || form.name || "Thành viên mới"}</h3>{ageAtToday(form.birthday) !== null && <p className="mt-1 text-sm text-slate-400">{ageAtToday(form.birthday)} tuổi</p>}</div>{!editing && <button type="button" onClick={() => setEditing(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Chỉnh sửa</button>}</Card>
+            <Card className="p-6"><h3 className="font-semibold">Thông tin cá nhân</h3>{editing ? <div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Họ tên"><input required disabled={!canManage} className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Nickname"><input className={inputClass} value={form.nickname} onChange={event => set("nickname", event.target.value)} /></Field><Field label="Vai vế gia đình"><select disabled={!canManage} className={inputClass} value={form.role} onChange={event => set("role", event.target.value as FamilyRole)}>{familyRoles.map(role => <option key={role}>{role}</option>)}</select></Field><BirthdaySelect disabled={!canManage} value={form.birthday} onChange={value => set("birthday", value)} /><Field label="Tuổi hiện tại"><input disabled className={inputClass} value={ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa đủ ngày sinh"} readOnly /></Field><Field label="Giới tính"><select disabled={!canManage} className={inputClass} value={form.gender} onChange={event => set("gender", event.target.value as Member["gender"])}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Số điện thoại"><input className={inputClass} value={form.phone} onChange={event => set("phone", event.target.value)} /></Field><div className="md:col-span-2"><Field label="Ghi chú cá nhân"><textarea rows={4} className={inputClass} value={form.notes} onChange={event => set("notes", event.target.value)} /></Field></div><div className="flex flex-wrap gap-3 md:col-span-2"><button type="button" onClick={cancel} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Lưu thay đổi</button></div></div> : <div className="mt-5 grid gap-5 text-sm sm:grid-cols-2">{[["Họ tên", form.name], ["Nickname", form.nickname || "Chưa cập nhật"], ["Ngày sinh", formatBirthday(form.birthday)], ["Tuổi hiện tại", ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa cập nhật"], ["Giới tính", form.gender === "male" ? "Nam" : form.gender === "female" ? "Nữ" : form.gender === "other" ? "Khác" : "Chưa cập nhật"], ["Số điện thoại", form.phone || "Chưa cập nhật"], ["Ghi chú", form.notes || "Chưa có ghi chú."]].map(([label, value]) => <div key={label}><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-medium">{value}</p></div>)}</div>}{error && <p className="mt-4 text-sm text-rose-500">{error}</p>}</Card></form>}
+          {tab === "tasks" && <Card><h3 className="mb-4 font-semibold">Công việc liên quan</h3>{tasks.length ? tasks.map(task => <TaskRow key={task.id} task={task} />) : <EmptyState />}</Card>}
+          {tab === "events" && <Card><h3 className="mb-4 font-semibold">Sự kiện liên quan</h3>{events.length ? events.map(event => <EventRow key={event.id} event={event} />) : <EmptyState />}</Card>}
+          {tab === "notes" && <Card><h3 className="mb-4 font-semibold">Ghi chú</h3>{notes.length ? notes.map(note => <div key={note.id} className="border-b border-[var(--app-border)] py-3 last:border-0"><b>{note.title}</b><p className="mt-1 text-sm text-slate-500">{note.content}</p></div>) : <EmptyState />}</Card>}
+          {tab === "account" && <LoginAccountTab key={`${linkedAccount?.id || "new"}:${linkedAccount?.username || ""}:${linkedAccount?.role || ""}:${String(linkedAccount?.active ?? "")}:${linkedAccount?.memberId || form.id}`} account={linkedAccount} member={form} actor={user} canManage={canManage} isCurrent={linkedAccount?.id === user.id} savedUser={savedUser} refreshed={refreshLinkedAccount} />}
+          {tab === "bank" && <MemberBankAccounts member={form} user={user} />}
+          {tab === "bankRaw" && <MemberBankRawNotes member={form} user={user} />}
+          {tab === "security" && <Card><h3 className="mb-4 font-semibold">Bảo mật</h3>{linkedAccount ? <div className="space-y-3"><div className="rounded-lg border border-[var(--app-border)] px-4 py-3 text-sm"><b>Ghi nhớ đăng nhập</b><p className="mt-1 text-xs text-slate-400">Thiết lập khi đăng nhập trên thiết bị này.</p></div>{personal && <button onClick={openChangePassword} className="w-full rounded-lg border border-[var(--app-border)] px-4 py-3 text-left text-sm font-semibold">Đổi mật khẩu</button>}{personal && <button onClick={logout} className="w-full rounded-lg border border-rose-200 px-4 py-3 text-left text-sm font-semibold text-rose-500">Đăng xuất khỏi thiết bị</button>}</div> : <p className="text-sm text-slate-400">Chưa có tài khoản đăng nhập.</p>}</Card>}
+        </>
+      )}</div></div></div>;
 }
 function ConfirmMemberDelete({ member, warning, close, remove }: { member: Member; warning: string; close: () => void; remove: () => void }) {
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-5" onMouseDown={close}><div className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-6 shadow-2xl" onMouseDown={event => event.stopPropagation()}><h2 className="text-lg font-semibold">Ẩn thành viên?</h2><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Thành viên <b>{member.nickname || member.name}</b> sẽ được ẩn khỏi danh sách. Dữ liệu lịch sử không bị xóa.</p>{warning && <p className="mt-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-600 dark:bg-orange-400/10">{warning}</p>}<div className="mt-6 flex justify-end gap-3"><button onClick={close} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button onClick={remove} className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Xác nhận ẩn</button></div></div></div>;

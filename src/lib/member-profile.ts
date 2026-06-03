@@ -3,6 +3,7 @@ export interface MemberProfile {
   name: string;
   nickname: string;
   avatar: string;
+  avatarPreview?: string;
   phone: string;
   birthday: string;
   gender: string;
@@ -35,6 +36,7 @@ export function toMemberProfile(row: Record<string, unknown>): MemberProfile {
     name: String(row.name ?? ""),
     nickname: String(row.nickname ?? ""),
     avatar: String(row.avatar ?? ""),
+    avatarPreview: row.avatarPreview !== undefined ? String(row.avatarPreview) : undefined,
     phone: String(row.phone ?? ""),
     birthday: normalizeBirthday(row.birthday),
     gender: String(row.gender ?? ""),

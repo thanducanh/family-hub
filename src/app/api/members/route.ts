@@ -44,7 +44,9 @@ export async function GET(request: NextRequest) {
     const result = await pool.query(`SELECT ${fields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [memberId]);
     const list = result.rows.map(row => {
       const m = memberResponse(row);
-      if (m.avatar && m.avatar.startsWith("data:")) m.avatar = "";
+      const isBase64 = m.avatar && m.avatar.startsWith("data:");
+      m.avatarPreview = isBase64 && m.avatar.length < 102400 ? m.avatar : (isBase64 ? "" : (m.avatar || ""));
+      if (isBase64) m.avatar = "";
       return m;
     });
     return NextResponse.json({ ok: true, data: list });
@@ -58,7 +60,9 @@ export async function GET(request: NextRequest) {
   }]));
   const list = result.rows.map(row => {
     const m = memberResponse(row);
-    if (m.avatar && m.avatar.startsWith("data:")) m.avatar = "";
+    const isBase64 = m.avatar && m.avatar.startsWith("data:");
+    m.avatarPreview = isBase64 && m.avatar.length < 102400 ? m.avatar : (isBase64 ? "" : (m.avatar || ""));
+    if (isBase64) m.avatar = "";
     return { ...m, user: accountByMember.get(m.id) ?? null };
   });
   return NextResponse.json({ ok: true, data: list });
