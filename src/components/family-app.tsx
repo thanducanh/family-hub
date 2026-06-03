@@ -425,8 +425,9 @@ export function ProfileSheet({ user, close, saved }: { user: AuthUser; close: ()
     }).catch(reason => setError(reason instanceof Error ? reason.message : "Không thể tải hồ sơ."));
     if (user.role === "full_access") {
       void fetch("/api/members").then(async response => {
-        const result = await readJsonSafe<{ data?: Member[] }>(response);
-        if (response.ok) setMembers(result?.data || []);
+        const json = await response.json();
+        const members = Array.isArray(json) ? json : (json.data ?? []);
+        if (response.ok) setMembers(members);
       });
     }
   }, [user.role]);
@@ -454,7 +455,7 @@ function UserEditor({ user, close, saved, presetMemberId = "" }: { user: Managed
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ username: existing?.username ?? "", email: existing?.email ?? "", displayName: existing?.displayName ?? "", avatar: existing?.avatar ?? "", role: existing?.role ?? "self_only" as UserRole, memberId: existing?.memberId ?? presetMemberId, active: existing?.active ?? true, password: "" });
-  useEffect(() => { void fetch("/api/members").then(async response => { const result = await readJsonSafe<{ ok?: boolean, data?: Member[] } | Member[]>(response); if (response.ok && result) setMembers((result as { data?: Member[] }).data || (Array.isArray(result) ? result : [])); }); }, []);
+  useEffect(() => { void fetch("/api/members").then(async response => { const json = await response.json(); const members = Array.isArray(json) ? json : (json.data ?? []); if (response.ok) setMembers(members); }); }, []);
   const set = (key: string, value: string | boolean) => setForm(current => ({ ...current, [key]: value }));
   async function submit(event: React.FormEvent) {
     event.preventDefault();
