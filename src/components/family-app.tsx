@@ -649,8 +649,18 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
   const [detail, setDetail] = useState<Member | "new" | null>(null);
   const [removing, setRemoving] = useState<Member | null>(null);
   const [warning, setWarning] = useState("");
+  const [localMembers, setLocalMembers] = useState<Member[]>([]);
+
+  useEffect(() => {
+    void fetch("/api/members").then(async response => {
+      const json = await response.json();
+      const parsedMembers = (Array.isArray(json) ? json : (json.data ?? [])) as Member[];
+      setLocalMembers(parsedMembers);
+    });
+  }, []);
+
   const canManage = user.role === "full_access";
-  const visible = data.members;
+  const visible = localMembers;
   const members = visible.filter(member => {
     const keyword = query.trim().toLocaleLowerCase();
     return (accountFilter === "all" || (accountFilter === "with_account" ? Boolean(member.user) : !member.user)) && (!keyword || [member.name, member.phone].some(value => value?.toLocaleLowerCase().includes(keyword)));
@@ -660,9 +670,11 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
     const response = await fetch(`/api/members?id=${encodeURIComponent(member.id)}`, { method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
     if (!response.ok) return setWarning(result?.error || "Không thể ẩn thành viên.");
-    update({ ...data, members: data.members.filter(item => item.id !== member.id) }); setRemoving(null); setWarning("");
+    update({ ...data, members: data.members.filter(item => item.id !== member.id) });
+    setLocalMembers(current => current.filter(item => item.id !== member.id));
+    setRemoving(null); setWarning("");
   }
-  if (detail) return <MemberProfile member={detail} data={data} user={user} close={() => setDetail(null)} saved={member => { update({ ...data, members: data.members.some(item => item.id === member.id) ? data.members.map(item => item.id === member.id ? member : item) : [...data.members, member] }); setDetail(member); }} remove={member => { setDetail(null); setRemoving(member); setWarning(""); }} />;
+  if (detail) return <MemberProfile member={detail} data={data} user={user} close={() => setDetail(null)} saved={member => { update({ ...data, members: data.members.some(item => item.id === member.id) ? data.members.map(item => item.id === member.id ? member : item) : [...data.members, member] }); setLocalMembers(current => current.some(item => item.id === member.id) ? current.map(item => item.id === member.id ? member : item) : [...current, member]); setDetail(member); }} remove={member => { setDetail(null); setRemoving(member); setWarning(""); }} />;
   return <><div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-semibold">Thành viên</h2><p className="mt-1 text-sm text-slate-400">Family Hub / Thành viên</p></div>{canManage && <button onClick={() => setDetail("new")} className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700">+ Thêm thành viên</button>}</div>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{stats.map(([label, value]) => <Card key={label} className="p-5"><p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-2xl font-bold text-indigo-600">{value}</p></Card>)}</div>
     <Card className="mt-6 p-4"><div className="grid max-w-[680px] gap-3 md:grid-cols-[minmax(0,440px)_220px]"><input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên hoặc số điện thoại" /><select className={filterClass} value={accountFilter} onChange={event => setAccountFilter(event.target.value as typeof accountFilter)}><option value="all">Tất cả</option><option value="with_account">Có tài khoản</option><option value="without_account">Chưa có tài khoản</option></select></div></Card>
