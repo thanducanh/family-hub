@@ -26,24 +26,42 @@ async function linkedMemberId(userId: string) {
   return (await pool.query("SELECT member_id FROM users WHERE id = $1", [userId])).rows[0]?.member_id as string | null | undefined;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const actor = await getSessionUser();
   if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+  
+  const id = new URL(request.url).searchParams.get("id");
+  if (id) {
+    const result = await pool.query(`SELECT ${fields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [id]);
+    const member = result.rows[0];
+    if (!member) return NextResponse.json({ ok: false, error: "Không tìm thấy thành viên." }, { status: 404 });
+    return NextResponse.json({ ok: true, data: memberResponse(member) });
+  }
+
   if (actor.role === "self_only") {
     const memberId = await linkedMemberId(actor.id);
     if (!memberId) return NextResponse.json({ ok: true, data: [] });
     const result = await pool.query(`SELECT ${fields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [memberId]);
-    return NextResponse.json({ ok: true, data: result.rows.map(memberResponse) });
+    const list = result.rows.map(row => {
+      const m = memberResponse(row);
+      if (m.avatar && m.avatar.startsWith("data:")) m.avatar = "";
+      return m;
+    });
+    return NextResponse.json({ ok: true, data: list });
   }
   const result = await pool.query(`SELECT ${fields} FROM members WHERE deleted_at IS NULL ORDER BY name`);
-  const members = result.rows.map(memberResponse);
   const accounts = await pool.query("SELECT id, username, email, display_name, role, active, is_system, member_id, created_at, updated_at FROM users WHERE member_id IS NOT NULL");
   const accountByMember = new Map(accounts.rows.map(account => [String(account.member_id), {
     id: String(account.id), username: String(account.username), email: String(account.email ?? ""), displayName: String(account.display_name),
     role: String(account.role), active: Boolean(account.active), isSystem: Boolean(account.is_system), memberId: String(account.member_id),
     createdAt: String(account.created_at), updatedAt: String(account.updated_at),
   }]));
-  return NextResponse.json({ ok: true, data: members.map(member => ({ ...member, user: accountByMember.get(member.id) ?? null })) });
+  const list = result.rows.map(row => {
+    const m = memberResponse(row);
+    if (m.avatar && m.avatar.startsWith("data:")) m.avatar = "";
+    return { ...m, user: accountByMember.get(m.id) ?? null };
+  });
+  return NextResponse.json({ ok: true, data: list });
 }
 
 export async function POST(request: NextRequest) {

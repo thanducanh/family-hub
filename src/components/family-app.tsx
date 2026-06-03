@@ -699,6 +699,13 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
     if (!canManage || !existing) return;
     void fetch("/api/users").then(async response => { const result = await readJsonSafe<{ users?: ManagedUser[] }>(response); if (response.ok && result?.users) setLinkedUsers(result.users.filter(account => account.memberId === existing.id)); });
   }, [canManage, existing]);
+  useEffect(() => {
+    if (!existing) return;
+    void fetch(`/api/members?id=${existing.id}`).then(async response => {
+      const result = await readJsonSafe<{ ok?: boolean; data?: Member }>(response);
+      if (response.ok && result?.data) setForm(result.data);
+    });
+  }, [existing]);
   const set = <K extends keyof Member>(key: K, value: Member[K]) => setForm(current => ({ ...current, [key]: value }));
   function cancel() { if (!existing) return close(); setForm(existing); setEditing(false); setError(""); }
   async function submit(event: React.FormEvent) {
