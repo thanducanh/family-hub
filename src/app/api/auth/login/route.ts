@@ -2,12 +2,14 @@ import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 import { createSessionToken, normalizeUserRole, sessionCookie, type SessionUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { initDatabase } from "@/lib/init-database";
 import { memberProfileFields, toMemberProfile } from "@/lib/member-profile";
 
 export async function POST(request: NextRequest) {
   const { username, password, remember = false } = await request.json() as { username?: string; password?: string; remember?: boolean };
   if (!username || !password) return NextResponse.json({ ok: false, error: "Vui lòng nhập tài khoản hoặc email và mật khẩu." }, { status: 400 });
   try {
+    await initDatabase();
     const result = await pool.query("SELECT id, username, display_name, avatar, password_hash, role, active, must_change_password, member_id FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)", [username.trim()]);
     const row = result.rows[0];
     if (!row || !await bcrypt.compare(password, row.password_hash)) return NextResponse.json({ ok: false, error: "Tài khoản hoặc mật khẩu không đúng." }, { status: 401 });
