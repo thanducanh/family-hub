@@ -1,0 +1,15 @@
+services:
+  family-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: family-hub
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://family_user:family_password@192.168.1.109:5433/family_management
+      SESSION_SECRET: change-this-family-hub-session-secret
+      COOKIE_SECURE: "false"
+    ports:
+      - "3000:3000"

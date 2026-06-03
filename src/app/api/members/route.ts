@@ -1,0 +1,115 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getSessionUser } from "@/lib/auth";
+import { pool } from "@/lib/db";
+import { normalizeBirthday, toMemberProfile } from "@/lib/member-profile";
+
+const fields = "id, name, nickname, birthday, gender, role, phone, avatar, notes, color";
+const editableByMember = ["nickname", "phone", "avatar", "notes"] as const;
+
+function toDate(value: unknown) {
+  return normalizeBirthday(value) || null;
+}
+function isValidBirthday(value: unknown) {
+  const text = String(value || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const [year, month, day] = text.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+export function memberResponse(row: Record<string, unknown>) {
+  return toMemberProfile(row);
+}
+function values(item: Record<string, unknown>) {
+  return [item.id, item.name, item.nickname || "", toDate(item.birthday), item.gender || "", item.role, item.phone || "", item.avatar || "", item.notes || "", item.color || "#fb7185"];
+}
+async function linkedMemberId(userId: string) {
+  return (await pool.query("SELECT member_id FROM users WHERE id = $1", [userId])).rows[0]?.member_id as string | null | undefined;
+}
+
+export async function GET() {
+  const actor = await getSessionUser();
+  if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+  if (actor.role === "self_only") {
+    const memberId = await linkedMemberId(actor.id);
+    if (!memberId) return NextResponse.json({ ok: true, data: [] });
+    const result = await pool.query(`SELECT ${fields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [memberId]);
+    return NextResponse.json({ ok: true, data: result.rows.map(memberResponse) });
+  }
+  const result = await pool.query(`SELECT ${fields} FROM members WHERE deleted_at IS NULL ORDER BY name`);
+  const members = result.rows.map(memberResponse);
+  const accounts = await pool.query("SELECT id, username, email, display_name, role, active, is_system, member_id, created_at, updated_at FROM users WHERE member_id IS NOT NULL");
+  const accountByMember = new Map(accounts.rows.map(account => [String(account.member_id), {
+    id: String(account.id), username: String(account.username), email: String(account.email ?? ""), displayName: String(account.display_name),
+    role: String(account.role), active: Boolean(account.active), isSystem: Boolean(account.is_system), memberId: String(account.member_id),
+    createdAt: String(account.created_at), updatedAt: String(account.updated_at),
+  }]));
+  return NextResponse.json({ ok: true, data: members.map(member => ({ ...member, user: accountByMember.get(member.id) ?? null })) });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const actor = await getSessionUser();
+    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+    if (actor.role === "self_only") return NextResponse.json({ ok: false, error: "Không có quyền thêm thành viên." }, { status: 403 });
+    const item = await request.json() as Record<string, unknown>;
+    const role = item.familyRole || item.role;
+    const birthday = item.birthDate || item.birthday;
+    const notes = item.note || item.notes;
+    const normalized: Record<string, unknown> = { ...item, role, birthday, notes };
+    if (!normalized.id || !normalized.name || !normalized.role || (normalized.birthday && !isValidBirthday(normalized.birthday))) return NextResponse.json({ ok: false, error: "Họ tên, vai vế và ngày sinh phải hợp lệ." }, { status: 400 });
+    const result = await pool.query(`INSERT INTO members (id, name, nickname, birthday, gender, role, phone, avatar, notes, color) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING ${fields}`, values(normalized));
+    const member = memberResponse(result.rows[0]);
+    return NextResponse.json({ ok: true, data: member, member }, { status: 201 });
+  } catch (error) {
+    console.error("[POST /api/members]", error);
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Không thể lưu thành viên." }, { status: 500 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const actor = await getSessionUser();
+    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+    const item = await request.json() as Record<string, unknown>;
+    const normalized: Record<string, unknown> = { ...item, role: item.familyRole || item.role, birthday: item.birthDate || item.birthday, notes: item.note || item.notes };
+    if (!normalized.id) return NextResponse.json({ ok: false, error: "Thiếu id." }, { status: 400 });
+    if (actor.role === "self_only") {
+      const memberId = await linkedMemberId(actor.id);
+      if (!memberId || memberId !== normalized.id) return NextResponse.json({ ok: false, error: "Không có quyền sửa thành viên này." }, { status: 403 });
+      const updates = editableByMember.map((field, index) => `${field} = $${index + 2}`).join(", ");
+      const result = await pool.query(`UPDATE members SET ${updates} WHERE id = $1 RETURNING ${fields}`, [normalized.id, ...editableByMember.map(field => normalized[field] || "")]);
+      const member = result.rows[0] && memberResponse(result.rows[0]);
+      return member ? NextResponse.json({ ok: true, data: member, member }) : NextResponse.json({ ok: false, error: "Không tìm thấy thành viên." }, { status: 404 });
+    }
+    if (!normalized.name || !normalized.role || (normalized.birthday && !isValidBirthday(normalized.birthday))) return NextResponse.json({ ok: false, error: "Họ tên, vai vế và ngày sinh phải hợp lệ." }, { status: 400 });
+    const result = await pool.query(`UPDATE members SET name=$2,nickname=$3,birthday=$4,gender=$5,role=$6,phone=$7,avatar=$8,notes=$9,color=$10 WHERE id=$1 RETURNING ${fields}`, values(normalized));
+    const member = result.rows[0] && memberResponse(result.rows[0]);
+    return member ? NextResponse.json({ ok: true, data: member, member }) : NextResponse.json({ ok: false, error: "Không tìm thấy thành viên." }, { status: 404 });
+  } catch (error) {
+    console.error("[PUT /api/members]", error);
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Không thể lưu thành viên." }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const actor = await getSessionUser();
+    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+    if (actor.role === "self_only") return NextResponse.json({ ok: false, error: "Không có quyền xóa thành viên." }, { status: 403 });
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) return NextResponse.json({ ok: false, error: "Thiếu id." }, { status: 400 });
+    const linkedUser = await pool.query("SELECT is_system FROM users WHERE member_id = $1", [id]);
+    if (linkedUser.rows.some(user => user.is_system)) return NextResponse.json({ ok: false, error: "Không thể xóa thành viên đang liên kết với tài khoản hệ thống." }, { status: 403 });
+    const related = await pool.query(`SELECT
+    (SELECT COUNT(*) FROM tasks WHERE member_id=$1) +
+    (SELECT COUNT(*) FROM transactions WHERE member_id=$1) +
+    (SELECT COUNT(*) FROM events WHERE member_id=$1) +
+    (SELECT COUNT(*) FROM notes WHERE member_id=$1) AS count`, [id]);
+    const relatedCount = Number(related.rows[0]?.count || 0);
+    await pool.query("UPDATE members SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
+    return NextResponse.json({ ok: true, data: { deleted: true, relatedCount } });
+  } catch (error) {
+    console.error("[DELETE /api/members]", error);
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Không thể ẩn thành viên." }, { status: 500 });
+  }
+}

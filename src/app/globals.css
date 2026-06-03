@@ -1,26 +1,72 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --app-background: #f9fafb;
+  --app-foreground: #334155;
+  --app-card: #ffffff;
+  --app-sidebar: #ffffff;
+  --app-nav: rgba(255, 255, 255, 0.95);
+  --app-border: #e5e7eb;
 }
+html.dark {
+  color-scheme: dark;
+  --app-background: #101828;
+  --app-foreground: #f1f5f9;
+  --app-card: rgba(255, 255, 255, 0.05);
+  --app-sidebar: #1d2939;
+  --app-nav: rgba(16, 24, 40, 0.95);
+  --app-border: rgba(255, 255, 255, 0.1);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--app-background); color: var(--app-foreground); font-family: Arial, Helvetica, sans-serif; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.calendar-day-cell {
+  border-right: 1px solid var(--app-border);
+  border-bottom: 1px solid var(--app-border);
+  text-align: left;
+  vertical-align: top;
+  outline: none;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.calendar-day-cell:hover,
+.calendar-day-cell:focus {
+  background: transparent;
+  outline: none;
 }
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.day-header {
+  display: grid;
+  min-height: 30px;
+  place-content: center;
+  text-align: center;
 }
+.day-header b { font-size: 14px; line-height: 14px; }
+.day-header small { margin-top: 1px; color: rgb(14 165 233 / 45%); font-size: 9px; line-height: 10px; }
+.event-list { padding: 1px 6px 7px; }
+.calendar-event-row {
+  display: flex;
+  height: 21px;
+  cursor: pointer;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  margin-bottom: 1px;
+  border: 0;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+  line-height: 19px;
+  outline: none;
+  box-shadow: none;
+}
+.calendar-event-row:hover { background: rgb(148 163 184 / 12%); }
+.calendar-event-row:focus { outline: none; }
+.calendar-event-row.is-selected { background: rgb(99 102 241 / 9%); }
+.calendar-event-row i { width: 6px; height: 6px; flex: none; border-radius: 999px; }
+.calendar-event-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.calendar-event-row small { margin-left: auto; flex: none; color: #94a3b8; font-size: 11px; }
+.calendar-event-all-day { background: color-mix(in srgb, var(--event-color) 14%, transparent); }
+.calendar-event-all-day:hover { background: color-mix(in srgb, var(--event-color) 20%, transparent); }

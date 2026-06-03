@@ -1,0 +1,25 @@
+{
+  "name": "Family Hub",
+  "short_name": "Family Hub",
+  "description": "Ứng dụng quản lý gia đình đơn giản",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#fff7f7",
+  "theme_color": "#fb7185",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

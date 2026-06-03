@@ -1,0 +1,41 @@
+-- Chạy migration này trên database family_management trước khi dùng API mới.
+-- Chỉ bổ sung cột còn thiếu, không xóa hoặc ghi đè dữ liệu hiện có.
+
+ALTER TABLE members ADD COLUMN IF NOT EXISTS birthday DATE;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN IF NOT EXISTS gender VARCHAR(16) NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN IF NOT EXISTS phone VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN IF NOT EXISTS avatar TEXT NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN IF NOT EXISTS color VARCHAR(32) NOT NULL DEFAULT '#fb7185';
+
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS category VARCHAR(128) NOT NULL DEFAULT 'Khác';
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'todo';
+
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS amount NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS type VARCHAR(16) NOT NULL DEFAULT 'expense';
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS date DATE;
+
+ALTER TABLE events ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
+ALTER TABLE events ADD COLUMN IF NOT EXISTS date DATE;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS time TIME;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS color VARCHAR(32) NOT NULL DEFAULT '#60a5fa';
+
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '';
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS content TEXT NOT NULL DEFAULT '';
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS updated_at TEXT NOT NULL DEFAULT '';
+
+-- Backfill model UI từ schema NAS cũ mà không xóa dữ liệu nguồn.
+UPDATE events SET date = event_date::date WHERE date IS NULL;
+UPDATE events SET time = event_date::time WHERE time IS NULL;
+UPDATE tasks SET due = due_date::text WHERE due = '' AND due_date IS NOT NULL;
+UPDATE tasks SET status = CASE WHEN completed THEN 'done' ELSE 'todo' END WHERE status = 'todo';
+UPDATE transactions SET title = note WHERE title = '' AND note IS NOT NULL;
+UPDATE transactions SET date = created_at::date WHERE date IS NULL AND created_at IS NOT NULL;
+UPDATE notes SET updated_at = created_at::text WHERE updated_at = '' AND created_at IS NOT NULL;
