@@ -5,10 +5,12 @@ import { pool } from "@/lib/db";
 import { canManage, toPublicUser } from "@/lib/user-admin";
 
 const select = "id, username, email, display_name, avatar, role, active, must_change_password, is_system, member_id, created_at, updated_at";
+
 function serverError(action: string, error: unknown) {
   console.error(`[api/users] ${action} failed`, error);
   return NextResponse.json({ ok: false, error: "Lỗi máy chủ. Vui lòng thử lại." }, { status: 500 });
 }
+
 async function memberAssignmentError(memberId: string | undefined, userId = "") {
   if (!memberId) return "";
   const member = await pool.query("SELECT id FROM members WHERE id = $1 AND deleted_at IS NULL", [memberId]);
@@ -25,8 +27,11 @@ export async function GET() {
     if (!actor || actor.role !== "full_access") return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });
     const result = await pool.query(`SELECT ${select} FROM users ORDER BY is_system DESC, created_at`);
     return NextResponse.json({ ok: true, users: result.rows.map(toPublicUser) });
-  } catch (error) { return serverError("GET", error); }
+  } catch (error) {
+    return serverError("GET", error);
+  }
 }
+
 export async function POST(request: NextRequest) {
   try {
     const actor = await getSessionUser();
@@ -47,19 +52,26 @@ export async function POST(request: NextRequest) {
       : NextResponse.json({ ok: false, error: "Lỗi máy chủ. Vui lòng thử lại." }, { status: 500 });
   }
 }
+
 export async function PUT(request: NextRequest) {
   try {
     const actor = await getSessionUser();
     if (!actor || actor.role !== "full_access") return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });
-    const body = await request.json() as { id?: string; username?: string; email?: string; displayName?: string; avatar?: string; role?: UserRole; active?: boolean; memberId?: string };
-    const existing = await pool.query("SELECT id, role, is_system FROM users WHERE id = $1", [body.id]);
+    const body = await request.json() as { id?: string; username?: string; email?: string; displayName?: string; avatar?: string; role?: UserRole; active?: boolean; memberId?: string; password?: string };
+    const existing = await pool.query("SELECT id, role, is_system, member_id FROM users WHERE id = $1", [body.id]);
     const target = existing.rows[0];
     if (!body.username?.trim() || !body.displayName || !body.role || typeof body.active !== "boolean" || !canManage(actor, body.role)) return NextResponse.json({ ok: false, error: "Dữ liệu hoặc quyền không hợp lệ." }, { status: 400 });
     if (!target || !canManage(actor, target.role)) return NextResponse.json({ ok: false, error: "Không có quyền sửa user này." }, { status: 403 });
-    if (target.is_system && (body.role !== "full_access" || body.active === false)) return NextResponse.json({ ok: false, error: "Không thể hạ quyền hoặc vô hiệu hóa admin hệ thống." }, { status: 400 });
+    if (target.is_system) {
+      if (body.username.trim() !== "admin" || body.role !== "full_access" || body.active === false) return NextResponse.json({ ok: false, error: "Không thể đổi username, hạ quyền hoặc vô hiệu hóa admin hệ thống." }, { status: 400 });
+      if (target.member_id && !body.memberId) return NextResponse.json({ ok: false, error: "Không thể bỏ liên kết hồ sơ thành viên của admin hệ thống." }, { status: 400 });
+    }
     const assignmentError = await memberAssignmentError(body.memberId, body.id);
     if (assignmentError) return NextResponse.json({ ok: false, error: assignmentError }, { status: 409 });
-    const result = await pool.query(`UPDATE users SET username=$2, email=$3, display_name=$4, avatar=$5, role=$6, active=$7, member_id=$8, updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING ${select}`, [body.id, body.username.trim(), body.email?.trim() || null, body.displayName, body.avatar || "", body.role, body.active, body.memberId || null]);
+    if (body.password && body.password.length < 6) return NextResponse.json({ ok: false, error: "Mật khẩu mới cần ít nhất 6 ký tự." }, { status: 400 });
+    const passwordSql = body.password ? ", password_hash=$9, must_change_password=TRUE" : "";
+    const values = body.password ? [body.id, body.username.trim(), body.email?.trim() || null, body.displayName, body.avatar || "", body.role, body.active, body.memberId || null, await bcrypt.hash(body.password, 12)] : [body.id, body.username.trim(), body.email?.trim() || null, body.displayName, body.avatar || "", body.role, body.active, body.memberId || null];
+    const result = await pool.query(`UPDATE users SET username=$2, email=$3, display_name=$4, avatar=$5, role=$6, active=$7, member_id=$8${passwordSql}, updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING ${select}`, values);
     const user = toPublicUser(result.rows[0]);
     return NextResponse.json({ ok: true, data: user, user });
   } catch (error) {
@@ -69,6 +81,7 @@ export async function PUT(request: NextRequest) {
       : NextResponse.json({ ok: false, error: "Lỗi máy chủ. Vui lòng thử lại." }, { status: 500 });
   }
 }
+
 export async function DELETE(request: NextRequest) {
   try {
     const actor = await getSessionUser();
@@ -79,5 +92,7 @@ export async function DELETE(request: NextRequest) {
     if (!target || target.is_system || !canManage(actor, target.role)) return NextResponse.json({ ok: false, error: "Không thể xóa user này." }, { status: 403 });
     await pool.query("DELETE FROM users WHERE id = $1", [id]);
     return NextResponse.json({ ok: true });
-  } catch (error) { return serverError("DELETE", error); }
+  } catch (error) {
+    return serverError("DELETE", error);
+  }
 }

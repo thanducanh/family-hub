@@ -7,7 +7,7 @@ export type Collection = "members" | "tasks" | "transactions" | "events" | "note
 const columns: Record<Collection, string[]> = {
   members: ["id", "name", "nickname", "birthday", "gender", "role", "phone", "avatar", "notes", "color"],
   tasks: ["id", "title", "member_id", "assignee", "due", "due_date_ui", "priority", "status"],
-  transactions: ["id", "title", "member_id", "amount", "type", "category", "date"],
+  transactions: ["id", "title", "member_id", "amount", "type", "category", "date", "bank_account_id", "estimated_cashback", "actual_cashback"],
   events: ["id", "title", "member_id", "type", "date", "time", "color", "event_date"],
   notes: ["id", "title", "member_id", "kind", "important", "tag", "content", "updated_at"],
 };
@@ -16,7 +16,7 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
   if (collection === "notes") return { ...item, member_id: item.memberId || null, updated_at: item.updatedAt };
   if (collection === "members") return { ...item, birthday: toDatabaseDate(item.birthday) };
   if (collection === "tasks") return { ...item, member_id: item.memberId || null, due_date_ui: toDatabaseDate(item.dueDate) };
-  if (collection === "transactions") return { ...item, member_id: item.memberId || null, date: toDatabaseDate(item.date) };
+  if (collection === "transactions") return { ...item, member_id: item.memberId || null, date: toDatabaseDate(item.date), bank_account_id: item.bankAccountId || null, estimated_cashback: item.estimatedCashback || 0, actual_cashback: item.actualCashback || 0 };
   if (collection === "events") {
     const date = toDatabaseDate(item.date);
     return { ...item, member_id: item.memberId || null, date, event_date: date ? `${date}T${item.time || "00:00"}:00` : null };
@@ -33,8 +33,8 @@ function fromDb(collection: Collection, item: Record<string, unknown>) {
     return { ...rest, memberId: member_id || "", dueDate: due_date_ui || "" };
   }
   if (collection === "transactions") {
-    const { member_id, ...rest } = item;
-    return { ...rest, memberId: member_id || "" };
+    const { member_id, bank_account_id, estimated_cashback, actual_cashback, ...rest } = item;
+    return { ...rest, memberId: member_id || "", bankAccountId: bank_account_id || "", estimatedCashback: Number(estimated_cashback || 0), actualCashback: Number(actual_cashback || 0) };
   }
   if (collection === "events") {
     const { event_date, member_id, ...rest } = item;

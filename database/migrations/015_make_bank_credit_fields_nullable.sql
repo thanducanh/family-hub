@@ -1,0 +1,7 @@
+ALTER TABLE bank_accounts
+  ALTER COLUMN account_number DROP NOT NULL,
+  ALTER COLUMN card_number DROP NOT NULL,
+  ALTER COLUMN branch DROP NOT NULL,
+  ALTER COLUMN statement_day DROP NOT NULL,
+  ALTER COLUMN due_day DROP NOT NULL,
+  ALTER COLUMN credit_limit DROP NOT NULL;

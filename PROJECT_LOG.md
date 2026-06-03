@@ -151,7 +151,7 @@
 - File chính đã sửa: database/migrations/003_create_users.sql, database/migrations/006_create_password_reset_requests.sql, src/app/api/auth/password-reset-request/route.ts, src/app/api/users/password-reset-requests/route.ts, src/components/family-app.tsx, PROJECT_LOG.md.
 
 ### Lần 21.2 bổ sung - Khôi phục admin mặc định
-- Kiểm tra bảng users: admin đã tồn tại với role system_admin, active và is_system đúng nhưng hash hiện tại không còn khớp dmin123.
+- Kiểm tra bảng users: admin đã tồn tại với role system_admin, active và is_system đúng nhưng hash hiện tại không còn khớp admin123.
 - Thêm script seed-admin.mjs để tạo hoặc khôi phục admin mặc định bằng bcrypt hash, bật trạng thái hoạt động và bắt đổi mật khẩu sau đăng nhập.
 - Thêm lệnh 
 pm run seed:admin; script chỉ chạy khi được gọi thủ công và không thay đổi user khác.
@@ -220,19 +220,19 @@ ull.
 - File chính đã sửa: src/app/api/members/route.ts, src/services/data-service.ts, src/components/family-app.tsx, PROJECT_LOG.md.
 
 ### Lần 24.2 - Tách quyền hệ thống và vai vế gia đình
-- Thu gọn quyền hệ thống còn ull_access (Toàn quyền) và self_only (Chỉ xem chính mình), tách khỏi vai vế gia đình.
-- Thêm migration 08_system_access_roles.sql để map an toàn role cũ: system_admin/parent thành ull_access, member thành self_only; giữ is_system riêng để bảo vệ tài khoản hệ thống.
+- Thu gọn quyền hệ thống còn full_access (Toàn quyền) và self_only (Chỉ xem chính mình), tách khỏi vai vế gia đình.
+- Thêm migration 08_system_access_roles.sql để map an toàn role cũ: system_admin/parent thành full_access, member thành self_only; giữ is_system riêng để bảo vệ tài khoản hệ thống.
 - Bổ sung vai vế Tôi; đổi nhãn UI thành Vai vế gia đình và Quyền hệ thống.
-- Chỉ ull_access được quản trị user, gán member/quyền, thêm/sửa/xóa thành viên; self_only chỉ thấy member liên kết và chỉ sửa avatar, nickname, số điện thoại, ghi chú.
+- Chỉ full_access được quản trị user, gán member/quyền, thêm/sửa/xóa thành viên; self_only chỉ thấy member liên kết và chỉ sửa avatar, nickname, số điện thoại, ghi chú.
 - Chuẩn hóa cookie phiên cũ khi đọc session để quyền cũ tiếp tục hoạt động đúng trong giai đoạn chuyển đổi.
 - File chính đã sửa: database/migrations/008_system_access_roles.sql, database/seed-admin.mjs, src/lib/auth.ts, src/lib/user-admin.ts, src/app/api/members/route.ts, src/app/api/users/route.ts, src/app/api/users/reset-password/route.ts, src/app/api/users/password-reset-requests/route.ts, src/types/index.ts, src/services/data-service.ts, src/components/family-app.tsx, PROJECT_LOG.md.
 
 ### Lần 24.3 - Trang hồ sơ thành viên và avatar
-- Khôi phục nút + Thêm thành viên ở header trang Thành viên và chỉ hiển thị cho tài khoản ull_access.
+- Khôi phục nút + Thêm thành viên ở header trang Thành viên và chỉ hiển thị cho tài khoản full_access.
 - Thay drawer chi tiết và modal sửa dài bằng trang hồ sơ thành viên có menu trái: thông tin cá nhân, công việc, sự kiện, ghi chú và tài khoản liên kết.
 - Bổ sung chế độ xem/sửa rõ ràng với nút chỉnh sửa, lưu thay đổi, hủy và modal xác nhận soft delete.
 - Bỏ trường màu đại diện khỏi UI thành viên; avatar hỗ trợ URL hoặc base64, có nút xóa và fallback vòng tròn xám với chữ cái đầu.
-- Giữ phân quyền: self_only chỉ sửa avatar, nickname, số điện thoại, ghi chú; ull_access sửa toàn bộ hồ sơ và quản lý thành viên.
+- Giữ phân quyền: self_only chỉ sửa avatar, nickname, số điện thoại, ghi chú; full_access sửa toàn bộ hồ sơ và quản lý thành viên.
 - Không cần migration mới vì cột members.avatar đã tồn tại.
 - File chính đã sửa: src/components/family-app.tsx, PROJECT_LOG.md.
 
@@ -248,9 +248,9 @@ ull.
 ### Lần 24.5 - Upload và quản lý avatar thành viên
 - Bỏ input Avatar URL hoặc base64 khỏi form thông tin cá nhân.
 - Chuyển chỉnh avatar lên card đầu hồ sơ thành viên, ngay dưới avatar tròn lớn.
-- Bổ sung input file ẩn chỉ nhận image/*; ảnh được đọc bằng FileReader, preview ngay và lưu tạm dạng data URL vào field vatar.
+- Bổ sung input file ẩn chỉ nhận image/*; ảnh được đọc bằng FileReader, preview ngay và lưu tạm dạng data URL vào field avatar.
 - Thêm nút Thêm ảnh/Đổi ảnh và Xóa ảnh; khi xóa quay về vòng tròn xám với chữ cái đầu.
-- Giữ phân quyền API hiện có: ull_access sửa avatar mọi thành viên, self_only chỉ sửa avatar member liên kết của chính mình.
+- Giữ phân quyền API hiện có: full_access sửa avatar mọi thành viên, self_only chỉ sửa avatar member liên kết của chính mình.
 - Không thay đổi PostgreSQL và không cần migration mới.
 - File chính đã sửa: src/components/family-app.tsx, PROJECT_LOG.md.
 
@@ -264,15 +264,15 @@ ull.
 
 ### Lần 24.8 - Sửa lỗi tạo user trả JSON rỗng
 - Thêm helper client safeJson(response) để đọc body an toàn, không crash khi API trả body rỗng hoặc nội dung không phải JSON.
-- Sửa form tạo/sửa user: bỏ lert và confirm trong submit, hiển thị lỗi hoặc trạng thái thành công trực tiếp trong modal, reload danh sách rồi đóng modal sau khi lưu thành công.
+- Sửa form tạo/sửa user: bỏ alert và confirm trong submit, hiển thị lỗi hoặc trạng thái thành công trực tiếp trong modal, reload danh sách rồi đóng modal sau khi lưu thành công.
 - Chuẩn hóa API /api/users GET/POST/PUT/DELETE luôn trả JSON có ok, data hoặc error; log exception rõ ràng phía server.
 - Chuẩn hóa API reset mật khẩu user và đổi mật khẩu tài khoản luôn trả JSON kể cả khi có exception.
 - Phân biệt lỗi unique PostgreSQL 23505 để username/email trùng báo lỗi đúng thay vì làm crash UI.
 - File chính đã sửa: src/components/family-app.tsx, src/app/api/users/route.ts, src/app/api/users/reset-password/route.ts, src/app/api/auth/change-password/route.ts, PROJECT_LOG.md.
 
 ### Lần 24.9 - Sửa triệt để lỗi response.json khi tạo user
-- Đổi helper client thành eadJsonSafe(response) và thay toàn bộ esponse.json() trực tiếp trong amily-app.tsx.
-- Submit tạo/sửa user kiểm tra cả HTTP status lẫn esult.ok, hiển thị lỗi inline nếu body rỗng hoặc JSON không hợp lệ.
+- Đổi helper client thành readJsonSafe(response) và thay toàn bộ response.json() trực tiếp trong family-app.tsx.
+- Submit tạo/sửa user kiểm tra cả HTTP status lẫn result.ok, hiển thị lỗi inline nếu body rỗng hoặc JSON không hợp lệ.
 - Thêm log tạm CREATE USER STATUS để kiểm tra status và payload trả về khi tạo user.
 - Xác nhận POST /api/users luôn trả JSON { ok: true, user } hoặc { ok: false, error }, không trả body rỗng hoặc status 204.
 - File chính đã sửa: src/components/family-app.tsx, PROJECT_LOG.md.
@@ -284,7 +284,7 @@ ull.
 - File chính đã sửa: src/app/api/members/route.ts, src/components/family-app.tsx, src/services/data-service.ts, src/types/index.ts, PROJECT_LOG.md.
 
 ### Lần 24.11 - Sửa lỗi lưu avatar quá dài
-- Thêm migration 09_change_member_avatar_to_text.sql để đổi kiểu cột vatar của bảng members và users thành TEXT thay vì VARCHAR(255).
+- Thêm migration 09_change_member_avatar_to_text.sql để đổi kiểu cột avatar của bảng members và users thành TEXT thay vì VARCHAR(255).
 - Xử lý frontend nén ảnh bằng canvas, giới hạn tối đa 400x400px trước khi tạo base64 data URL, từ đó giảm lỗi ảnh quá lớn.
 - Nếu ảnh sau khi nén vẫn vượt quá 1MB, hiển thị cảnh báo rõ ràng cho người dùng.
 - Đã test quá trình lưu ảnh và pass 
@@ -490,3 +490,87 @@ pm.cmd run build.
 - Loại bỏ `min-height` lớn và padding làm hàng All-day phình cao, để timeline giờ bắt đầu ngay bên dưới.
 - Giữ cùng grid column cho day header, all-day row và time grid để các cột không lệch.
 - Giới hạn hiển thị tối đa 2 dòng all-day mỗi ngày và thêm `+N more` khi vượt quá.
+
+### Lần 27 - Hoàn thiện tài khoản đăng nhập, đổi mật khẩu và phân quyền
+- Tab `Tài khoản đăng nhập` tách giao diện admin và user tự xem mình: admin quản lý username, mật khẩu, quyền, trạng thái, reset/xóa; user chỉ đổi mật khẩu của chính mình.
+- `/api/users` hỗ trợ admin đổi mật khẩu bằng bcrypt trong PUT, vẫn không trả `password_hash` và vẫn chặn hạ quyền/khóa/xóa admin hệ thống.
+- `/api/auth/change-password` yêu cầu mật khẩu hiện tại, validate mật khẩu mới tối thiểu 6 ký tự và refresh session sau khi đổi.
+- Thêm notification localStorage khi admin đổi/reset mật khẩu user hoặc user tự đổi mật khẩu thành công.
+
+### Lần 27.1 - Chuẩn hóa tài khoản admin hệ thống và đổi mật khẩu
+- Admin hệ thống không cần liên kết member vẫn có trang Hồ sơ cá nhân riêng, hiển thị tài khoản hệ thống, username, quyền, trạng thái và nút đổi mật khẩu.
+- Hồ sơ admin cho phép cập nhật tên hiển thị, email và avatar qua `/api/auth/profile`; không còn báo lỗi chưa liên kết thành viên.
+- UI quản lý tài khoản khóa username, quyền hệ thống và liên kết member với tài khoản `is_system`; không hiển thị nút xóa admin hệ thống.
+- Backend `/api/users` chặn đổi username, hạ quyền, vô hiệu hóa hoặc gán member cho admin hệ thống; DELETE vẫn chặn xóa system admin.
+
+### Lần 27.2 - Cải thiện độ tương phản lịch âm
+- Tăng độ tương phản lịch âm trong Monthly và Weekly bằng class `.lunar-date` với cỡ 11px, weight 500 và màu `#7c8aa5`.
+- Giữ ngày dương 14px, weight 600, màu `#1e293b` trong light mode và bổ sung màu tương phản cho dark mode.
+- Ngày được chọn dùng `.selected-day .lunar-date` màu `#5f7ea5`; không đổi layout lịch.
+
+### Lần 27.3 - Chốt logic admin liên kết member và sửa font breadcrumb
+- Sửa breadcrumb và các chuỗi tiếng Việt bị mojibake trong hồ sơ thành viên, công việc, ghi chú, reset mật khẩu và API quản lý user.
+- Cho phép admin hệ thống liên kết với member để Hồ sơ cá nhân dùng dữ liệu thành viên, nhưng vẫn khóa username, quyền, trạng thái và nút xóa.
+- Backend `/api/users` tiếp tục chặn đổi username, hạ quyền, khóa, xóa hoặc bỏ liên kết hồ sơ đã có của admin hệ thống.
+
+### Lần 27.4 - Sắp xếp lại sidebar theo module chính
+- Sắp xếp sidebar theo thứ tự Tổng quan, Thành viên, Lịch, Thu chi, Ngân hàng, Trò chuyện, Ghi chú và Cài đặt.
+- Thêm màn tạm cho Ngân hàng và Trò chuyện với trạng thái `Sẽ bổ sung sau`, không đổi logic các module hiện có.
+- Chuyển icon sidebar sang SVG rõ nét để active/hover trong trạng thái mở rộng và thu gọn đều hiển thị màu tím.
+
+### Lần 28 - Phát triển module Ngân hàng theo thành viên
+- Thêm bảng `bank_accounts`, API `/api/bank-accounts` và `/api/bank-accounts/[id]` với phân quyền backend theo `full_access` và `self_only`.
+- Xây module Ngân hàng có tab thành viên, toggle Danh sách/Dạng thẻ, empty state, form thêm/sửa/xóa và chi tiết có nút hiện số đầy đủ.
+- Mặc định che số tài khoản/số thẻ khi hiển thị danh sách hoặc card; chỉ chi tiết mới cho phép bật xem đầy đủ kèm cảnh báo dữ liệu nhạy cảm.
+
+### Lần 28.1 - Chuyển thẻ ngân hàng vào hồ sơ thành viên
+- Bỏ module Ngân hàng khỏi sidebar; sidebar còn Tổng quan, Thành viên, Lịch, Thu chi, Trò chuyện, Ghi chú và Cài đặt.
+- Thêm tab `Thẻ ngân hàng` trong Hồ sơ thành viên, đặt sau `Tài khoản đăng nhập` và dùng dữ liệu `bank_accounts` theo member đang xem.
+- Giữ hai chế độ Danh sách/Dạng thẻ, form thêm/sửa, chi tiết hiện số đầy đủ và quyền backend hiện có.
+
+### Lần 28.2 - Hoàn thiện logic thẻ ngân hàng, ưu đãi và phí thường niên
+- Mở rộng `bank_accounts` với loại tài khoản/thẻ, tổ chức thẻ, sản phẩm, sao kê, hạn mức, phí thường niên và điều kiện miễn phí.
+- Thêm bảng `bank_card_benefits` để lưu nhiều rule ưu đãi/cashback cho mỗi thẻ và chuẩn bị cột `transactions.bank_account_id`, `estimated_cashback`, `actual_cashback`.
+- Nâng UI thẻ ngân hàng trong hồ sơ thành viên: form chia nhóm thông tin cơ bản, phí thường niên, ưu đãi; card/list hiển thị ưu đãi chính và tiến độ miễn phí; chi tiết có thống kê tháng này và giao dịch liên quan.
+
+### Lần 28.3 - Tách trang thêm thẻ và tối ưu form theo loại thẻ
+- Tạo route riêng `/members/[id]/bank-cards/new`, `/members/[id]/bank-cards/[cardId]/edit` và `/members/[id]/bank-cards/[cardId]` cho thêm, sửa và xem chi tiết thẻ ngân hàng.
+- Chuyển tab `Thẻ ngân hàng` trong hồ sơ thành viên sang điều hướng trang riêng, không dùng modal thêm/sửa/chi tiết.
+- Tối ưu form theo loại thẻ: credit card không bắt số tài khoản/chi nhánh, hiển thị hạn mức, sao kê, đến hạn, hết hạn, phí thường niên và ưu đãi/cashback.
+
+### Lần 28.4 - Làm đẹp thẻ ngân hàng và thêm nội dung gốc ngân hàng
+- Làm lại UI danh sách và dạng thẻ ngân hàng: số thẻ che rõ hơn, badge trạng thái gọn, thao tác Chi tiết/Sửa/Xóa dễ bấm và text sản phẩm mặc định là `Chưa cập nhật sản phẩm`.
+- Thêm bảng/API `bank_raw_notes` để lưu nội dung gốc từ website, email, PDF text hoặc điều khoản ngân hàng theo thành viên/thẻ, có phân quyền backend theo `full_access` và `self_only`.
+- Thêm tab `Nội dung gốc ngân hàng` trong hồ sơ thành viên và section `Nội dung gốc liên quan` trong chi tiết thẻ, kèm nút `Trích xuất thủ công`/`Tạo ưu đãi từ nội dung này` để chuẩn bị parse sau này.
+
+### Lần 28.5 - Tối ưu tải trang chi tiết thẻ ngân hàng
+- Thêm `GET /api/bank-accounts/[id]` để tải đúng một thẻ theo id, kèm member, benefits và nội dung gốc liên quan thay vì tải toàn bộ danh sách rồi lọc phía client.
+- Đổi trang chi tiết thẻ sang loader có `loading/error/card`, timeout fallback, nút `Thử lại`, trạng thái không tìm thấy rõ ràng và skeleton thay cho text `Đang tải...`.
+- Khi bấm `Chi tiết` từ danh sách thẻ, lưu prefill card vào `sessionStorage` để trang detail hiển thị ngay dữ liệu cơ bản rồi fetch bổ sung.
+
+### Lần 28.6 - Tối ưu tab thẻ ngân hàng và gom thao tác vào menu 3 chấm
+- Tối ưu tab `Thẻ ngân hàng` để fetch `/api/bank-accounts?memberId=...`, trả danh sách nhẹ không kèm benefits/raw notes và dùng cache theo `memberId` khi chuyển tab.
+- Thêm skeleton nhỏ và nút `Làm mới` cho danh sách thẻ ngân hàng, tránh trạng thái trắng khi đang tải.
+- Gom thao tác trong bảng và dạng thẻ vào menu `⋯` với dropdown `Xem chi tiết`, `Sửa`, `Xóa`, có click ngoài để đóng và cột thao tác gọn khoảng 48px.
+
+### Lần 28.7 - Chia form thẻ ngân hàng thành nhiều tab
+- Đổi form thêm/sửa thẻ ngân hàng từ các section dài sang layout tab: Thông tin cơ bản, Thông tin thẻ, Phí thường niên, Ưu đãi/Cashback, Nội dung gốc và Ghi chú.
+- Mỗi tab chỉ hiển thị một nhóm trường; tab Thông tin thẻ tự đổi nội dung theo credit card hoặc ATM/tài khoản.
+- Giữ footer `Hủy`/`Lưu thẻ` sticky dưới cùng và thêm thanh tab cuộn ngang trên mobile.
+
+### Lần 28.8 - Nhập thông tin thẻ từ ảnh hoặc nội dung gốc ngân hàng
+- Mở rộng `bank_raw_notes` với `image_url` và `extracted_json` để lưu ảnh/nội dung gốc cùng dữ liệu trích xuất dạng JSONB.
+- Thêm luồng upload ảnh, dán text, chọn ngân hàng và `Trích xuất thông tin` trong tab `Nội dung gốc` của form thẻ.
+- Thêm màn review dữ liệu trích xuất, cho sửa trường, chọn thẻ, áp dụng vào thẻ hiện tại hoặc tạo thẻ mới; rule cashback/fee được chuyển vào form sau khi user xác nhận.
+
+### Lần 28.9 - Fix loading trang chi tiết thẻ ngân hàng
+- Sửa `GET /api/bank-accounts/[id]` để query trực tiếp một thẻ theo `cardId`, trả JSON rõ cho thành công, không tìm thấy, không có quyền và lỗi server.
+- Bỏ `ensureBankRawNotesTable()` khỏi API detail để tránh chậm do kiểm tra/alter bảng khi mở trang chi tiết; raw notes chỉ lấy tối đa 10 bản ghi và cắt text dài.
+- Cập nhật frontend detail với timeout 8 giây, `finally setLoading(false)`, error box/nút `Thử lại`, log URL fetch tạm thời và hỗ trợ đọc cả response detail mới/cũ.
+
+### Lần 28.11 - Lược bớt logic thẻ, thêm phí thường niên và hoàn tiền nhập tay
+- Giữ nguyên bảng cũ `bank_card_benefits` để bảo toàn dữ liệu, nhưng chuyển UI/API chính sang bảng mới `bank_card_rewards`.
+- Thêm `annual_fee_current_spending` cho nhập tay tiến độ miễn phí thường niên trước khi module Thu chi tự cộng từ `transactions.bank_account_id`.
+- Rút gọn detail thẻ: thông tin thẻ, phí thường niên + tiến độ, hoàn tiền/điểm thưởng ghi nhận, nội dung gốc liên quan và giao dịch liên quan placeholder.
+
+- Lần 28.10 - Fix chi tiết thẻ ngân hàng bị mất sidebar layout

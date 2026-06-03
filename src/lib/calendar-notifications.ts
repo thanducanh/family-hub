@@ -1,7 +1,7 @@
 "use client";
 
 export type CalendarNotificationAction = "created" | "updated" | "copied" | "moved" | "deleted";
-export type CalendarNotificationType = "daily_events" | "event_created" | "event_updated" | "event_deleted" | "event_moved" | "event_copied";
+export type CalendarNotificationType = "daily_events" | "event_created" | "event_updated" | "event_deleted" | "event_moved" | "event_copied" | "account_password_changed";
 export type CalendarNotificationItem = { time: string; title: string };
 export type CalendarNotificationUser = { id: string; role: "full_access" | "self_only"; memberId?: string };
 export type CalendarNotificationInput = {
@@ -129,6 +129,12 @@ export function addDailyEventNotification(userId: string, date: string, count: n
   localStorage.setItem(noticeKey, "true");
   const title = `Bạn có ${count} sự kiện hôm nay. Chúc một ngày tốt lành!`;
   const next = [{ id: crypto.randomUUID(), type: "daily_events" as const, title, message: title, items, userId, visibleUserIds: [userId], visible_user_ids: [userId], readUserIds: [], read_user_ids: [], createdAt: new Date().toISOString(), read: false }, ...loadCalendarNotifications()].slice(0, 100);
+  localStorage.setItem(key, JSON.stringify(next));
+  window.dispatchEvent(new CustomEvent(notificationEvent));
+}
+export function addAccountPasswordNotification(userId: string, message: string, actor?: { id: string; name: string; avatar?: string }) {
+  if (typeof window === "undefined") return;
+  const next = [{ id: crypto.randomUUID(), type: "account_password_changed" as const, title: message, message, userId, actorUserId: actor?.id, actor_user_id: actor?.id, actorName: actor?.name, actor_name: actor?.name, actorAvatar: actor?.avatar || "", actor_avatar: actor?.avatar || "", visibleUserIds: [userId], visible_user_ids: [userId], readUserIds: [], read_user_ids: [], createdAt: new Date().toISOString(), read: false }, ...loadCalendarNotifications()].slice(0, 100);
   localStorage.setItem(key, JSON.stringify(next));
   window.dispatchEvent(new CustomEvent(notificationEvent));
 }
