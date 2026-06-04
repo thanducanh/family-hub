@@ -1383,6 +1383,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
   const [selectedCard, setSelectedCard] = useState<BankAccount | null>(null);
   const [rewardsLoading, setRewardsLoading] = useState(false);
   const [detailCache, setDetailCache] = useState<Record<string, BankAccount>>({});
+  const [editFromDetail, setEditFromDetail] = useState(false);
 
   const load = useCallback(async (force = false) => {
     if (!force && bankCardsByMemberCache.has(member.id)) {
@@ -1434,17 +1435,20 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
   const openCreate = () => {
     setSelectedCard(emptyBankForm(member.id));
     setSubView("new");
+    setEditFromDetail(false);
   };
 
   const openDetail = (account: BankAccount) => {
     setSelectedCard(account);
     setSubView("detail");
+    setEditFromDetail(false);
     void fetchFullCardDetails(account);
   };
 
-  const openEdit = (account: BankAccount) => {
+  const openEdit = (account: BankAccount, fromDetail = false) => {
     setSelectedCard(account);
     setSubView("edit");
+    setEditFromDetail(fromDetail);
     void fetchFullCardDetails(account);
   };
 
@@ -1457,15 +1461,25 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
       return updated;
     });
     setDetailCache(prev => ({ ...prev, [savedCard.id]: savedCard }));
-    setSubView("list");
-    setSelectedCard(null);
+    
+    if (editFromDetail) {
+      setSelectedCard(savedCard);
+      setSubView("detail");
+      setEditFromDetail(false);
+    } else {
+      setSubView("list");
+      setSelectedCard(null);
+    }
   };
 
   async function remove(account: BankAccount) {
-    if (!confirm(`Xóa thẻ/tài khoản ${account.bankName}?`)) return;
+    if (!confirm(`Xóa thẻ/tài khoản ${account.bankName}?`)) return false;
     const response = await fetch(`/api/bank-accounts/${account.id}`, { method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
-    if (!response.ok) return alert(result?.error || "Không thể xóa thẻ ngân hàng.");
+    if (!response.ok) {
+      alert(result?.error || "Không thể xóa thẻ ngân hàng.");
+      return false;
+    }
     setAccounts(current => {
       const next = current.filter(item => item.id !== account.id);
       bankCardsByMemberCache.set(member.id, next);
@@ -1476,7 +1490,14 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
       delete copy[account.id];
       return copy;
     });
+    return true;
   }
+
+  const handleUpdateAccount = (updatedCard: BankAccount) => {
+    setAccounts(current => current.map(c => c.id === updatedCard.id ? updatedCard : c));
+    setDetailCache(prev => ({ ...prev, [updatedCard.id]: updatedCard }));
+    setSelectedCard(updatedCard);
+  };
 
   if (subView === "detail" && selectedCard) {
     return (
@@ -1486,6 +1507,14 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
         close={() => { setSubView("list"); setSelectedCard(null); }}
         loading={rewardsLoading}
         inline={true}
+        edit={() => openEdit(selectedCard, true)}
+        remove={async () => {
+          if (await remove(selectedCard)) {
+            setSubView("list");
+            setSelectedCard(null);
+          }
+        }}
+        onUpdateAccount={handleUpdateAccount}
       />
     );
   }
@@ -1495,7 +1524,15 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
       <BankAccountSheet
         account={selectedCard}
         members={[member]}
-        close={() => { setSubView("list"); setSelectedCard(null); }}
+        close={() => {
+          if (editFromDetail) {
+            setSubView("detail");
+            setEditFromDetail(false);
+          } else {
+            setSubView("list");
+            setSelectedCard(null);
+          }
+        }}
         saved={onCardSaved}
         inline={true}
       />
@@ -1591,6 +1628,17 @@ function BankActionMenu({ account, detail, edit, remove, canEdit = true, dark = 
   const itemClass = "block w-full rounded-lg px-3 py-2 text-left text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5";
   return <div ref={ref} className="relative flex justify-end"><button type="button" onClick={() => setOpen(current => !current)} className={`grid size-10 place-items-center rounded-xl text-xl font-bold ${dark ? "bg-white/15 text-white hover:bg-white/20" : "border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5"}`} aria-label="Thao tác thẻ">⋯</button>{open && <div className="absolute right-0 top-11 z-30 w-40 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 text-slate-700 shadow-xl dark:text-slate-100"><button className={itemClass} onClick={() => { setOpen(false); detail(account); }}>Xem chi tiết</button>{canEdit && <button className={itemClass} onClick={() => { setOpen(false); edit(account); }}>Sửa</button>}{canEdit && <button className={`${itemClass} text-rose-500`} onClick={() => { setOpen(false); remove(account); }}>Xóa</button>}</div>}</div>;
 }
+interface CampaignBenefit {
+  id: string;
+  name: string;
+  condition: string;
+  expectedValue: string;
+  expectedDate: string;
+  status: "Chưa nhận" | "Đã nhận";
+  receivedDate: string;
+  note: string;
+}
+
 interface CardFees {
   interestRate: string;
   foreignFee: string;
@@ -1599,6 +1647,7 @@ interface CardFees {
   firstYearFree: boolean;
   openYear: string;
   checkYear: string;
+  campaigns?: CampaignBenefit[];
 }
 
 export function parseFees(note: string, productName: string): CardFees {
@@ -1610,7 +1659,8 @@ export function parseFees(note: string, productName: string): CardFees {
     feeNote: "",
     firstYearFree: false,
     openYear: "",
-    checkYear: currentYear
+    checkYear: currentYear,
+    campaigns: []
   };
 
   if (productName && productName.trim().toLowerCase().includes("bidv visa platinum cashback 360")) {
@@ -1872,6 +1922,153 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
             )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] px-4 py-6 text-center text-sm text-slate-400">Chưa có rule ưu đãi.</p>}
           </div>
         </div>
+
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold text-indigo-600">D. Ưu đãi mở thẻ / ưu đãi theo đợt</h3>
+            <button 
+              type="button" 
+              onClick={() => {
+                const newCampaigns = [...(fees.campaigns || []), {
+                  id: crypto.randomUUID(),
+                  name: "",
+                  condition: "",
+                  expectedValue: "",
+                  expectedDate: "",
+                  status: "Chưa nhận" as const,
+                  receivedDate: "",
+                  note: ""
+                }];
+                updateFee("campaigns", newCampaigns);
+              }} 
+              className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-bold text-indigo-600"
+            >
+              + Thêm ưu đãi đợt
+            </button>
+          </div>
+          <div className="mt-3 space-y-3">
+            {(fees.campaigns && fees.campaigns.length) ? fees.campaigns.map(camp => (
+              <div key={camp.id} className="rounded-xl border border-[var(--app-border)] p-3 space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Tên ưu đãi">
+                    <input 
+                      className={inputClass} 
+                      value={camp.name} 
+                      onChange={e => {
+                        const updated = fees.campaigns?.map(c => c.id === camp.id ? { ...c, name: e.target.value } : c) || [];
+                        updateFee("campaigns", updated);
+                      }} 
+                      placeholder="Ví dụ: Hoàn tiền mở thẻ mới"
+                    />
+                  </Field>
+                  <Field label="Mô tả / điều kiện">
+                    <input 
+                      className={inputClass} 
+                      value={camp.condition} 
+                      onChange={e => {
+                        const updated = fees.campaigns?.map(c => c.id === camp.id ? { ...c, condition: e.target.value } : c) || [];
+                        updateFee("campaigns", updated);
+                      }} 
+                      placeholder="Ví dụ: Chi tiêu 2 triệu trong 30 ngày"
+                    />
+                  </Field>
+                  <Field label="Giá trị dự kiến">
+                    <input 
+                      className={inputClass} 
+                      value={camp.expectedValue} 
+                      onChange={e => {
+                        const updated = fees.campaigns?.map(c => c.id === camp.id ? { ...c, expectedValue: e.target.value } : c) || [];
+                        updateFee("campaigns", updated);
+                      }} 
+                      placeholder="Ví dụ: 500.000 đ"
+                    />
+                  </Field>
+                  <Field label="Ngày dự kiến nhận">
+                    <input 
+                      className={inputClass} 
+                      value={camp.expectedDate} 
+                      onChange={e => {
+                        const updated = fees.campaigns?.map(c => c.id === camp.id ? { ...c, expectedDate: e.target.value } : c) || [];
+                        updateFee("campaigns", updated);
+                      }} 
+                      placeholder="Ví dụ: 30/06/2026"
+                    />
+                  </Field>
+                  <Field label="Trạng thái">
+                    <select 
+                      className={inputClass} 
+                      value={camp.status} 
+                      onChange={e => {
+                        const newStatus = e.target.value as "Chưa nhận" | "Đã nhận";
+                        const updated = fees.campaigns?.map(c => c.id === camp.id ? { 
+                          ...c, 
+                          status: newStatus,
+                          receivedDate: newStatus === "Đã nhận" ? new Date().toLocaleDateString("vi-VN") : c.receivedDate
+                        } : c) || [];
+                        updateFee("campaigns", updated);
+                      }}
+                    >
+                      <option value="Chưa nhận">Chưa nhận</option>
+                      <option value="Đã nhận">Đã nhận</option>
+                    </select>
+                  </Field>
+                  <Field label="Ngày đã nhận">
+                    <input 
+                      className={inputClass} 
+                      value={camp.receivedDate} 
+                      onChange={e => {
+                        const updated = fees.campaigns?.map(c => c.id === camp.id ? { ...c, receivedDate: e.target.value } : c) || [];
+                        updateFee("campaigns", updated);
+                      }} 
+                      placeholder="Ví dụ: 05/06/2026"
+                    />
+                  </Field>
+                  <div className="md:col-span-2">
+                    <Field label="Ghi chú">
+                      <input 
+                        className={inputClass} 
+                        value={camp.note} 
+                        onChange={e => {
+                          const updated = fees.campaigns?.map(c => c.id === camp.id ? { ...c, note: e.target.value } : c) || [];
+                          updateFee("campaigns", updated);
+                        }} 
+                        placeholder="Ví dụ: Đã gọi tổng đài xác nhận"
+                      />
+                    </Field>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center">
+                  {camp.status === "Chưa nhận" && (
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        const updated = fees.campaigns?.map(c => c.id === camp.id ? { 
+                          ...c, 
+                          status: "Đã nhận" as const,
+                          receivedDate: new Date().toLocaleDateString("vi-VN")
+                        } : c) || [];
+                        updateFee("campaigns", updated);
+                      }} 
+                      className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-600"
+                    >
+                      Đã nhận
+                    </button>
+                  )}
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      const updated = fees.campaigns?.filter(c => c.id !== camp.id) || [];
+                      updateFee("campaigns", updated);
+                    }} 
+                    className="w-fit rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-500"
+                  >
+                    Xóa ưu đãi
+                  </button>
+                </div>
+              </div>
+            )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] px-4 py-6 text-center text-sm text-slate-400">Chưa có ưu đãi mở thẻ.</p>}
+          </div>
+        </div>
       </div>
       {error && <p className="mt-4 text-sm text-rose-500">{error}</p>}
       <div className="mt-6 flex gap-3">
@@ -1899,12 +2096,25 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
     </div>
   );
 }
-export function BankAccountDetail({ account, memberName: owner, close, loading = false, inline = false }: { account: BankAccount; memberName: string; close: () => void; loading?: boolean; inline?: boolean }) {
+export function BankAccountDetail({ account, memberName: owner, close, loading = false, inline = false, edit, remove, onUpdateAccount }: { account: BankAccount; memberName: string; close: () => void; loading?: boolean; inline?: boolean; edit?: () => void; remove?: () => void; onUpdateAccount?: (acc: BankAccount) => void }) {
   const [showFull, setShowFull] = useState(false);
   const progress = bankProgress(account);
   const fees = parseFees(account.note || "", account.productName || "");
   const [openYear, setOpenYear] = useState(fees.openYear || "");
   const [checkYear, setCheckYear] = useState(fees.checkYear || String(new Date().getFullYear()));
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const clickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", clickOutside);
+    return () => document.removeEventListener("mousedown", clickOutside);
+  }, [menuOpen]);
 
   const content = (
     <>
@@ -1913,7 +2123,41 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
           <button type="button" onClick={close} className="text-sm font-semibold text-indigo-600">← Quay lại danh sách thẻ</button>
         </div>
       )}
-      <h2 className="text-lg font-bold">Chi tiết thẻ ngân hàng</h2>
+      <div className="flex items-center justify-between relative">
+        <h2 className="text-lg font-bold">Chi tiết thẻ ngân hàng</h2>
+        {(edit || remove) && (
+          <div ref={menuRef} className="relative">
+            <button 
+              type="button" 
+              onClick={() => setMenuOpen(!menuOpen)} 
+              className="grid size-9 place-items-center rounded-xl border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5 text-lg font-bold"
+              aria-label="Thao tác"
+            >
+              ⋮
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-10 z-30 w-36 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl">
+                {edit && (
+                  <button 
+                    onClick={() => { setMenuOpen(false); edit(); }} 
+                    className="block w-full rounded-lg px-3 py-2 text-left text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5"
+                  >
+                    Chỉnh sửa
+                  </button>
+                )}
+                {remove && (
+                  <button 
+                    onClick={() => { setMenuOpen(false); remove(); }} 
+                    className="block w-full rounded-lg px-3 py-2 text-left text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5 text-rose-500"
+                  >
+                    Xóa thẻ
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       <div className="mt-5 space-y-5">
         <section>
           <h3 className="font-semibold">Thông tin thẻ</h3>
@@ -2058,6 +2302,80 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
         <section>
           <h3 className="font-semibold">Giao dịch liên quan</h3>
           <p className="mt-3 rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-slate-400">Sẽ hiển thị khi form Thu chi liên kết nguồn thanh toán/thẻ.</p>
+        </section>
+
+        <section>
+          <h3 className="font-semibold text-indigo-600">Ưu đãi mở thẻ / ưu đãi theo đợt</h3>
+          <div className="mt-3 space-y-3">
+            {(fees.campaigns && fees.campaigns.length) ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                {fees.campaigns.map(camp => (
+                  <div key={camp.id} className="rounded-xl border border-[var(--app-border)] p-4 text-sm space-y-2 bg-[var(--app-card)] flex flex-col justify-between">
+                    <div>
+                      <div className="flex justify-between items-start gap-2">
+                        <b className="text-base text-slate-800 dark:text-slate-100">{camp.name || "Ưu đãi chưa đặt tên"}</b>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${camp.status === "Đã nhận" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-300" : "bg-orange-50 text-orange-600 dark:bg-orange-400/10 dark:text-orange-300"}`}>
+                          {camp.status}
+                        </span>
+                      </div>
+                      {camp.condition && <p className="mt-2 text-slate-500 text-xs"><b>Điều kiện:</b> {camp.condition}</p>}
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-400">
+                        <div>
+                          <p>Giá trị dự kiến</p>
+                          <b className="text-slate-600 dark:text-slate-300">{camp.expectedValue || "Chưa rõ"}</b>
+                        </div>
+                        <div>
+                          <p>Dự kiến nhận</p>
+                          <b className="text-slate-600 dark:text-slate-300">{camp.expectedDate || "Chưa rõ"}</b>
+                        </div>
+                      </div>
+                      {camp.status === "Đã nhận" && camp.receivedDate && (
+                        <p className="mt-2 text-xs text-emerald-600 font-semibold">Ngày nhận: {camp.receivedDate}</p>
+                      )}
+                      {camp.note && <p className="mt-2 text-xs italic text-slate-400">Ghi chú: {camp.note}</p>}
+                    </div>
+                    {camp.status === "Chưa nhận" && onUpdateAccount && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const updatedCampaigns = fees.campaigns?.map(c => c.id === camp.id ? {
+                            ...c,
+                            status: "Đã nhận" as const,
+                            receivedDate: new Date().toLocaleDateString("vi-VN")
+                          } : c) || [];
+                          const updatedFees = { ...fees, campaigns: updatedCampaigns };
+                          const updatedNote = serializeFees(updatedFees);
+                          const updatedForm = { ...account, note: updatedNote };
+                          
+                          // Save to DB immediately
+                          const response = await fetch(`/api/bank-accounts/${account.id}`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(updatedForm)
+                          });
+                          if (response.ok) {
+                            const result = await response.json();
+                            if (result?.data) {
+                              onUpdateAccount(result.data);
+                            }
+                          } else {
+                            alert("Không thể cập nhật trạng thái ưu đãi.");
+                          }
+                        }}
+                        className="mt-3 w-full rounded-lg bg-emerald-500 py-1.5 text-center text-xs font-bold text-white hover:bg-emerald-600 transition-colors"
+                      >
+                        Đã nhận
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-slate-400">
+                Chưa có ưu đãi mở thẻ.
+              </p>
+            )}
+          </div>
         </section>
       </div>
       
