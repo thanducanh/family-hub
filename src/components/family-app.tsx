@@ -1373,6 +1373,7 @@ function FinanceOverview() {
   const [data, setData] = useState<{ year: number; income: number; expense: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
+  const [showComparison, setShowComparison] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1386,8 +1387,19 @@ function FinanceOverview() {
 
   const year = Number(yearStr);
   const currentYearData = data.find(d => d.year === year) || { year, income: 0, expense: 0 };
+  const prevYearData = data.find(d => d.year === year - 1);
   const diff = currentYearData.income - currentYearData.expense;
   const maxVal = Math.max(1, ...data.map(d => Math.max(d.income, d.expense)));
+  const prevDiff = prevYearData ? prevYearData.income - prevYearData.expense : undefined;
+
+  function renderCompare(current: number, prev: number | undefined) {
+    if (!showComparison) return null;
+    if (prev === undefined) return <p className="mt-1 text-[10px] text-slate-400">Chưa có dữ liệu so sánh</p>;
+    const d = current - prev;
+    if (d === 0) return <p className="mt-1 text-[10px] text-slate-400">Không đổi so với năm trước</p>;
+    const percent = prev === 0 ? "100%" : (Math.abs(d) / Math.abs(prev) * 100).toFixed(1) + "%";
+    return <p className={`mt-1 text-[10px] font-bold ${d > 0 ? "text-emerald-500" : "text-rose-500"}`}>{d > 0 ? "↑" : "↓"} {money(Math.abs(d))} ({percent})</p>;
+  }
 
   return (
     <div className="space-y-5">
@@ -1395,14 +1407,15 @@ function FinanceOverview() {
         <select className={filterClass} value={yearStr} onChange={event => setYearStr(event.target.value)}>
           {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
         </select>
+        <button onClick={() => setShowComparison(!showComparison)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-500 dark:border-white/10 dark:text-slate-300">{showComparison ? "Ẩn so sánh" : "Hiện so sánh"}</button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Card><p className="text-xs text-slate-400">Tổng thu năm</p><b className="text-emerald-500">{money(currentYearData.income)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Tổng chi năm</p><b className="text-rose-500">{money(currentYearData.expense)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Chênh lệch</p><b className={diff >= 0 ? "text-indigo-500" : "text-rose-500"}>{money(diff)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b className="text-emerald-500">{money(currentYearData.income / 12)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b className="text-rose-500">{money(currentYearData.expense / 12)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Tổng thu năm</p><b className="text-emerald-500">{money(currentYearData.income)}</b>{renderCompare(currentYearData.income, prevYearData?.income)}</Card>
+        <Card><p className="text-xs text-slate-400">Tổng chi năm</p><b className="text-rose-500">{money(currentYearData.expense)}</b>{renderCompare(currentYearData.expense, prevYearData?.expense)}</Card>
+        <Card><p className="text-xs text-slate-400">Chênh lệch</p><b className={diff >= 0 ? "text-indigo-500" : "text-rose-500"}>{money(diff)}</b>{renderCompare(diff, prevDiff)}</Card>
+        <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b className="text-emerald-500">{money(currentYearData.income / 12)}</b>{renderCompare(currentYearData.income / 12, prevYearData ? prevYearData.income / 12 : undefined)}</Card>
+        <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b className="text-rose-500">{money(currentYearData.expense / 12)}</b>{renderCompare(currentYearData.expense / 12, prevYearData ? prevYearData.expense / 12 : undefined)}</Card>
       </div>
 
       <Card>
@@ -1410,10 +1423,10 @@ function FinanceOverview() {
           <b>So sánh Thu và Chi theo năm</b>
           {loading && <span className="text-xs text-slate-400">Đang tải...</span>}
         </div>
-        <div className="flex h-64 items-end gap-6 overflow-x-auto pb-2">
+        <div className="flex h-64 w-full items-end justify-between gap-2 overflow-x-auto pb-2 md:justify-center md:gap-6">
           {data.slice().sort((a,b) => a.year - b.year).map(item => (
-            <div key={item.year} className="flex min-w-20 flex-1 flex-col items-center gap-2">
-              <div className="flex h-48 w-full items-end justify-center gap-1">
+            <div key={item.year} className="flex min-w-[60px] max-w-[120px] flex-1 flex-col items-center gap-2">
+              <div className="flex h-[240px] w-full items-end justify-center gap-1">
                 <div className="w-1/2 rounded-t-md bg-emerald-500" style={{ height: `${Math.max(2, (item.income / maxVal) * 100)}%` }} title={`Thu: ${money(item.income)}`} />
                 <div className="w-1/2 rounded-t-md bg-rose-500" style={{ height: `${Math.max(2, (item.expense / maxVal) * 100)}%` }} title={`Chi: ${money(item.expense)}`} />
               </div>
@@ -1470,6 +1483,7 @@ function IncomeSheetManagement() {
   const [incomeData, setIncomeData] = useState<IncomeApiData | null>(null);
   const [view, setView] = useState<"list" | "new" | "edit" | "yearly-new" | "yearly-edit">("list");
   const [viewMode, setViewMode] = useState<"list" | "chart">("list");
+  const [showComparison, setShowComparison] = useState(true);
   const [editing, setEditing] = useState<IncomeRecord | null>(null);
   const [editingYearly, setEditingYearly] = useState<IncomeYearlySummaryRow | null>(null);
   const [activeTab, setActiveTab] = useState<"monthly" | "yearly">("monthly");
@@ -1515,6 +1529,19 @@ function IncomeSheetManagement() {
   
   const maxMonth = Math.max(1, ...monthlyTotals.map(item => item.total));
   const renderedMonths = Array.from(new Set(records.map(record => record.month))).sort((left, right) => left - right);
+  
+  const yearlyChartData = incomeData?.yearlyComparison || [];
+  const maxYearTotal = Math.max(1, ...yearlyChartData.map(d => d.total));
+  const prevYearTotal = yearlyChartData.find(d => d.year === Number(year) - 1)?.total;
+
+  function renderCompare(current: number, prev: number | undefined) {
+    if (!showComparison) return null;
+    if (prev === undefined) return <p className="mt-1 text-[10px] text-slate-400">Chưa có dữ liệu so sánh</p>;
+    const d = current - prev;
+    if (d === 0) return <p className="mt-1 text-[10px] text-slate-400">Không đổi so với năm trước</p>;
+    const percent = prev === 0 ? "100%" : (Math.abs(d) / Math.abs(prev) * 100).toFixed(1) + "%";
+    return <p className={`mt-1 text-[10px] font-bold ${d > 0 ? "text-emerald-500" : "text-rose-500"}`}>{d > 0 ? "↑" : "↓"} {money(Math.abs(d))} ({percent})</p>;
+  }
   
   async function remove(record: IncomeRecord) {
     if (!confirm(`Xóa dòng thu "${record.name}"?`)) return;
@@ -1586,25 +1613,23 @@ function IncomeSheetManagement() {
   if (view === "new" || view === "edit") return <IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
   if (view === "yearly-new" || view === "yearly-edit") return <YearlyIncomeForm record={editingYearly} back={() => { setView("list"); setEditingYearly(null); }} saved={() => { setView("list"); setEditingYearly(null); void load(); }} />;
   
-  const yearlyChartData = incomeData?.yearlyComparison || [];
-  const maxYearTotal = Math.max(1, ...yearlyChartData.map(d => d.total));
-  
   return <div className="space-y-5">
-    <div className="grid gap-3 md:grid-cols-[90px_100px_120px_1fr_auto_auto_auto]">
+    <div className="grid gap-3 md:grid-cols-[90px_100px_120px_1fr_auto_auto_auto_auto]">
       <select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select>
       <select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select>
       <select className={filterClass} value={categoryFilter} onChange={event => setCategoryFilter(event.target.value as IncomeCategory | "all")}><option value="all">Khoản thu</option>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select>
       <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm khoản thu..." />
+      <button onClick={() => setShowComparison(!showComparison)} className="rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold text-slate-500 dark:border-white/10 dark:text-slate-300">{showComparison ? "Ẩn so sánh" : "Hiện so sánh"}</button>
       <button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button>
       <button onClick={() => { setEditingYearly(null); setView("yearly-new"); }} className="rounded-xl bg-indigo-500 px-4 py-3 text-sm font-bold text-white">Nhập tổng năm cũ</button>
       <button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button>
     </div>
     
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Card><p className="text-xs text-slate-400">Tổng thu nhập năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card>
-      <Card><p className="text-xs text-slate-400">Tổng thu tháng</p><b>{money(visibleMonthTotal)}</b></Card>
-      <Card><p className="text-xs text-slate-400">Thu theo loại</p><b>{money(categoryTotals.find(item => item.category === categoryFilter)?.total || visibleMonthTotal)}</b></Card>
-      <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b>{money(totalYear / 12)}</b></Card>
+      <Card><p className="text-xs text-slate-400">Tổng thu nhập năm</p><b className="text-emerald-500">{money(totalYear)}</b>{renderCompare(totalYear, prevYearTotal)}</Card>
+      <Card><p className="text-xs text-slate-400">Tổng thu tháng</p><b>{money(visibleMonthTotal)}</b>{renderCompare(visibleMonthTotal, undefined)}</Card>
+      <Card><p className="text-xs text-slate-400">Thu theo loại</p><b>{money(categoryTotals.find(item => item.category === categoryFilter)?.total || visibleMonthTotal)}</b>{renderCompare(categoryTotals.find(item => item.category === categoryFilter)?.total || visibleMonthTotal, undefined)}</Card>
+      <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b>{money(totalYear / 12)}</b>{renderCompare(totalYear / 12, prevYearTotal ? prevYearTotal / 12 : undefined)}</Card>
     </div>
 
     <div className="flex gap-2 border-b border-[var(--app-border)] pb-2">
@@ -1616,18 +1641,18 @@ function IncomeSheetManagement() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <Card>
         <div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div>
-        <div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">
-          {monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2">
-            <div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div>
-            <span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span>
+        <div className="flex h-64 w-full items-end justify-between gap-1 overflow-x-auto pb-2 md:gap-2">
+          {monthlyTotals.map(item => <div key={item.month} className="flex min-w-[30px] max-w-[60px] flex-1 flex-col items-center gap-2">
+            <div className="flex h-[240px] w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div>
+            <span className="text-xs font-bold text-slate-400">{`T${item.month}`}</span>
           </div>)}
         </div>
       </Card>
       <Card>
         <div className="mb-4 flex items-center justify-between"><b>So sánh thu nhập theo năm</b></div>
-        <div className="flex h-56 items-end gap-4 overflow-x-auto pb-2">
-          {yearlyChartData.map(item => <div key={item.year} className="flex min-w-16 flex-1 flex-col items-center gap-2">
-            <div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-indigo-500" style={{ height: `${Math.max(4, item.total / maxYearTotal * 100)}%` }} /></div>
+        <div className="flex h-64 w-full items-end justify-between gap-2 overflow-x-auto pb-2 md:justify-center md:gap-6">
+          {yearlyChartData.map(item => <div key={item.year} className="flex min-w-[60px] max-w-[120px] flex-1 flex-col items-center gap-2">
+            <div className="flex h-[240px] w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-indigo-500" style={{ height: `${Math.max(4, item.total / maxYearTotal * 100)}%` }} /></div>
             <span className="text-xs font-bold text-slate-400">{item.year}</span>
           </div>)}
         </div>
@@ -2039,12 +2064,12 @@ function ExpensePreview({ data, open, t }: ListProps) {
     {viewMode === "chart" && (
       <Card>
         <div className="mb-4 flex items-center justify-between"><b>Tổng chi theo 12 tháng</b></div>
-        <div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">
-          {monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2">
-            <div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5">
+        <div className="flex h-64 w-full items-end justify-between gap-1 overflow-x-auto pb-2 md:gap-2">
+          {monthlyTotals.map(item => <div key={item.month} className="flex min-w-[30px] max-w-[60px] flex-1 flex-col items-center gap-2">
+            <div className="flex h-[240px] w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5">
               <div className="w-full rounded-md bg-rose-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} />
             </div>
-            <span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span>
+            <span className="text-xs font-bold text-slate-400">{`T${item.month}`}</span>
           </div>)}
         </div>
       </Card>
