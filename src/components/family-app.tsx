@@ -1767,9 +1767,11 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
 
   if (inline) {
     return (
-      <form onSubmit={submit} className="w-full space-y-6">
-        {formContent}
-      </form>
+      <Card className="p-6 w-full max-w-[1280px]">
+        <form onSubmit={submit} className="w-full space-y-6">
+          {formContent}
+        </form>
+      </Card>
     );
   }
 
@@ -1879,9 +1881,11 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
 
   if (inline) {
     return (
-      <div className="w-full space-y-6 animate-fade-in">
-        {content}
-      </div>
+      <Card className="p-6 w-full max-w-[1280px] animate-fade-in">
+        <div className="w-full space-y-6">
+          {content}
+        </div>
+      </Card>
     );
   }
 
