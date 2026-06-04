@@ -1383,6 +1383,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
   const [subView, setSubView] = useState<"list" | "detail" | "edit" | "new">("list");
   const [selectedCard, setSelectedCard] = useState<BankAccount | null>(null);
   const [rewardsLoading, setRewardsLoading] = useState(false);
+  const [detailCache, setDetailCache] = useState<Record<string, BankAccount>>({});
 
   const load = useCallback(async (force = false) => {
     if (!force && bankCardsByMemberCache.has(member.id)) {
@@ -1404,6 +1405,10 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
   const filtered = accounts;
 
   const fetchFullCardDetails = async (account: BankAccount) => {
+    if (detailCache[account.id]) {
+      setSelectedCard(detailCache[account.id]);
+      return;
+    }
     setRewardsLoading(true);
     try {
       const [accountRes, rewardsRes] = await Promise.all([
@@ -1418,6 +1423,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
           rewards: (rewardsRes.ok && rewardsJson.data) ? rewardsJson.data : []
         };
         setSelectedCard(fullCard);
+        setDetailCache(prev => ({ ...prev, [account.id]: fullCard }));
       }
     } catch (e) {
       console.error(e);
@@ -1451,6 +1457,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
       bankCardsByMemberCache.set(member.id, updated);
       return updated;
     });
+    setDetailCache(prev => ({ ...prev, [savedCard.id]: savedCard }));
     setSubView("list");
     setSelectedCard(null);
   };
@@ -1465,6 +1472,23 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
       bankCardsByMemberCache.set(member.id, next);
       return next;
     });
+    setDetailCache(prev => {
+      const copy = { ...prev };
+      delete copy[account.id];
+      return copy;
+    });
+  }
+
+  if (subView === "detail" && selectedCard) {
+    return (
+      <BankAccountDetail
+        account={selectedCard}
+        memberName={member.nickname || member.name}
+        close={() => { setSubView("list"); setSelectedCard(null); }}
+        loading={rewardsLoading}
+        inline={true}
+      />
+    );
   }
 
   if (["edit", "new"].includes(subView) && selectedCard) {
@@ -1491,22 +1515,12 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
           {canEdit && <button onClick={openCreate} className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm thẻ</button>}
         </div>
       </div>
-      <p className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-700 dark:bg-orange-400/10 dark:text-orange-200">Thông tin ngân hàng là dữ liệu nhạy cảm.</p>
       <div className="flex w-fit rounded-xl border border-[var(--app-border)] p-1">
         <button onClick={() => setView("list")} className={`rounded-lg px-4 py-2 text-sm font-semibold ${view === "list" ? "bg-[#EEF2FF] text-[#4F46E5]" : "text-slate-500"}`}>Danh sách</button>
         <button onClick={() => setView("card")} className={`rounded-lg px-4 py-2 text-sm font-semibold ${view === "card" ? "bg-[#EEF2FF] text-[#4F46E5]" : "text-slate-500"}`}>Dạng thẻ</button>
       </div>
       {error && <p className="text-sm text-rose-500">{error}</p>}
       {loading ? <BankCardsSkeleton view={view} /> : filtered.length ? view === "list" ? <BankAccountList accounts={filtered} detail={openDetail} edit={openEdit} remove={remove} canEdit={canEdit} /> : <BankCardGrid accounts={filtered} detail={openDetail} edit={openEdit} remove={remove} canEdit={canEdit} /> : <Card className="p-8 text-center"><p className="font-semibold">Thành viên này chưa có thẻ ngân hàng.</p>{canEdit && <button onClick={openCreate} className="mt-4 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm thẻ</button>}</Card>}
-
-      {subView === "detail" && selectedCard && (
-        <BankAccountDetail
-          account={selectedCard}
-          memberName={member.nickname || member.name}
-          close={() => { setSubView("list"); setSelectedCard(null); }}
-          loading={rewardsLoading}
-        />
-      )}
     </div>
   );
 }
@@ -1599,7 +1613,6 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
         </div>
       )}
       <h2 className="text-lg font-bold">{account.id ? "Sửa thẻ ngân hàng" : "Thêm thẻ ngân hàng"}</h2>
-      <p className="mt-2 rounded-xl bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-700 dark:bg-orange-400/10 dark:text-orange-200">Thông tin ngân hàng là dữ liệu nhạy cảm.</p>
       <div className="mt-5 space-y-6">
         <div>
           <h3 className="text-sm font-bold text-indigo-600">A. Thông tin cơ bản</h3>
@@ -1768,27 +1781,117 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
     </div>
   );
 }
-export function BankAccountDetail({ account, memberName: owner, close, loading = false }: { account: BankAccount; memberName: string; close: () => void; loading?: boolean }) {
+export function BankAccountDetail({ account, memberName: owner, close, loading = false, inline = false }: { account: BankAccount; memberName: string; close: () => void; loading?: boolean; inline?: boolean }) {
   const [showFull, setShowFull] = useState(false);
   const progress = bankProgress(account), feeStatus = annualFeeStatus(account);
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 md:items-center md:p-6" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-3xl md:rounded-3xl"><h2 className="text-lg font-bold">Chi tiết thẻ ngân hàng</h2><p className="mt-2 rounded-xl bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-700 dark:bg-orange-400/10 dark:text-orange-200">Thông tin ngân hàng là dữ liệu nhạy cảm.</p><div className="mt-5 space-y-5"><section><h3 className="font-semibold">Thông tin thẻ</h3><div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">{[["Ngân hàng", account.bankName], ["Sản phẩm", account.productName || "Chưa cập nhật"], ["Thành viên", owner], ["Chủ thẻ", account.accountHolder], ["Loại", account.cardType], ["Tổ chức thẻ", account.cardNetwork], ["Trạng thái", account.status], ["Hạn mức tín dụng", money(account.creditLimit)], ["Ngày sao kê", account.statementDay || "Không có"], ["Ngày đến hạn", account.dueDay || "Không có"], ["Số tài khoản", showFull ? account.accountNumber || "Không có" : maskLast(account.accountNumber)], ["Số thẻ", showFull ? account.cardNumber || "Không có" : maskCard(account.cardNumber)], ["Hết hạn", account.expiryMonth || account.expiryYear ? `${account.expiryMonth}/${account.expiryYear}` : "Không áp dụng"], ["Ghi chú", account.note || "Không có"]].map(([label, value]) => <div key={label}><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-medium">{value}</p></div>)}</div></section><section><h3 className="font-semibold">Phí thường niên</h3><div className="mt-3 rounded-xl border border-[var(--app-border)] p-4 text-sm"><p>Phí thường niên: <b>{account.annualFeeEnabled ? money(account.annualFeeAmount) : "Không có"}</b></p><p className="mt-2">Điều kiện miễn phí: <b>{account.annualFeeWaiverType}</b></p><p className="mt-2">{progress.label}</p>{feeStatus && <p className={`mt-3 rounded-lg px-3 py-2 font-semibold ${feeStatus.startsWith("Đã đủ") ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600"}`}>{feeStatus}</p>}</div></section><section><h3 className="font-semibold">Ưu đãi đang áp dụng</h3><div className="mt-3 grid gap-3 md:grid-cols-2">{account.benefits.length ? account.benefits.map(benefit => <div key={benefit.id} className="rounded-xl border border-[var(--app-border)] p-4 text-sm"><b>{benefit.name || benefit.category}</b><p className="mt-2 text-slate-500">{benefit.category} · {benefit.benefitType} · {benefit.benefitValue}{benefit.benefitType === "Hoàn tiền %" ? "%" : ""}</p><p className="mt-1 text-xs text-slate-400">Tối đa/tháng: {money(benefit.monthlyCap)} · Tối thiểu GD: {money(benefit.minTransactionAmount)}</p>{benefit.conditionNote && <p className="mt-2 text-xs text-slate-400">{benefit.conditionNote}</p>}</div>) : <p className="rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-slate-400">Chưa có ưu đãi.</p>}</div></section>
-      <section><h3 className="font-semibold">Hoàn tiền / điểm thưởng đã ghi nhận</h3>
-        <div className="mt-3 space-y-3">
-          {loading ? (
-            <div className="animate-pulse space-y-2">
-              <div className="h-4 bg-slate-100 dark:bg-white/10 rounded w-3/4"></div>
-              <div className="h-4 bg-slate-100 dark:bg-white/10 rounded w-1/2"></div>
-            </div>
-          ) : account.rewards?.length ? account.rewards.map(reward => (
-            <div key={reward.id} className="rounded-xl border border-[var(--app-border)] p-4 text-sm">
-              <b>{reward.title || reward.rewardType}</b>
-              <p className="mt-2 text-slate-500">{reward.rewardType} · {money(reward.amount)} · {reward.points ? `${reward.points} điểm` : "Không có điểm"}</p>
-              <p className="mt-1 text-xs text-slate-400">{reward.recordedAt || "Chưa có ngày"} · {reward.note || "Không có ghi chú"}</p>
-            </div>
-          )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-slate-400">Chưa có hoàn tiền/điểm thưởng ghi nhận.</p>}
+
+  const content = (
+    <>
+      {inline && (
+        <div className="mb-4">
+          <button type="button" onClick={close} className="text-sm font-semibold text-indigo-600">← Quay lại danh sách thẻ</button>
         </div>
-      </section>
-      <section><h3 className="font-semibold">Thống kê tháng này</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[["Tổng chi tiêu qua thẻ", money(0)], ["Đã hoàn tiền", money(0)], ["Đã tiết kiệm", money(0)], ["Còn thiếu để miễn phí", money(progress.missing)]].map(([label, value]) => <div key={label} className="rounded-xl border border-[var(--app-border)] p-4"><p className="text-xs text-slate-400">{label}</p><b className="mt-2 block">{value}</b></div>)}</div></section><section><h3 className="font-semibold">Giao dịch liên quan</h3><p className="mt-3 rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-slate-400">Sẽ hiển thị khi form Thu chi liên kết nguồn thanh toán/thẻ.</p></section></div><div className="mt-6 flex gap-3"><button onClick={() => setShowFull(current => !current)} className="flex-1 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">{showFull ? "Ẩn số đầy đủ" : "Hiện số đầy đủ"}</button><button onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Đóng</button></div></div></div>;
+      )}
+      <h2 className="text-lg font-bold">Chi tiết thẻ ngân hàng</h2>
+      <div className="mt-5 space-y-5">
+        <section>
+          <h3 className="font-semibold">Thông tin thẻ</h3>
+          <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
+            {[["Ngân hàng", account.bankName], ["Sản phẩm", account.productName || "Chưa cập nhật"], ["Thành viên", owner], ["Chủ thẻ", account.accountHolder], ["Loại", account.cardType], ["Tổ chức thẻ", account.cardNetwork], ["Trạng thái", account.status], ["Hạn mức tín dụng", money(account.creditLimit)], ["Ngày sao kê", account.statementDay || "Không có"], ["Ngày đến hạn", account.dueDay || "Không có"], ["Số tài khoản", showFull ? account.accountNumber || "Không có" : maskLast(account.accountNumber)], ["Số thẻ", showFull ? account.cardNumber || "Không có" : maskCard(account.cardNumber)], ["Hết hạn", account.expiryMonth || account.expiryYear ? `${account.expiryMonth}/${account.expiryYear}` : "Không áp dụng"], ["Ghi chú", account.note || "Không có"]].map(([label, value]) => (
+              <div key={label}>
+                <p className="text-xs text-slate-400">{label}</p>
+                <p className="mt-1 font-medium">{value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+        
+        <section>
+          <h3 className="font-semibold">Phí thường niên</h3>
+          <div className="mt-3 rounded-xl border border-[var(--app-border)] p-4 text-sm">
+            <p>Phí thường niên: <b>{account.annualFeeEnabled ? money(account.annualFeeAmount) : "Không có"}</b></p>
+            <p className="mt-2">Điều kiện miễn phí: <b>{account.annualFeeWaiverType}</b></p>
+            <p className="mt-2">{progress.label}</p>
+            {feeStatus && <p className={`mt-3 rounded-lg px-3 py-2 font-semibold ${feeStatus.startsWith("Đã đủ") ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600"}`}>{feeStatus}</p>}
+          </div>
+        </section>
+        
+        <section>
+          <h3 className="font-semibold">Ưu đãi đang áp dụng</h3>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {account.benefits.length ? account.benefits.map(benefit => (
+              <div key={benefit.id} className="rounded-xl border border-[var(--app-border)] p-4 text-sm">
+                <b>{benefit.name || benefit.category}</b>
+                <p className="mt-2 text-slate-500">{benefit.category} · {benefit.benefitType} · {benefit.benefitValue}{benefit.benefitType === "Hoàn tiền %" ? "%" : ""}</p>
+                <p className="mt-1 text-xs text-slate-400">Tối đa/tháng: {money(benefit.monthlyCap)} · Tối thiểu GD: {money(benefit.minTransactionAmount)}</p>
+                {benefit.conditionNote && <p className="mt-2 text-xs text-slate-400">{benefit.conditionNote}</p>}
+              </div>
+            )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-slate-400">Chưa có ưu đãi.</p>}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="font-semibold">Hoàn tiền / điểm thưởng đã ghi nhận</h3>
+          <div className="mt-3 space-y-3">
+            {loading ? (
+              <div className="animate-pulse space-y-2">
+                <div className="h-4 bg-slate-100 dark:bg-white/10 rounded w-3/4"></div>
+                <div className="h-4 bg-slate-100 dark:bg-white/10 rounded w-1/2"></div>
+              </div>
+            ) : account.rewards?.length ? account.rewards.map(reward => (
+              <div key={reward.id} className="rounded-xl border border-[var(--app-border)] p-4 text-sm">
+                <b>{reward.title || reward.rewardType}</b>
+                <p className="mt-2 text-slate-500">{reward.rewardType} · {money(reward.amount)} · {reward.points ? `${reward.points} điểm` : "Không có điểm"}</p>
+                <p className="mt-1 text-xs text-slate-400">{reward.recordedAt || "Chưa có ngày"} · {reward.note || "Không có ghi chú"}</p>
+              </div>
+            )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-slate-400">Chưa có hoàn tiền/điểm thưởng ghi nhận.</p>}
+          </div>
+        </section>
+        
+        <section>
+          <h3 className="font-semibold">Thống kê tháng này</h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[["Tổng chi tiêu qua thẻ", money(0)], ["Đã hoàn tiền", money(0)], ["Đã tiết kiệm", money(0)], ["Còn thiếu để miễn phí", money(progress.missing)]].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-[var(--app-border)] p-4">
+                <p className="text-xs text-slate-400">{label}</p>
+                <b className="mt-2 block">{value}</b>
+              </div>
+            ))}
+          </div>
+        </section>
+        
+        <section>
+          <h3 className="font-semibold">Giao dịch liên quan</h3>
+          <p className="mt-3 rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-slate-400">Sẽ hiển thị khi form Thu chi liên kết nguồn thanh toán/thẻ.</p>
+        </section>
+      </div>
+      
+      <div className="mt-6 flex gap-3">
+        <button onClick={() => setShowFull(current => !current)} className="flex-1 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">
+          {showFull ? "Ẩn số đầy đủ" : "Hiện số đầy đủ"}
+        </button>
+        <button onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">
+          Đóng
+        </button>
+      </div>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <div className="w-full space-y-6 animate-fade-in">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 md:items-center md:p-6" onMouseDown={close}>
+      <div onMouseDown={event => event.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-3xl md:rounded-3xl">
+        {content}
+      </div>
+    </div>
+  );
 }
 function EventRow({ event, edit }: { event: EventItem; edit?: () => void }) { return <Card className="mb-3 flex items-center gap-3"><Circle color={event.color}>{event.date.split("-").at(-1) ?? event.date}</Circle><div className="min-w-0 flex-1"><b>{event.title}</b><p className="text-xs text-slate-400">{event.date} · {event.time} · {event.type === "birthday" ? "Sinh nhật" : event.type === "medical" ? "Khám bệnh" : event.type === "school" ? "Học tập" : "Gia đình"}</p></div>{edit && <EditButton onClick={edit} />}</Card>; }
 function Calendar({ data, user }: { data: AppData; user: AuthUser }) { return <TimeTreeCalendar members={data.members} user={user} />; }
