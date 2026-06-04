@@ -879,6 +879,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
   const existing = member === "new" ? null : member;
   const [tab, setTab] = useState<MemberProfileTab>("profile");
   const [editing, setEditing] = useState(!existing || initialEdit);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [error, setError] = useState("");
   const [linkedUsers, setLinkedUsers] = useState<ManagedUser[]>([]);
   const [form, setForm] = useState<Member>(() => existing ?? { id: crypto.randomUUID(), name: "", nickname: "", birthday: "", gender: "", role: "Khác" as unknown as FamilyRole, phone: "", avatar: "", notes: "", color: "#cbd5e1" });
@@ -916,14 +917,65 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
     void fetch("/api/users").then(async response => { const result = await readJsonSafe<{ users?: ManagedUser[] }>(response); if (response.ok && result?.users) setLinkedUsers(result.users.filter(account => account.memberId === form.id)); });
   };
   const menu: [MemberProfileTab, string][] = [["profile", "Thông tin cá nhân"], ["account", "Tài khoản đăng nhập"], ["bank", "Thẻ ngân hàng"], ["bankRaw", "Nội dung gốc ngân hàng"], ["security", "Bảo mật"], ["tasks", "Công việc liên quan"], ["events", "Sự kiện liên quan"], ["notes", "Ghi chú"]];
-  return <div><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div>{!personal && <button onClick={close} className="text-sm font-semibold text-indigo-600">← Danh sách thành viên</button>}<h2 className={personal ? "text-2xl font-semibold" : "mt-3 text-2xl font-semibold"}>{personal ? "Hồ sơ cá nhân" : existing ? "Hồ sơ thành viên" : "Thêm thành viên"}</h2><p className="mt-1 text-sm text-slate-400">Family Hub / {personal ? "Hồ sơ cá nhân" : `Thành viên / ${existing ? form.nickname || form.name : "Thêm mới"}`}</p></div>{existing && canManage && !personal && <button onClick={() => remove(existing)} className="rounded-lg border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-500">Xóa thành viên</button>}</div>
+  return <div><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div>{!personal && <button onClick={close} className="text-sm font-semibold text-indigo-600">← Danh sách thành viên</button>}<h2 className={personal ? "text-2xl font-semibold" : "mt-3 text-2xl font-semibold"}>{personal ? "Hồ sơ cá nhân" : existing ? "Hồ sơ thành viên" : "Thêm thành viên"}</h2><p className="mt-1 text-sm text-slate-400">Family Hub / {personal ? "Hồ sơ cá nhân" : `Thành viên / ${existing ? form.nickname || form.name : "Thêm mới"}`}</p></div></div>
     <div className="grid gap-5 lg:grid-cols-[240px_1fr]"><Card className="h-fit p-3"><nav className="space-y-1">{menu.map(([value, label]) => <button key={value} onClick={() => setTab(value)} className={`w-full rounded-lg px-3 py-3 text-left text-sm font-semibold ${tab === value ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-400/15" : "text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5"}`}>{label}</button>)}</nav></Card>
       <div>{!detailsLoaded && ["account", "bank", "bankRaw", "notes"].includes(tab) ? (
         <Card className="p-6 text-center text-slate-400">Đang tải dữ liệu chi tiết...</Card>
       ) : (
         <>
-          {tab === "profile" && <form onSubmit={submit} className="space-y-5"><Card className="flex flex-col gap-5 p-6 sm:flex-row sm:items-center"><AvatarEditor member={form} editable={editing} onChange={avatar => set("avatar", avatar)} /><div className="min-w-0 flex-1"><h3 className="text-xl font-semibold">{form.nickname || form.name || "Thành viên mới"}</h3>{ageAtToday(form.birthday) !== null && <p className="mt-1 text-sm text-slate-400">{ageAtToday(form.birthday)} tuổi</p>}</div>{!editing && <button type="button" onClick={() => setEditing(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Chỉnh sửa</button>}</Card>
-            <Card className="p-6"><h3 className="font-semibold">Thông tin cá nhân</h3>{editing ? <div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Họ tên"><input required disabled={!canManage} className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Nickname"><input className={inputClass} value={form.nickname} onChange={event => set("nickname", event.target.value)} /></Field><Field label="Vai vế gia đình"><select disabled={!canManage} className={inputClass} value={form.role} onChange={event => set("role", event.target.value as FamilyRole)}>{familyRoles.map(role => <option key={role}>{role}</option>)}</select></Field><BirthdaySelect disabled={!canManage} value={form.birthday} onChange={value => set("birthday", value)} /><Field label="Tuổi hiện tại"><input disabled className={inputClass} value={ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa đủ ngày sinh"} readOnly /></Field><Field label="Giới tính"><select disabled={!canManage} className={inputClass} value={form.gender} onChange={event => set("gender", event.target.value as Member["gender"])}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Số điện thoại"><input className={inputClass} value={form.phone} onChange={event => set("phone", event.target.value)} /></Field><div className="md:col-span-2"><Field label="Ghi chú cá nhân"><textarea rows={4} className={inputClass} value={form.notes} onChange={event => set("notes", event.target.value)} /></Field></div><div className="flex flex-wrap gap-3 md:col-span-2"><button type="button" onClick={cancel} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Lưu thay đổi</button></div></div> : <div className="mt-5 grid gap-5 text-sm sm:grid-cols-2">{[["Họ tên", form.name], ["Nickname", form.nickname || "Chưa cập nhật"], ["Ngày sinh", formatBirthday(form.birthday)], ["Tuổi hiện tại", ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa cập nhật"], ["Giới tính", form.gender === "male" ? "Nam" : form.gender === "female" ? "Nữ" : form.gender === "other" ? "Khác" : "Chưa cập nhật"], ["Số điện thoại", form.phone || "Chưa cập nhật"], ["Ghi chú", form.notes || "Chưa có ghi chú."]].map(([label, value]) => <div key={label}><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-medium">{value}</p></div>)}</div>}{error && <p className="mt-4 text-sm text-rose-500">{error}</p>}</Card></form>}
+          {tab === "profile" && <form onSubmit={submit} className="space-y-5">
+            <Card className="flex flex-col gap-5 p-6 sm:flex-row sm:items-center relative">
+              <AvatarEditor member={form} editable={editing} onChange={avatar => set("avatar", avatar)} />
+              <div className="min-w-0 flex-1">
+                <h3 className="text-xl font-semibold">{form.nickname || form.name || "Thành viên mới"}</h3>
+                {ageAtToday(form.birthday) !== null && <p className="mt-1 text-sm text-slate-400">{ageAtToday(form.birthday)} tuổi</p>}
+              </div>
+              <div className="flex items-center gap-2 ml-auto">
+                {editing ? (
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={cancel} className="rounded-lg border border-[var(--app-border)] px-3 py-2 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-white/5">Hủy</button>
+                    <button type="submit" className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700">Lưu thay đổi</button>
+                  </div>
+                ) : (
+                  existing && !personal && (
+                    <div className="relative">
+                      <button type="button" onClick={() => setProfileMenuOpen(!profileMenuOpen)} className="grid size-9 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5" aria-label="Thao tác hồ sơ">⋮</button>
+                      
+                      {/* Mobile Dropdown Bottom Sheet */}
+                      {profileMenuOpen && (
+                        <div className="fixed inset-0 z-50 flex items-end bg-black/45 sm:hidden" onClick={() => setProfileMenuOpen(false)}>
+                          <div className="w-full rounded-t-3xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onClick={e => e.stopPropagation()}>
+                            <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-slate-300" />
+                            <div className="space-y-1.5">
+                              <button type="button" onClick={() => { setEditing(false); setProfileMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Xem hồ sơ</button>
+                              <button type="button" onClick={() => { setEditing(true); setProfileMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Chỉnh sửa</button>
+                              {canManage && (
+                                <button type="button" onClick={() => { remove(existing); setProfileMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa thành viên</button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* PC Dropdown Menu */}
+                      {profileMenuOpen && (
+                        <div className="hidden sm:block">
+                          <div className="fixed inset-0 z-10" onClick={() => setProfileMenuOpen(false)} />
+                          <div className="absolute right-0 top-10 z-20 w-36 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl">
+                            <button type="button" onClick={() => { setEditing(false); setProfileMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Xem hồ sơ</button>
+                            <button type="button" onClick={() => { setEditing(true); setProfileMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Chỉnh sửa</button>
+                            {canManage && (
+                              <button type="button" onClick={() => { remove(existing); setProfileMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa thành viên</button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            </Card>
+            <Card className="p-6"><h3 className="font-semibold">Thông tin cá nhân</h3>{editing ? <div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Họ tên"><input required disabled={!canManage} className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Nickname"><input className={inputClass} value={form.nickname} onChange={event => set("nickname", event.target.value)} /></Field><Field label="Vai vế gia đình"><select disabled={!canManage} className={inputClass} value={form.role} onChange={event => set("role", event.target.value as FamilyRole)}>{familyRoles.map(role => <option key={role}>{role}</option>)}</select></Field><BirthdaySelect disabled={!canManage} value={form.birthday} onChange={value => set("birthday", value)} /><Field label="Tuổi hiện tại"><input disabled className={inputClass} value={ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa đủ ngày sinh"} readOnly /></Field><Field label="Giới tính"><select disabled={!canManage} className={inputClass} value={form.gender} onChange={event => set("gender", event.target.value as Member["gender"])}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Số điện thoại"><input className={inputClass} value={form.phone} onChange={event => set("phone", event.target.value)} /></Field><div className="md:col-span-2"><Field label="Ghi chú cá nhân"><textarea rows={4} className={inputClass} value={form.notes} onChange={event => set("notes", event.target.value)} /></Field></div></div> : <div className="mt-5 grid gap-5 text-sm sm:grid-cols-2">{[["Họ tên", form.name], ["Nickname", form.nickname || "Chưa cập nhật"], ["Ngày sinh", formatBirthday(form.birthday)], ["Tuổi hiện tại", ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa cập nhật"], ["Giới tính", form.gender === "male" ? "Nam" : form.gender === "female" ? "Nữ" : form.gender === "other" ? "Khác" : "Chưa cập nhật"], ["Số điện thoại", form.phone || "Chưa cập nhật"], ["Ghi chú", form.notes || "Chưa có ghi chú."]].map(([label, value]) => <div key={label}><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-medium">{value}</p></div>)}</div>}{error && <p className="mt-4 text-sm text-rose-500">{error}</p>}</Card></form>}
           {tab === "tasks" && <Card><h3 className="mb-4 font-semibold">Công việc liên quan</h3>{tasks.length ? tasks.map(task => <TaskRow key={task.id} task={task} />) : <EmptyState />}</Card>}
           {tab === "events" && <Card><h3 className="mb-4 font-semibold">Sự kiện liên quan</h3>{events.length ? events.map(event => <EventRow key={event.id} event={event} />) : <EmptyState />}</Card>}
           {tab === "notes" && <Card><h3 className="mb-4 font-semibold">Ghi chú</h3>{notes.length ? notes.map(note => <div key={note.id} className="border-b border-[var(--app-border)] py-3 last:border-0"><b>{note.title}</b><p className="mt-1 text-sm text-slate-500">{note.content}</p></div>) : <EmptyState />}</Card>}
