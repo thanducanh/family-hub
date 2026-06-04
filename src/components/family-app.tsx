@@ -6,7 +6,7 @@ import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
-import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, FamilyRole, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, Language, Member, Note, Task, Theme, Transaction } from "@/types";
+import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, FamilyRole, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, Language, Member, Note, Task, Theme, Transaction } from "@/types";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
 type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
@@ -1352,15 +1352,84 @@ function Tasks({ data, update, open, t }: TaskProps) {
 }
 function Finance({ data, open, t }: ListProps) {
   const [tab, setTab] = useState<"income" | "expense">("income");
-  return <><div className="mb-4 inline-flex rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1 text-sm font-bold"><button onClick={() => setTab("income")} className={`rounded-lg px-4 py-2 ${tab === "income" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Thu nhập</button><button onClick={() => setTab("expense")} className={`rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button></div>{tab === "income" ? <IncomeManagement /> : <ExpensePreview data={data} open={open} t={t} />}</>;
+  return <><div className="mb-4 inline-flex rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1 text-sm font-bold"><button onClick={() => setTab("income")} className={`rounded-lg px-4 py-2 ${tab === "income" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Thu nhập</button><button onClick={() => setTab("expense")} className={`rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button></div>{tab === "income" ? <IncomeSheetManagement /> : <ExpensePreview data={data} open={open} t={t} />}</>;
 }
 type IncomeApiData = {
   members: { id: string; name: string }[];
   sources: IncomeSource[];
+  sourceTemplates?: string[];
+  records?: IncomeRecord[];
   allRecords: IncomeRecord[];
+  stats?: { byCategory?: Record<string, number> };
 };
+const incomeCategories: IncomeCategory[] = ["Lương", "Thưởng", "Tồn tháng trước", "Bán đồ", "Khác"];
+const incomeStatuses: IncomeStatus[] = ["Đã nhận", "Chưa nhận"];
+const incomeTemplates = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền tồn tháng trước", "Khác"];
 const incomeTypeLabel: Record<IncomeSourceType, string> = { fixed: "Cố định", variable: "Không cố định" };
 const frequencyLabel: Record<IncomeFrequency, string> = { monthly: "Hàng tháng", weekly: "Hàng tuần", yearly: "Hàng năm", one_time: "Một lần", custom: "Tùy chỉnh" };
+type IncomeDraft = { id?: string; incomeDate: string; memberId: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string };
+function IncomeSheetManagement() {
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [monthFilter, setMonthFilter] = useState("all");
+  const [memberFilter, setMemberFilter] = useState("all");
+  const [incomeData, setIncomeData] = useState<IncomeApiData | null>(null);
+  const [view, setView] = useState<"list" | "new" | "edit">("list");
+  const [editing, setEditing] = useState<IncomeRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
+    const result = await readJsonSafe<{ data?: IncomeApiData; error?: string }>(response);
+    if (response.ok && result?.data) setIncomeData(result.data);
+    else alert(result?.error || "Không thể tải dữ liệu thu nhập.");
+    setLoading(false);
+  }, [year]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  const records = (incomeData?.allRecords || []).filter(record => (monthFilter === "all" || record.month === Number(monthFilter)) && (memberFilter === "all" || record.memberId === memberFilter));
+  const monthlyTotals = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, total: (incomeData?.allRecords || []).filter(record => record.month === index + 1 && record.status === "Đã nhận").reduce((sum, record) => sum + record.amount, 0) }));
+  const categoryTotals = incomeCategories.map(category => ({ category, total: records.filter(record => record.category === category && record.status === "Đã nhận").reduce((sum, record) => sum + record.amount, 0) }));
+  const totalYear = monthlyTotals.reduce((sum, item) => sum + item.total, 0);
+  const maxMonth = Math.max(1, ...monthlyTotals.map(item => item.total));
+  async function remove(record: IncomeRecord) {
+    if (!confirm(`Xóa dòng thu "${record.name}"?`)) return;
+    const response = await fetch(`/api/incomes?id=${encodeURIComponent(record.id)}`, { method: "DELETE" });
+    if (!response.ok) alert("Không thể xóa dòng thu nhập.");
+    void load();
+  }
+  function exportExcel() {
+    const byMonth = Array.from({ length: 12 }, (_, index) => (incomeData?.allRecords || []).filter(record => record.month === index + 1));
+    const rows = [`<tr><th colspan="8">Thu nhập năm ${year}</th></tr>`, `<tr><th>Ngày nhận</th><th>Tháng</th><th>Năm</th><th>Thành viên</th><th>Nhóm thu</th><th>Tên khoản thu</th><th>Số tiền</th><th>Trạng thái</th><th>Ghi chú</th></tr>`];
+    byMonth.forEach((items, index) => {
+      rows.push(`<tr><td colspan="9"><b>Tháng ${index + 1}</b></td></tr>`);
+      items.forEach(record => rows.push(`<tr><td>${record.incomeDate}</td><td>${record.month}</td><td>${record.year}</td><td>${record.memberName || ""}</td><td>${record.category}</td><td>${record.name}</td><td>${record.amount}</td><td>${record.status}</td><td>${record.note || ""}</td></tr>`));
+      rows.push(`<tr><td colspan="6"><b>Tổng tháng ${index + 1}</b></td><td><b>${items.filter(record => record.status === "Đã nhận").reduce((sum, record) => sum + record.amount, 0)}</b></td><td colspan="2"></td></tr>`);
+    });
+    rows.push(`<tr><td colspan="6"><b>Tổng năm</b></td><td><b>${totalYear}</b></td><td colspan="2"></td></tr>`);
+    categoryTotals.forEach(item => rows.push(`<tr><td colspan="6">Tổng ${item.category}</td><td>${item.total}</td><td colspan="2"></td></tr>`));
+    const blob = new Blob([`<html><meta charset="utf-8"><table>${rows.join("")}</table></html>`], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `thu-nhap-${year}.xls`; link.click();
+    URL.revokeObjectURL(url);
+  }
+  if (view !== "list") return <IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
+  return <div className="space-y-5"><div className="grid gap-3 md:grid-cols-[120px_140px_1fr_auto_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select><select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Tất cả thành viên</option>{incomeData?.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select><button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button><button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Tổng cả năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card>{categoryTotals.slice(0, 3).map(item => <Card key={item.category}><p className="text-xs text-slate-400">{item.category}</p><b>{money(item.total)}</b></Card>)}</div><Card><div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div><div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">{monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2"><div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div><span className="text-xs font-bold text-slate-400">T{item.month}</span></div>)}</div></Card><Card className="overflow-hidden p-0"><div className="border-b border-[var(--app-border)] p-4"><b>Bảng thu nhập theo tháng</b></div><div className="hidden overflow-x-auto md:block"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5"><tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Thành viên</th><th className="px-4 py-3">Nhóm thu</th><th className="px-4 py-3">Tên khoản thu</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr></thead><tbody>{Array.from({ length: 12 }, (_, index) => index + 1).filter(month => monthFilter === "all" || month === Number(monthFilter)).map(month => { const items = records.filter(record => record.month === month); const subtotal = items.filter(record => record.status === "Đã nhận").reduce((sum, record) => sum + record.amount, 0); return <><tr key={`m-${month}`} className="bg-emerald-50/70 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10"><td className="px-4 py-2" colSpan={5}>Tháng {month}</td><td className="px-4 py-2 text-right">{money(subtotal)}</td><td className="px-4 py-2" colSpan={3}>Tổng tháng</td></tr>{items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]"><td className="px-4 py-3">{record.incomeDate}</td><td className="px-4 py-3">{record.month}</td><td className="px-4 py-3">{record.memberName}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3">{record.name}</td><td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3">{record.status}</td><td className="px-4 py-3 text-slate-500">{record.note}</td><td className="px-4 py-3 text-right"><button onClick={() => { setEditing(record); setView("edit"); }} className="rounded-lg px-2 py-1 text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="rounded-lg px-2 py-1 text-xs font-bold text-rose-500">Xóa</button></td></tr>)}</>; })}</tbody></table></div><div className="space-y-3 p-3 md:hidden">{records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.name}</b><p className="text-xs text-slate-400">{record.incomeDate} · {record.memberName} · {record.category}</p></div><b className="text-emerald-500">{money(record.amount)}</b></div><p className="mt-1 text-xs text-slate-400">{record.status} · {record.note}</p><div className="mt-2 flex gap-2"><button onClick={() => { setEditing(record); setView("edit"); }} className="text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="text-xs font-bold text-rose-500">Xóa</button></div></div>)}</div></Card></div>;
+}
+function IncomeRecordForm({ record, members, templates, back, saved }: { record: IncomeRecord | null; members: { id: string; name: string }[]; templates: string[]; back: () => void; saved: () => void }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const emptyRow = (): IncomeDraft => ({ incomeDate: today, memberId: members[0]?.id || "", category: "Lương", name: "Lương CB", amount: "", status: "Đã nhận", note: "" });
+  const [rows, setRows] = useState<IncomeDraft[]>(() => record ? [{ id: record.id, incomeDate: record.incomeDate, memberId: record.memberId, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note }] : [emptyRow()]);
+  function patch(index: number, value: Partial<IncomeDraft>) { setRows(current => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...value } : row)); }
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const payload = rows.map(row => ({ ...row, amount: Number(row.amount) }));
+    const response = await fetch(record ? `/api/incomes?id=${encodeURIComponent(record.id)}` : "/api/incomes", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record ? payload[0] : { rows: payload }) });
+    const result = await readJsonSafe<{ error?: string }>(response);
+    if (!response.ok) { alert(result?.error || "Không thể lưu thu nhập."); return; }
+    saved();
+  }
+  return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button><div><h2 className="text-2xl font-bold">{record ? "Sửa dòng thu nhập" : "Thêm thu nhập"}</h2><p className="mt-1 text-sm text-slate-400">Mỗi dòng là một khoản thu thực tế, không bắt buộc chọn nguồn thu cố định.</p></div><form onSubmit={submit} className="space-y-4">{rows.map((row, index) => <Card key={index}><div className="mb-3 flex items-center justify-between"><b>Dòng {index + 1}</b>{!record && rows.length > 1 && <button type="button" onClick={() => setRows(current => current.filter((_, rowIndex) => rowIndex !== index))} className="text-xs font-bold text-rose-500">Xóa dòng</button>}</div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Field label="Ngày nhận"><input required type="date" className={inputClass} value={row.incomeDate} onChange={event => patch(index, { incomeDate: event.target.value })} /></Field><Field label="Thành viên"><select required className={inputClass} value={row.memberId} onChange={event => patch(index, { memberId: event.target.value })}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Nhóm thu"><select className={inputClass} value={row.category} onChange={event => patch(index, { category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field><Field label="Tên khoản thu"><input required list="income-template-list" className={inputClass} value={row.name} onChange={event => patch(index, { name: event.target.value })} /></Field><Field label="Số tiền"><input required min="0" type="number" className={inputClass} value={row.amount} onChange={event => patch(index, { amount: event.target.value })} /></Field><Field label="Trạng thái"><select className={inputClass} value={row.status} onChange={event => patch(index, { status: event.target.value as IncomeStatus })}>{incomeStatuses.map(status => <option key={status} value={status}>{status}</option>)}</select></Field><div className="md:col-span-2"><Field label="Ghi chú"><input className={inputClass} value={row.note} onChange={event => patch(index, { note: event.target.value })} /></Field></div></div></Card>)}<datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist>{!record && <button type="button" onClick={() => setRows(current => [...current, emptyRow()])} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Thêm dòng</button>}<div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
+}
 function IncomeManagement() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [memberFilter, setMemberFilter] = useState("all");
@@ -1506,6 +1575,7 @@ function IncomeSourceEditor({ source, members, close, saved }: { source: IncomeS
   }
   return <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 p-0 md:items-center md:p-6" onMouseDown={close}><form onSubmit={submit} onMouseDown={event => event.stopPropagation()} className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-lg md:rounded-3xl"><div className="mx-auto mb-4 h-1 w-12 rounded-full bg-slate-300 md:hidden" /><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">{existing ? "Sửa" : "Thêm"} nguồn thu</h2><button type="button" onClick={close} className="rounded-full px-3 py-1 text-xl text-slate-400">×</button></div><div className="space-y-4"><Field label="Thành viên"><select required className={inputClass} value={form.memberId} onChange={event => set("memberId", event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Tên nguồn thu"><input required className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Loại"><select className={inputClass} value={form.type} onChange={event => set("type", event.target.value as IncomeSourceType)}><option value="fixed">Cố định</option><option value="variable">Không cố định</option></select></Field><Field label="Số tiền"><input required min="0" type="number" className={inputClass} value={form.amount} onChange={event => set("amount", event.target.value)} /></Field><Field label="Tần suất"><select className={inputClass} value={form.frequency} onChange={event => set("frequency", event.target.value as IncomeFrequency)}>{Object.entries(frequencyLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label="Ngày nhận / ngày bắt đầu"><input required type="date" className={inputClass} value={form.receivedDate} onChange={event => set("receivedDate", event.target.value)} /></Field><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={event => set("active", event.target.checked)} /> Đang dùng</label>{!existing && form.type === "variable" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.createRecord} onChange={event => set("createRecord", event.target.checked)} /> Ghi nhận khoản thu này ngay</label>}</div><div className="mt-6 flex gap-3"><button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold">Hủy</button><button className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
 }
+void IncomeManagement;
 void OldIncomeManagement;
 function ExpensePreview({ data, open, t }: ListProps) {
   const [month, setMonth] = useState("all");
