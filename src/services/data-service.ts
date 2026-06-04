@@ -151,7 +151,20 @@ export class ApiDataService implements DataService {
     if (responses.some(response => !response.ok)) throw new Error("Database API unavailable");
     const values = await Promise.all(responses.map(response => response.json()));
     const extractedValues = values.map(val => (val && typeof val === "object" && val.ok !== undefined && val.data !== undefined) ? val.data : val);
-    return normalizeData(Object.fromEntries(collections.map((collection, index) => [collection, extractedValues[index]])) as unknown as AppData);
+    const data = Object.fromEntries(collections.map((collection, index) => [collection, extractedValues[index]])) as unknown as AppData;
+    
+    if (this.current?.members) {
+      data.members = data.members.map(newM => {
+        const existingM = this.current!.members.find(m => m.id === newM.id);
+        return {
+          ...newM,
+          avatar: (existingM && existingM.avatar && !newM.avatar) ? existingM.avatar : newM.avatar,
+          avatarPreview: newM.avatarPreview || (existingM && existingM.avatarPreview) || ""
+        };
+      });
+    }
+
+    return normalizeData(data);
   }
   private async writeNas(data: AppData, includeDeletes: boolean) {
     const writableCollections = collections.filter(collection => collection !== "events");

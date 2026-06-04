@@ -1093,8 +1093,18 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
     void fetch("/api/members").then(async response => {
       const json = await response.json();
       const parsedMembers = (Array.isArray(json) ? json : (json.data ?? [])) as Member[];
-      cachedMembers = parsedMembers;
-      setLocalMembers(parsedMembers);
+      setLocalMembers(current => {
+        const merged = parsedMembers.map(newM => {
+          const existingM = current.find(m => m.id === newM.id);
+          return {
+            ...newM,
+            avatar: (existingM && existingM.avatar && !newM.avatar) ? existingM.avatar : newM.avatar,
+            avatarPreview: newM.avatarPreview || (existingM && existingM.avatarPreview) || ""
+          };
+        });
+        cachedMembers = merged;
+        return merged;
+      });
     });
   }, []);
 
@@ -1161,10 +1171,11 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
       const result = await readJsonSafe<{ ok?: boolean; data?: Member }>(response);
       if (response.ok && result?.data) {
         setForm(current => ({ ...current, ...result.data }));
+        saved(result.data);
       }
       setDetailsLoaded(true);
     });
-  }, [existing]);
+  }, [existing?.id]);
   const set = <K extends keyof Member>(key: K, value: Member[K]) => setForm(current => ({ ...current, [key]: value }));
   function cancel() { if (!existing) return close(); setForm(existing); setEditing(false); setError(""); }
   async function submit(event: React.FormEvent) {

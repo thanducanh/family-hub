@@ -19,8 +19,9 @@ function isValidBirthday(value: unknown) {
 export function memberResponse(row: Record<string, unknown>) {
   return toMemberProfile(row);
 }
-function values(item: Record<string, unknown>) {
-  return [item.id, item.name, item.nickname || "", toDate(item.birthday), item.gender || "", item.role, item.phone || "", item.avatar || "", item.notes || "", item.color || "#fb7185"];
+function values(item: Record<string, unknown>, fallbackAvatar = "") {
+  const avatar = (item.avatar !== undefined && item.avatar !== null) ? String(item.avatar) : fallbackAvatar;
+  return [item.id, item.name, item.nickname || "", toDate(item.birthday), item.gender || "", item.role, item.phone || "", avatar, item.notes || "", item.color || "#fb7185"];
 }
 async function linkedMemberId(userId: string) {
   return (await pool.query("SELECT member_id FROM users WHERE id = $1", [userId])).rows[0]?.member_id as string | null | undefined;
@@ -95,16 +96,22 @@ export async function PUT(request: NextRequest) {
     const item = await request.json() as Record<string, unknown>;
     const normalized: Record<string, unknown> = { ...item, role: item.familyRole || item.role, birthday: item.birthDate || item.birthday, notes: item.note || item.notes };
     if (!normalized.id) return NextResponse.json({ ok: false, error: "Thiếu id." }, { status: 400 });
+    
+    // Fetch current avatar from DB to keep it if new payload does not contain it.
+    const currentRes = await pool.query("SELECT avatar FROM members WHERE id = $1 AND deleted_at IS NULL", [normalized.id]);
+    const currentAvatar = currentRes.rows[0]?.avatar || "";
+
     if (actor.role === "self_only") {
       const memberId = await linkedMemberId(actor.id);
       if (!memberId || memberId !== normalized.id) return NextResponse.json({ ok: false, error: "Không có quyền sửa thành viên này." }, { status: 403 });
-      const updates = editableByMember.map((field, index) => `${field} = $${index + 2}`).join(", ");
-      const result = await pool.query(`UPDATE members SET ${updates} WHERE id = $1 RETURNING ${fields}`, [normalized.id, ...editableByMember.map(field => normalized[field] || "")]);
+      
+      const avatar = (normalized.avatar !== undefined && normalized.avatar !== null) ? String(normalized.avatar) : currentAvatar;
+      const result = await pool.query(`UPDATE members SET nickname=$2, phone=$3, avatar=$4, notes=$5 WHERE id = $1 RETURNING ${fields}`, [normalized.id, normalized.nickname || "", normalized.phone || "", avatar, normalized.notes || ""]);
       const member = result.rows[0] && memberResponse(result.rows[0]);
       return member ? NextResponse.json({ ok: true, data: member, member }) : NextResponse.json({ ok: false, error: "Không tìm thấy thành viên." }, { status: 404 });
     }
     if (!normalized.name || !normalized.role || (normalized.birthday && !isValidBirthday(normalized.birthday))) return NextResponse.json({ ok: false, error: "Họ tên, vai vế và ngày sinh phải hợp lệ." }, { status: 400 });
-    const result = await pool.query(`UPDATE members SET name=$2,nickname=$3,birthday=$4,gender=$5,role=$6,phone=$7,avatar=$8,notes=$9,color=$10 WHERE id=$1 RETURNING ${fields}`, values(normalized));
+    const result = await pool.query(`UPDATE members SET name=$2,nickname=$3,birthday=$4,gender=$5,role=$6,phone=$7,avatar=$8,notes=$9,color=$10 WHERE id=$1 RETURNING ${fields}`, values(normalized, currentAvatar));
     const member = result.rows[0] && memberResponse(result.rows[0]);
     return member ? NextResponse.json({ ok: true, data: member, member }) : NextResponse.json({ ok: false, error: "Không tìm thấy thành viên." }, { status: 404 });
   } catch (error) {

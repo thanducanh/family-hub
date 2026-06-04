@@ -74,3 +74,19 @@ button { cursor: pointer; }
 .calendar-event-row small { margin-left: auto; flex: none; color: #94a3b8; font-size: 11px; }
 .calendar-event-all-day { background: color-mix(in srgb, var(--event-color) 14%, transparent); }
 .calendar-event-all-day:hover { background: color-mix(in srgb, var(--event-color) 20%, transparent); }
+
+/* Hide default browser eye icon for password inputs */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input::-ms-reveal,
+input::-ms-clear {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+input::-webkit-contacts-auto-fill-button,
+input::-webkit-credentials-auto-fill-button {
+  visibility: hidden;
+  display: none !important;
+  pointer-events: none;
+}
