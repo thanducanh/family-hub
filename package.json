@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node database/run-migrations.mjs && node database/seed-admin.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "seed:admin": "node database/seed-admin.mjs",

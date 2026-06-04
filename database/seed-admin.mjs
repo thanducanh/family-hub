@@ -21,6 +21,19 @@ try {
      RETURNING username, role, active, is_system, must_change_password`,
     [passwordHash],
   );
+  const linkResult = await pool.query(
+    `UPDATE users
+     SET member_id = m.id, updated_at = CURRENT_TIMESTAMP
+     FROM members m
+     WHERE users.username = 'admin'
+       AND m.name = 'Thân Đức Anh'
+       AND users.member_id IS NULL
+     RETURNING users.username, users.member_id`
+  );
+  if (linkResult.rowCount > 0) {
+    console.log(`Admin account linked to member: ${linkResult.rows[0].member_id}`);
+  }
+
   console.table(result.rows);
   console.log("Admin mặc định đã sẵn sàng. Hãy đăng nhập bằng admin / admin123 và đổi mật khẩu ngay.");
 } finally {
