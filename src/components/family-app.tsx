@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { TimeTreeCalendar } from "@/components/timetree-calendar";
-import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
+import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
 import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, FamilyRole, Language, Member, Note, Task, Theme, Transaction } from "@/types";
 
-type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings";
+type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
 type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
 type EntityItem = Member | Task | Transaction | EventItem | Note;
 type Editor = { kind: EntityKind; item?: EntityItem } | null;
@@ -17,9 +17,9 @@ export interface AuthUser { id: string; username: string; displayName: string; a
 type ManagedUser = AuthUser & { email: string; active: boolean; isSystem: boolean; createdAt: string; updatedAt: string };
 type ProfileUser = ManagedUser & { member?: Member };
 type PasswordResetRequest = { id: string; userId: string; usernameOrEmail: string; status: string; requestedAt: string; username: string; displayName: string; role: UserRole };
-const icons: Record<Screen | "plus" | "check", React.ReactNode> = { dashboard: <HomeIcon />, members: <UsersIcon />, tasks: <CheckListIcon />, finance: <WalletIcon />, chat: <ChatIcon />, calendar: <CalendarIcon />, notes: <NotesIcon />, settings: <SettingsIcon />, plus: "+", check: "✓" };
+const icons: Record<Screen | "plus" | "check", React.ReactNode> = { dashboard: <HomeIcon />, members: <UsersIcon />, tasks: <CheckListIcon />, finance: <WalletIcon />, chat: <ChatIcon />, calendar: <CalendarIcon />, notes: <NotesIcon />, settings: <SettingsIcon />, notifications: <BellIcon />, plus: "+", check: "✓" };
 const money = (value: number) => new Intl.NumberFormat("vi-VN").format(Number.isFinite(value) ? value : 0) + " ₫";
-const titleKey: Record<Screen, Parameters<ReturnType<typeof translator>>[0]> = { dashboard: "dashboard", members: "members", tasks: "tasks", finance: "finance", chat: "chat", calendar: "calendar", notes: "notes", settings: "settings" };
+const titleKey: Record<Screen, Parameters<ReturnType<typeof translator>>[0]> = { dashboard: "dashboard", members: "members", tasks: "tasks", finance: "finance", chat: "chat", calendar: "calendar", notes: "notes", settings: "settings", notifications: "notifications" };
 const familyRoles = ["Tôi","Bố","Mẹ","Con","Ông nội","Bà nội","Ông ngoại","Bà ngoại","Anh","Chị","Em","Khác"] as unknown as FamilyRole[];
 const accessLabel = (role: UserRole) => role === "full_access" ? "Toàn quyền" : "Chỉ xem chính mình";
 const bankCardsByMemberCache = new Map<string, BankAccount[]>();
@@ -138,7 +138,6 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [editor, setEditor] = useState<Editor>(null);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState<CalendarNotification[]>([]);
   const [profilePageOpen, setProfilePageOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -228,16 +227,17 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
 
   const currentMember = data.members.find(member => member.id === user.memberId) || user.member;
   const content = children ? <>{children}</> : profilePageOpen ? <ProfilePage user={user} member={currentMember} data={data} update={update} openChangePassword={() => setChangePasswordOpen(true)} logout={logout} savedUser={setUser} /> :
-    screen === "dashboard" ? <Dashboard data={data} go={go} /> :
+    screen === "dashboard" ? <Dashboard data={data} go={go} notifications={notifications} user={user} /> :
     screen === "members" ? <Members data={data} user={user} update={update} /> :
     screen === "tasks" ? <Tasks data={data} update={update} open={setEditor} t={t} /> :
     screen === "finance" ? <Finance data={data} open={setEditor} t={t} /> :
     screen === "chat" ? <ComingSoonModule title={t("chat")} /> :
     screen === "calendar" ? <Calendar data={data} user={user} /> :
     screen === "notes" ? <Notes data={data} open={setEditor} t={t} /> :
+    screen === "notifications" ? <NotificationsView user={user} notifications={notifications} setNotifications={setNotifications} /> :
     <Settings user={user} onLogout={logout} openProfile={() => setProfilePageOpen(true)} openChangePassword={() => setChangePasswordOpen(true)} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} updateData={setData} t={t} />;
 
-  return <main className={`min-h-screen bg-[var(--app-background)] pb-24 text-[var(--app-foreground)] transition-[padding-left] duration-300 md:pb-0 ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
+  return <main className={`min-h-screen bg-[var(--app-background)] pb-[90px] text-[var(--app-foreground)] transition-[padding-left] duration-300 md:pb-0 ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
     <header className="sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-4 py-3 backdrop-blur md:px-6">
       <div className={`mx-auto flex items-center gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-7xl"}`}>
@@ -245,20 +245,11 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
         <div className="min-w-0 flex-1 md:hidden"><p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Family Hub</p><h1 className="truncate text-lg font-bold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1></div>
         <div className="relative ml-auto flex items-center gap-2">
           <button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="grid size-11 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5"><ThemeIcon dark={theme === "dark"} /></button>
-          <button aria-label="Thông báo" aria-expanded={notificationMenuOpen} onClick={() => setNotificationMenuOpen(open => !open)} className="relative grid size-11 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5"><BellIcon />{notifications.some(item => isCalendarNotificationUnread(item, user)) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => isCalendarNotificationUnread(item, user)).length}</span>}</button>
+          <button aria-label="Thông báo" onClick={() => go("notifications")} className="relative grid size-11 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5"><BellIcon />{notifications.some(item => isCalendarNotificationUnread(item, user)) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => isCalendarNotificationUnread(item, user)).length}</span>}</button>
           <button aria-label="Mở menu tài khoản" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(open => !open)} className="flex items-center gap-2 rounded-lg p-1 text-left hover:bg-slate-50 dark:hover:bg-white/5">
             <span className="grid size-10 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm"><AccountAvatar user={user} /></span><span className="hidden max-w-32 truncate text-sm font-semibold sm:block">{user.displayName}</span><ChevronDownIcon />
           </button>
           {accountMenuOpen && <AccountMenu user={user} openProfile={() => { setAccountMenuOpen(false); setProfilePageOpen(true); }} openSettings={() => { setAccountMenuOpen(false); setProfilePageOpen(false); setScreen("settings"); }} openChangePassword={() => { setAccountMenuOpen(false); setChangePasswordOpen(true); }} logout={logout} />}
-          {notificationMenuOpen && <NotificationMenu user={user} notifications={notifications} read={() => { markCalendarNotificationsRead(user); setNotifications(loadVisibleCalendarNotifications(user)); setNotificationMenuOpen(false); }} open={async item => {
-            if (!item.targetId && !item.eventId) return;
-            const response = await fetch("/api/events", { cache: "no-store" });
-            const result = await readJsonSafe<{ data?: unknown[] }>(response);
-            const event = (result?.data || []).find(value => typeof value === "object" && value && "id" in value && value.id === (item.targetId || item.eventId));
-            if (!event) { alert("Sự kiện này đã bị xóa."); return; }
-            setNotificationMenuOpen(false); setScreen("calendar"); setSidebarCollapsed(true);
-            setTimeout(() => window.dispatchEvent(new CustomEvent("family-hub:open-calendar-event", { detail: { event } })), 0);
-          }} />}
         </div>
       </div>
     </header>
@@ -288,10 +279,6 @@ function AccountMenu({ user, openProfile, openSettings, openChangePassword, logo
     </div>
     <button onClick={logout} className={`${menuClass} mt-3 text-rose-500`}><LogoutIcon /> Đăng xuất</button>
   </div>;
-}
-function NotificationMenu({ user, notifications, read, open }: { user: AuthUser; notifications: CalendarNotification[]; read: () => void; open: (item: CalendarNotification) => void | Promise<void> }) {
-  const content = <><div className="flex items-center justify-between"><b className="text-sm">Thông báo</b><button onClick={read} className="text-xs font-semibold text-indigo-600">Đánh dấu đã đọc</button></div><div className="mt-3 max-h-80 space-y-1 overflow-y-auto">{notifications.length ? notifications.map(item => { const unread = isCalendarNotificationUnread(item, user), clickable = item.targetType === "event" || item.eventId; return <button type="button" key={item.id} onClick={() => clickable && void open(item)} className={`flex w-full gap-2 rounded-lg px-3 py-2 text-left text-xs ${unread ? "bg-orange-50 text-slate-700 dark:bg-orange-400/10 dark:text-slate-100" : "text-slate-500"} ${clickable ? "hover:bg-indigo-50 dark:hover:bg-white/5" : ""}`}><span className="grid size-8 shrink-0 overflow-hidden rounded-full bg-indigo-100 text-[11px] font-bold text-indigo-600">{item.actorAvatar ? <Image unoptimized width={32} height={32} src={item.actorAvatar} alt={item.actorName || "Người thao tác"} className="size-8 object-cover" /> : (item.actorName || "FH").slice(0, 1).toUpperCase()}</span><span className="min-w-0 flex-1"><b className="block font-semibold">{item.message}</b>{item.items?.length ? <span className="mt-2 block space-y-1">{item.items.map((entry, index) => <span key={`${item.id}:${index}`} className="flex gap-2 text-slate-500 dark:text-slate-300"><span className="w-12 shrink-0 font-semibold">{entry.time || "All-day"}</span><span className="min-w-0 truncate">{entry.title}</span></span>)}</span> : null}<small className="mt-2 block text-slate-400">{new Date(item.createdAt).toLocaleString("vi-VN")} · {unread ? "Chưa đọc" : "Đã đọc"}</small></span>{unread && <i className="mt-2 size-2 shrink-0 rounded-full bg-orange-500" />}</button>; }) : <p className="px-2 py-4 text-center text-xs text-slate-400">Chưa có thông báo.</p>}</div></>;
-  return <><div className="absolute right-0 top-14 z-50 hidden w-80 rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-3 shadow-xl sm:block">{content}</div><div className="fixed inset-0 z-50 flex items-end bg-black/45 sm:hidden"><div className="w-full rounded-t-3xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl"><div className="mx-auto mb-3 h-1 w-12 rounded-full bg-slate-300" />{content}</div></div></>;
 }
 
 function ProfilePage({ user, member, data, update, openChangePassword, logout, savedUser }: { user: AuthUser; member?: Member; data: AppData; update: (data: AppData) => void; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void }) {
@@ -540,14 +527,14 @@ function LoadingSkeleton() {
 }
 
 function Nav({ screen, go, t }: { screen: Screen; go: (s: Screen) => void; t: ReturnType<typeof translator> }) {
-  const items: Screen[] = ["dashboard", "members", "calendar", "finance", "notes"];
+  const items: Screen[] = ["dashboard", "members", "calendar", "finance", "notifications"];
   return <nav className="fixed bottom-0 left-0 z-20 flex w-full justify-around border-t border-[var(--app-border)] bg-[var(--app-nav)] px-2 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 backdrop-blur md:hidden">
     {items.map(item => <button key={item} onClick={() => go(item)} className={`min-w-14 rounded-xl px-1 py-1 text-center ${screen === item ? "text-rose-500" : "text-slate-400"}`}><span className="block text-xl">{icons[item]}</span><span className="text-[10px] font-bold">{t(titleKey[item])}</span></button>)}
   </nav>;
 }
 
 function Sidebar({ screen, go, t, collapsed, toggle }: { screen: Screen; go: (s: Screen) => void; t: ReturnType<typeof translator>; collapsed: boolean; toggle: () => void }) {
-  const items: Screen[] = ["dashboard", "members", "calendar", "finance", "chat", "notes", "settings"];
+  const items: Screen[] = ["dashboard", "members", "calendar", "finance", "chat", "notes", "notifications", "settings"];
   return <aside className={`fixed inset-y-0 left-0 hidden border-r border-[var(--app-border)] bg-[var(--app-sidebar)] py-5 transition-[width] duration-300 md:flex md:flex-col ${collapsed ? "w-[64px] px-2" : "w-[220px] px-4"}`}>
     <div className={`flex min-h-12 items-center ${collapsed ? "justify-center" : "justify-between gap-3 px-2"}`}>
       {!collapsed && <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[.2em] text-indigo-500">Family Hub</p><p className="truncate pt-1 text-xl font-bold">My Family</p></div>}
@@ -588,7 +575,7 @@ function AddButton({ onClick, label }: { onClick: () => void; label: string }) {
 }
 const filterClass = "w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] px-3 py-3 text-sm outline-none focus:border-rose-400";
 
-function Dashboard({ data, go }: { data: AppData; go: (s: Screen) => void }) {
+function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: Screen) => void; notifications: CalendarNotification[]; user: AuthUser }) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const isThisMonth = (date: string) => {
@@ -622,9 +609,57 @@ function Dashboard({ data, go }: { data: AppData; go: (s: Screen) => void }) {
   const categoryTotals = Object.entries(data.transactions.filter(item => item.type === "expense").reduce<Record<string, number>>((result, item) => ({ ...result, [item.category || "Khác"]: (result[item.category || "Khác"] ?? 0) + (Number.isFinite(item.amount) ? item.amount : 0) }), {})).sort((left, right) => right[1] - left[1]);
   const doneCount = data.tasks.filter(item => item.status === "done").length;
   const completion = data.tasks.length ? Math.round(doneCount / data.tasks.length * 100) : 0;
+
+  const unreadCount = notifications.filter(item => isCalendarNotificationUnread(item, user)).length;
+
   return <div className="grid grid-cols-12 gap-4 md:gap-6">
+    <div className="col-span-12 md:hidden">
+      <Card className="p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold text-slate-800 dark:text-white">Thông báo</span>
+          {unreadCount > 0 && (
+            <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-bold text-white">
+              {unreadCount} tin chưa đọc
+            </span>
+          )}
+        </div>
+        <button onClick={() => go("notifications")} className="text-xs font-semibold text-indigo-600">
+          Xem tất cả
+        </button>
+      </Card>
+    </div>
+
     <div className="col-span-12 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{metrics.map(([label, value, color, hint]) => <MetricCard key={label} label={label} value={value} color={color} hint={hint} />)}</div>
-    <div className="col-span-12 xl:col-span-8"><MonthlyChart data={monthly} /></div><div className="col-span-12 xl:col-span-4"><CompletionChart value={completion} done={doneCount} total={data.tasks.length} /></div>
+    <div className="col-span-12 xl:col-span-8"><MonthlyChart data={monthly} /></div>
+    <div className="col-span-12 xl:col-span-4 flex flex-col gap-4">
+      <CompletionChart value={completion} done={doneCount} total={data.tasks.length} />
+      <div className="hidden md:block">
+        <Card className="p-5 flex-1">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-semibold text-sm">Thông báo</h2>
+            <button onClick={() => go("notifications")} className="text-xs font-semibold text-indigo-600">Xem tất cả</button>
+          </div>
+          <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
+            {notifications.length ? (
+              notifications.slice(0, 3).map(item => {
+                const unread = isCalendarNotificationUnread(item, user);
+                return (
+                  <div key={item.id} className={`p-2.5 rounded-xl border border-[var(--app-border)] text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${unread ? "bg-orange-50/40 dark:bg-orange-400/5 font-semibold" : ""}`} onClick={() => go("notifications")}>
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="text-[10px] text-slate-400">{item.actorName || "Family Hub"}</span>
+                      <span className="text-[9px] text-slate-400">{new Date(item.createdAt).toLocaleDateString("vi-VN")}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 line-clamp-1">{item.message}</p>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-center py-4 text-xs text-slate-400">Chưa có thông báo</div>
+            )}
+          </div>
+        </Card>
+      </div>
+    </div>
     <div className="col-span-12 xl:col-span-5"><CategoryChart data={categoryTotals} /></div><QuickList title="Việc hôm nay" action={() => go("tasks")} className="col-span-12 xl:col-span-7">{todayTasks.length ? todayTasks.slice(0, 4).map(task => <TaskRow key={task.id} task={task} />) : <EmptyState />}</QuickList>
     <QuickList title="Việc quá hạn" action={() => go("tasks")} className="col-span-12 xl:col-span-6">{overdueTasks.length ? overdueTasks.slice(0, 4).map(task => <TaskRow key={task.id} task={task} />) : <EmptyState />}</QuickList>
     <QuickList title="Sự kiện sắp tới" action={() => go("calendar")} className="col-span-12 xl:col-span-6">{upcomingEvents.length ? upcomingEvents.slice(0, 4).map(event => <EventRow key={event.id} event={event} />) : <EmptyState />}</QuickList>
@@ -644,6 +679,140 @@ function CategoryChart({ data }: { data: [string, number][] }) {
   const colors = ["bg-rose-400", "bg-orange-400", "bg-violet-400", "bg-sky-400", "bg-emerald-400"];
   return <Card className="p-5"><b>Chi tiêu theo danh mục</b>{total ? <><div className="mt-4 flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">{data.map(([label, value], index) => <span key={label} className={`h-full ${colors[index % colors.length]}`} style={{ width: `${value / total * 100}%` }} />)}</div><div className="mt-4 space-y-3">{data.slice(0, 5).map(([label, value], index) => <div key={label} className="flex justify-between text-xs"><span><i className={`mr-2 inline-block size-2 rounded-full ${colors[index % colors.length]}`} />{label}</span><b>{money(value)}</b></div>)}</div></> : <div className="mt-5"><EmptyState /></div>}</Card>; }
 function CompletionChart({ value, done, total }: { value: number; done: number; total: number }) { return <Card className="p-5"><div className="flex items-center justify-between"><b>Tỷ lệ hoàn thành công việc</b><b className="text-emerald-500">{value}%</b></div><div className="mt-8 grid place-items-center"><div className="grid size-36 place-items-center rounded-full bg-emerald-50 text-3xl font-bold text-emerald-500 ring-8 ring-emerald-100 dark:bg-emerald-400/10 dark:ring-emerald-400/20">{value}%</div></div><p className="mt-8 text-center text-xs text-slate-400">{total ? `${done}/${total} công việc đã hoàn thành` : "Chưa có dữ liệu công việc"}</p></Card>; }
+function NotificationsView({ user, notifications, setNotifications }: { user: AuthUser; notifications: CalendarNotification[]; setNotifications: React.Dispatch<React.SetStateAction<CalendarNotification[]>> }) {
+  const [selected, setSelected] = useState<CalendarNotification | null>(null);
+
+  const handleMarkRead = (item: CalendarNotification) => {
+    markNotificationRead(item.id, user);
+    setNotifications(loadVisibleCalendarNotifications(user));
+    if (selected && selected.id === item.id) {
+      setSelected(prev => prev ? { ...prev, read: true, readUserIds: [...(prev.readUserIds || []), user.id] } : null);
+    }
+  };
+
+  const handleMarkAllRead = () => {
+    markCalendarNotificationsRead(user);
+    setNotifications(loadVisibleCalendarNotifications(user));
+  };
+
+  return (
+    <div className="grid grid-cols-12 gap-4 md:gap-6">
+      {/* Mobile Detail Overlay */}
+      {selected && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/45 md:hidden">
+          <div className="w-full max-h-[85vh] overflow-y-auto rounded-t-3xl border border-[var(--app-border)] bg-[var(--app-card)] p-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl">
+            <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-slate-300" />
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <button onClick={() => setSelected(null)} className="text-sm font-semibold text-indigo-600 flex items-center gap-1">
+                  ← Quay lại
+                </button>
+                <span className="text-xs font-bold text-slate-400">Chi tiết thông báo</span>
+              </div>
+              <div className="border-t border-[var(--app-border)] pt-4 space-y-3">
+                <h3 className="font-bold text-base text-slate-800 dark:text-white">{selected.title || "Thông báo"}</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{selected.message}</p>
+                <div className="text-xs space-y-1.5 text-slate-400 bg-slate-50 dark:bg-white/5 p-3 rounded-xl">
+                  <p><b>Người tạo:</b> {selected.actorName || "Family Hub"}</p>
+                  <p><b>Thời gian tạo:</b> {new Date(selected.createdAt).toLocaleString("vi-VN")}</p>
+                  <p><b>Trạng thái:</b> {isCalendarNotificationUnread(selected, user) ? "Chưa đọc" : "Đã đọc"}</p>
+                </div>
+                {isCalendarNotificationUnread(selected, user) && (
+                  <button
+                    onClick={() => handleMarkRead(selected)}
+                    className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                  >
+                    Đánh dấu đã đọc
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PC Detail Panel */}
+      {selected && (
+        <div className="hidden md:block md:col-span-4 xl:col-span-4">
+          <Card className="p-5 space-y-4 sticky top-24">
+            <div className="flex justify-between items-center">
+              <button onClick={() => setSelected(null)} className="text-xs font-semibold text-indigo-600 flex items-center gap-1 hover:underline">
+                ← Đóng chi tiết
+              </button>
+              <span className="text-xs font-bold text-slate-400">Chi tiết</span>
+            </div>
+            <div className="border-t border-[var(--app-border)] pt-4 space-y-3">
+              <h3 className="font-bold text-base text-slate-800 dark:text-white leading-snug">{selected.title || "Thông báo"}</h3>
+              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{selected.message}</p>
+              <div className="text-xs space-y-1.5 text-slate-400 bg-slate-50 dark:bg-white/5 p-3 rounded-xl">
+                <p><b>Người tạo:</b> {selected.actorName || "Family Hub"}</p>
+                <p><b>Thời gian tạo:</b> {new Date(selected.createdAt).toLocaleString("vi-VN")}</p>
+                <p><b>Trạng thái:</b> {isCalendarNotificationUnread(selected, user) ? "Chưa đọc" : "Đã đọc"}</p>
+              </div>
+              {isCalendarNotificationUnread(selected, user) && (
+                <button
+                  onClick={() => handleMarkRead(selected)}
+                  className="w-full rounded-xl bg-indigo-600 py-2.5 text-xs font-semibold text-white transition hover:bg-indigo-700"
+                >
+                  Đánh dấu đã đọc
+                </button>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Notifications List - 1 column layout */}
+      <div className={`col-span-12 ${selected ? "md:col-span-8 xl:col-span-8" : ""}`}>
+        <Card className="p-4 md:p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-semibold text-sm md:text-base">Tất cả thông báo</h2>
+            <button onClick={handleMarkAllRead} className="text-xs font-semibold text-indigo-600 hover:underline">
+              Đánh dấu tất cả đã đọc
+            </button>
+          </div>
+          <div className="space-y-2">
+            {notifications.length ? (
+              notifications.map(item => {
+                const unread = isCalendarNotificationUnread(item, user);
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => setSelected(item)}
+                    className={`p-3 md:p-4 rounded-xl border border-[var(--app-border)] cursor-pointer transition hover:bg-slate-50 dark:hover:bg-white/5 flex flex-col gap-1.5 ${
+                      unread ? "bg-orange-50/30 dark:bg-orange-400/5 ring-1 ring-orange-200/50 dark:ring-orange-500/10" : ""
+                    } ${selected?.id === item.id ? "ring-2 ring-indigo-500 bg-slate-50/50 dark:bg-white/5" : ""}`}
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <h4 className={`text-xs md:text-sm text-slate-800 dark:text-white truncate ${unread ? "font-bold" : "font-semibold"}`}>
+                        {item.title || "Thông báo"}
+                      </h4>
+                      <span className="text-[9px] md:text-[10px] text-slate-400 shrink-0">
+                        {new Date(item.createdAt).toLocaleDateString("vi-VN")}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                      {item.message}
+                    </p>
+                    <div className="flex items-center justify-between text-[10px] md:text-[11px] text-slate-400 border-t border-[var(--app-border)] pt-2 mt-1">
+                      <span>Người tạo: {item.actorName || "Family Hub"}</span>
+                      <span className={unread ? "text-orange-500 font-bold" : "text-slate-400"}>
+                        {unread ? "Chưa đọc" : "Đã đọc"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-center py-10 text-xs md:text-sm text-slate-400">Chưa có thông báo</div>
+            )}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 let cachedMembers: Member[] | null = null;
 
 function Members({ data, user, update }: { data: AppData; user: AuthUser; update: (data: AppData) => void }) {

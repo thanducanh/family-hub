@@ -87,8 +87,9 @@ export function addCalendarNotification(input: CalendarNotificationInput) {
   const visibleMemberIds = unique(input.visibleMemberIds || []);
   const movedSuffix = input.action === "moved" && input.movedToDate ? ` sang ${new Date(`${input.movedToDate}T00:00:00`).toLocaleDateString("vi-VN")}` : "";
   const message = `${input.actor.name} ${verbs[input.action]} sự kiện ${input.title}${movedSuffix}`;
+  const noticeId = crypto.randomUUID();
   const next = [{
-    id: crypto.randomUUID(),
+    id: noticeId,
     type: types[input.action],
     eventId: input.eventId,
     action: input.action,
@@ -121,6 +122,19 @@ export function addCalendarNotification(input: CalendarNotificationInput) {
   }, ...loadCalendarNotifications()].slice(0, 100);
   localStorage.setItem(key, JSON.stringify(next));
   window.dispatchEvent(new CustomEvent(notificationEvent));
+
+  // Sync to database
+  fetch("/api/notifications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: noticeId,
+      title: message,
+      message,
+      createdByName: input.actor.name,
+      visibleUserIds
+    })
+  }).catch(console.error);
 }
 export function addDailyEventNotification(userId: string, date: string, count: number, items: CalendarNotificationItem[]) {
   if (typeof window === "undefined" || count < 1) return;
@@ -128,15 +142,45 @@ export function addDailyEventNotification(userId: string, date: string, count: n
   if (localStorage.getItem(noticeKey)) return;
   localStorage.setItem(noticeKey, "true");
   const title = `Bạn có ${count} sự kiện hôm nay. Chúc một ngày tốt lành!`;
-  const next = [{ id: crypto.randomUUID(), type: "daily_events" as const, title, message: title, items, userId, visibleUserIds: [userId], visible_user_ids: [userId], readUserIds: [], read_user_ids: [], createdAt: new Date().toISOString(), read: false }, ...loadCalendarNotifications()].slice(0, 100);
+  const noticeId = crypto.randomUUID();
+  const next = [{ id: noticeId, type: "daily_events" as const, title, message: title, items, userId, visibleUserIds: [userId], visible_user_ids: [userId], readUserIds: [], read_user_ids: [], createdAt: new Date().toISOString(), read: false }, ...loadCalendarNotifications()].slice(0, 100);
   localStorage.setItem(key, JSON.stringify(next));
   window.dispatchEvent(new CustomEvent(notificationEvent));
+
+  // Sync to database
+  fetch("/api/notifications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: noticeId,
+      title,
+      message: title,
+      createdByName: "Family Hub",
+      userId,
+      visibleUserIds: [userId]
+    })
+  }).catch(console.error);
 }
 export function addAccountPasswordNotification(userId: string, message: string, actor?: { id: string; name: string; avatar?: string }) {
   if (typeof window === "undefined") return;
-  const next = [{ id: crypto.randomUUID(), type: "account_password_changed" as const, title: message, message, userId, actorUserId: actor?.id, actor_user_id: actor?.id, actorName: actor?.name, actor_name: actor?.name, actorAvatar: actor?.avatar || "", actor_avatar: actor?.avatar || "", visibleUserIds: [userId], visible_user_ids: [userId], readUserIds: [], read_user_ids: [], createdAt: new Date().toISOString(), read: false }, ...loadCalendarNotifications()].slice(0, 100);
+  const noticeId = crypto.randomUUID();
+  const next = [{ id: noticeId, type: "account_password_changed" as const, title: message, message, userId, actorUserId: actor?.id, actor_user_id: actor?.id, actorName: actor?.name, actor_name: actor?.name, actorAvatar: actor?.avatar || "", actor_avatar: actor?.avatar || "", visibleUserIds: [userId], visible_user_ids: [userId], readUserIds: [], read_user_ids: [], createdAt: new Date().toISOString(), read: false }, ...loadCalendarNotifications()].slice(0, 100);
   localStorage.setItem(key, JSON.stringify(next));
   window.dispatchEvent(new CustomEvent(notificationEvent));
+
+  // Sync to database
+  fetch("/api/notifications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: noticeId,
+      title: message,
+      message,
+      createdByName: actor?.name || "Family Hub",
+      userId,
+      visibleUserIds: [userId]
+    })
+  }).catch(console.error);
 }
 export function markCalendarNotificationsRead(user?: CalendarNotificationUser) {
   const next = loadCalendarNotifications().map(item => {
@@ -147,4 +191,30 @@ export function markCalendarNotificationsRead(user?: CalendarNotificationUser) {
   });
   localStorage.setItem(key, JSON.stringify(next));
   window.dispatchEvent(new CustomEvent(notificationEvent));
+
+  // Sync to database
+  fetch("/api/notifications", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({})
+  }).catch(console.error);
 }
+
+export function markNotificationRead(id: string, user?: CalendarNotificationUser) {
+  const next = loadCalendarNotifications().map(item => {
+    if (item.id !== id) return item;
+    if (!user) return { ...item, read: true };
+    const readUserIds = unique([...readIds(item), user.id]);
+    return { ...item, readUserIds, read_user_ids: readUserIds, read: true };
+  });
+  localStorage.setItem(key, JSON.stringify(next));
+  window.dispatchEvent(new CustomEvent(notificationEvent));
+
+  // Sync to database
+  fetch("/api/notifications", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id })
+  }).catch(console.error);
+}
+
