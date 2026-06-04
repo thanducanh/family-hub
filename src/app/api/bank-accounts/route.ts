@@ -8,6 +8,17 @@ export async function GET(request: NextRequest) {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ ok: false, error: "Chưa đăng nhập." }, { status: 401 });
     await ensureBankAccountsTable();
+    
+    const id = request.nextUrl.searchParams.get("id");
+    if (id) {
+      const result = await pool.query(`SELECT ${bankAccountFields} FROM bank_accounts WHERE id = $1 LIMIT 1`, [id]);
+      const row = result.rows[0];
+      if (!row) return NextResponse.json({ ok: false, error: "Không tìm thấy thẻ ngân hàng." }, { status: 404 });
+      if (!await canAccessBankMember(user, String(row.member_id))) return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });
+      const [account] = await bankAccountsFromRows([row]);
+      return NextResponse.json({ ok: true, data: account });
+    }
+
     const memberId = request.nextUrl.searchParams.get("memberId");
     if (memberId) {
       if (!await canAccessBankMember(user, memberId)) return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });

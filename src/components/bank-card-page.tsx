@@ -107,18 +107,28 @@ export function BankCardFormPage({ memberId, cardId, mode }: { memberId: string;
     let active = true;
     async function load() {
       setLoading(true);
-      const [meResponse, membersResponse, accountsResponse] = await Promise.all([fetch("/api/auth/me"), fetch("/api/members"), fetch("/api/bank-accounts")]);
+      const promises: Promise<Response>[] = [
+        fetch("/api/auth/me"),
+        fetch("/api/members")
+      ];
+      if (mode === "edit" && cardId) {
+        promises.push(fetch(`/api/bank-accounts?id=${cardId}`));
+      }
+      
+      const [meResponse, membersResponse, cardResponse] = await Promise.all(promises);
       const me = await readJsonSafe<{ user?: AuthUser }>(meResponse);
       const memberJson = await membersResponse.json();
-      const accountPayload = await readJsonSafe<{ ok?: boolean; data?: BankAccount[] }>(accountsResponse);
+      
       if (!active) return;
+      
       const nextMembers = (Array.isArray(memberJson) ? memberJson : (memberJson.data ?? [])) as Member[];
-      const nextAccounts = accountPayload?.data || [];
       const nextUser = meResponse.ok && me?.user ? me.user : null;
       setUser(nextUser);
       setMembers(nextMembers);
-      if (mode === "edit" && cardId) {
-        const found = nextAccounts.find(account => account.id === cardId);
+      
+      if (mode === "edit" && cardId && cardResponse) {
+        const cardPayload = await readJsonSafe<{ ok?: boolean; data?: BankAccount }>(cardResponse);
+        const found = cardPayload?.data;
         setForm(found ? { ...emptyBankForm(found.memberId), ...found, rewards: found.rewards || [] } : emptyBankForm(memberId));
       } else {
         const owner = nextMembers.find(member => member.id === memberId);
