@@ -1369,9 +1369,82 @@ function Tasks({ data, update, open, t }: TaskProps) {
   const tasks = data.tasks.filter(task => status === "all" || task.status === status);
   return <><select className={`${filterClass} mb-4 max-w-xs`} value={status} onChange={event => setStatus(event.target.value as Task["status"] | "all")}><option value="all">Tất cả công việc</option><option value="todo">Chờ</option><option value="doing">Đang làm</option><option value="done">Hoàn thành</option></select><div className="grid gap-x-4 md:grid-cols-2">{tasks.map(x => <TaskRow key={x.id} task={x} toggle={() => toggle(x.id)} edit={() => open({ kind: "tasks", item: x })} />)}</div><AddButton label={t("add")} onClick={() => open({ kind: "tasks" })} /></>;
 }
+function FinanceOverview() {
+  const [data, setData] = useState<{ year: number; income: number; expense: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const response = await fetch('/api/finance-overview', { cache: "no-store" });
+    const result = await readJsonSafe<{ data?: { year: number; income: number; expense: number }[] }>(response);
+    if (response.ok && result?.data) setData(result.data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+
+  const year = Number(yearStr);
+  const currentYearData = data.find(d => d.year === year) || { year, income: 0, expense: 0 };
+  const diff = currentYearData.income - currentYearData.expense;
+  const maxVal = Math.max(1, ...data.map(d => Math.max(d.income, d.expense)));
+
+  return (
+    <div className="space-y-5">
+      <div className="flex gap-3">
+        <select className={filterClass} value={yearStr} onChange={event => setYearStr(event.target.value)}>
+          {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Card><p className="text-xs text-slate-400">Tổng thu năm</p><b className="text-emerald-500">{money(currentYearData.income)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Tổng chi năm</p><b className="text-rose-500">{money(currentYearData.expense)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Chênh lệch</p><b className={diff >= 0 ? "text-indigo-500" : "text-rose-500"}>{money(diff)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b className="text-emerald-500">{money(currentYearData.income / 12)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b className="text-rose-500">{money(currentYearData.expense / 12)}</b></Card>
+      </div>
+
+      <Card>
+        <div className="mb-4 flex items-center justify-between">
+          <b>So sánh Thu và Chi theo năm</b>
+          {loading && <span className="text-xs text-slate-400">Đang tải...</span>}
+        </div>
+        <div className="flex h-64 items-end gap-6 overflow-x-auto pb-2">
+          {data.slice().sort((a,b) => a.year - b.year).map(item => (
+            <div key={item.year} className="flex min-w-20 flex-1 flex-col items-center gap-2">
+              <div className="flex h-48 w-full items-end justify-center gap-1">
+                <div className="w-1/2 rounded-t-md bg-emerald-500" style={{ height: `${Math.max(2, (item.income / maxVal) * 100)}%` }} title={`Thu: ${money(item.income)}`} />
+                <div className="w-1/2 rounded-t-md bg-rose-500" style={{ height: `${Math.max(2, (item.expense / maxVal) * 100)}%` }} title={`Chi: ${money(item.expense)}`} />
+              </div>
+              <span className="text-xs font-bold text-slate-400">{item.year}</span>
+            </div>
+          ))}
+          {!data.length && !loading && <div className="w-full text-center text-sm text-slate-400">Chưa có dữ liệu.</div>}
+        </div>
+        <div className="mt-4 flex items-center justify-center gap-4 text-xs font-semibold text-slate-500">
+          <div className="flex items-center gap-2"><div className="size-3 rounded-full bg-emerald-500"/> Thu nhập</div>
+          <div className="flex items-center gap-2"><div className="size-3 rounded-full bg-rose-500"/> Chi tiêu</div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function Finance({ data, open, t }: ListProps) {
-  const [tab, setTab] = useState<"income" | "expense">("income");
-  return <><div className="mb-4 inline-flex rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1 text-sm font-bold"><button onClick={() => setTab("income")} className={`rounded-lg px-4 py-2 ${tab === "income" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Thu nhập</button><button onClick={() => setTab("expense")} className={`rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button></div>{tab === "income" ? <IncomeSheetManagement /> : <ExpensePreview data={data} open={open} t={t} />}</>;
+  const [tab, setTab] = useState<"overview" | "income" | "expense">("overview");
+  return (
+    <>
+      <div className="mb-4 inline-flex flex-wrap gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1 text-sm font-bold">
+        <button onClick={() => setTab("overview")} className={`rounded-lg px-4 py-2 ${tab === "overview" ? "bg-indigo-500 text-white" : "text-slate-500"}`}>Tổng quan</button>
+        <button onClick={() => setTab("income")} className={`rounded-lg px-4 py-2 ${tab === "income" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Thu nhập</button>
+        <button onClick={() => setTab("expense")} className={`rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button>
+      </div>
+      {tab === "overview" && <FinanceOverview />}
+      {tab === "income" && <IncomeSheetManagement />}
+      {tab === "expense" && <ExpensePreview data={data} open={open} t={t} />}
+    </>
+  );
 }
 type IncomeApiData = {
   members: { id: string; name: string }[];
@@ -1393,10 +1466,10 @@ function IncomeSheetManagement() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [monthFilter, setMonthFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState<IncomeCategory | "all">("all");
-  const [statusFilter, setStatusFilter] = useState<IncomeStatus | "all">("all");
   const [query, setQuery] = useState("");
   const [incomeData, setIncomeData] = useState<IncomeApiData | null>(null);
   const [view, setView] = useState<"list" | "new" | "edit" | "yearly-new" | "yearly-edit">("list");
+  const [viewMode, setViewMode] = useState<"list" | "chart">("list");
   const [editing, setEditing] = useState<IncomeRecord | null>(null);
   const [editingYearly, setEditingYearly] = useState<IncomeYearlySummaryRow | null>(null);
   const [activeTab, setActiveTab] = useState<"monthly" | "yearly">("monthly");
@@ -1416,7 +1489,7 @@ function IncomeSheetManagement() {
   
   const allRecords = incomeData?.allRecords || [];
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const records = allRecords.filter(record => (monthFilter === "all" || record.month === Number(monthFilter)) && (categoryFilter === "all" || record.category === categoryFilter) && (statusFilter === "all" || record.status === statusFilter) && (!normalizedQuery || `${record.name} ${record.note} ${record.memberName || ""}`.toLocaleLowerCase().includes(normalizedQuery)));
+  const records = allRecords.filter(record => (monthFilter === "all" || record.month === Number(monthFilter)) && (categoryFilter === "all" || record.category === categoryFilter) && (!normalizedQuery || `${record.name} ${record.note} ${record.memberName || ""}`.toLocaleLowerCase().includes(normalizedQuery)));
   records.sort((a, b) => {
     const dateA = new Date(a.incomeDate).getTime();
     const dateB = new Date(b.incomeDate).getTime();
@@ -1517,11 +1590,10 @@ function IncomeSheetManagement() {
   const maxYearTotal = Math.max(1, ...yearlyChartData.map(d => d.total));
   
   return <div className="space-y-5">
-    <div className="grid gap-3 md:grid-cols-[110px_140px_180px_160px_1fr_auto_auto_auto]">
+    <div className="grid gap-3 md:grid-cols-[90px_100px_120px_1fr_auto_auto_auto]">
       <select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select>
-      <select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select>
-      <select className={filterClass} value={categoryFilter} onChange={event => setCategoryFilter(event.target.value as IncomeCategory | "all")}><option value="all">Tất cả loại khoản thu</option>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select>
-      <select className={filterClass} value={statusFilter} onChange={event => setStatusFilter(event.target.value as IncomeStatus | "all")}><option value="all">Tất cả trạng thái</option>{incomeStatuses.map(status => <option key={status} value={status}>{status}</option>)}</select>
+      <select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select>
+      <select className={filterClass} value={categoryFilter} onChange={event => setCategoryFilter(event.target.value as IncomeCategory | "all")}><option value="all">Khoản thu</option>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select>
       <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm khoản thu..." />
       <button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button>
       <button onClick={() => { setEditingYearly(null); setView("yearly-new"); }} className="rounded-xl bg-indigo-500 px-4 py-3 text-sm font-bold text-white">Nhập tổng năm cũ</button>
@@ -1534,8 +1606,14 @@ function IncomeSheetManagement() {
       <Card><p className="text-xs text-slate-400">Thu theo loại</p><b>{money(categoryTotals.find(item => item.category === categoryFilter)?.total || visibleMonthTotal)}</b></Card>
       <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b>{money(totalYear / 12)}</b></Card>
     </div>
+
+    <div className="flex gap-2 border-b border-[var(--app-border)] pb-2">
+      <button onClick={() => setViewMode("list")} className={`px-4 py-2 text-sm font-bold rounded-lg ${viewMode === "list" ? "bg-slate-200 dark:bg-white/10" : "text-slate-400"}`}>Danh sách</button>
+      <button onClick={() => setViewMode("chart")} className={`px-4 py-2 text-sm font-bold rounded-lg ${viewMode === "chart" ? "bg-slate-200 dark:bg-white/10" : "text-slate-400"}`}>Biểu đồ</button>
+    </div>
     
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+    {viewMode === "chart" && (
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <Card>
         <div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div>
         <div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">
@@ -1555,7 +1633,9 @@ function IncomeSheetManagement() {
         </div>
       </Card>
     </div>
+    )}
     
+    {viewMode === "list" && (
     <Card className="overflow-hidden p-0">
       <div className="flex items-center gap-4 border-b border-[var(--app-border)] px-4 pt-4">
         <button onClick={() => setActiveTab("monthly")} className={`border-b-2 px-2 pb-3 text-sm font-bold ${activeTab === "monthly" ? "border-emerald-500 text-emerald-500" : "border-transparent text-slate-400"}`}>Chi tiết tháng</button>
@@ -1623,6 +1703,7 @@ function IncomeSheetManagement() {
         {(activeTab === "monthly" && !records.length || activeTab === "yearly" && !(incomeData?.yearlySummaries || []).length) && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu.</div>}
       </div>
     </Card>
+    )}
   </div>;
 }
 
@@ -1915,8 +1996,8 @@ function ExpensePreview({ data, open, t }: ListProps) {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [month, setMonth] = useState("all");
   const [category, setCategory] = useState("all");
-  const [status, setStatus] = useState("all");
   const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"list" | "chart">("list");
   const expenseItems = data.transactions.filter(item => item.type === "expense");
   const categories = [...new Set(expenseItems.map(item => item.category || "Khác"))].sort();
   const transactions = expenseItems.filter(item => {
@@ -1924,10 +2005,68 @@ function ExpensePreview({ data, open, t }: ListProps) {
     const itemYear = parsed ? String(parsed.getFullYear()) : "";
     const itemMonth = parsed ? String(parsed.getMonth() + 1) : "";
     const text = `${item.title} ${item.category}`.toLocaleLowerCase();
-    return (!itemYear || itemYear === year) && (month === "all" || itemMonth === month) && (category === "all" || item.category === category) && status === "all" && (!query.trim() || text.includes(query.trim().toLocaleLowerCase()));
+    return (!itemYear || itemYear === year) && (month === "all" || itemMonth === month) && (category === "all" || item.category === category) && (!query.trim() || text.includes(query.trim().toLocaleLowerCase()));
   });
   const totalExpense = transactions.reduce((sum, item) => sum + item.amount, 0);
-  return <><div className="grid grid-cols-2 gap-3 lg:max-w-xl"><Card><p className="text-xs text-slate-400">Tổng chi theo lọc</p><b className="text-rose-500">{money(totalExpense)}</b></Card><Card><p className="text-xs text-slate-400">{t("income")}</p><b className="text-emerald-500">{money(data.transactions.filter(x => x.type === "income").reduce((sum, item) => sum + item.amount, 0))}</b></Card></div><SectionTitle label={t("finance")} /><div className="mb-4 grid gap-3 md:grid-cols-[110px_140px_180px_160px_1fr]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={month} onChange={event => setMonth(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select><select className={filterClass} value={category} onChange={event => setCategory(event.target.value)}><option value="all">Tất cả nhóm chi</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select><select className={filterClass} value={status} onChange={event => setStatus(event.target.value)}><option value="all">Tất cả trạng thái</option></select><input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm chi tiêu..." /></div><div className="grid gap-x-4 lg:grid-cols-2">{transactions.map(x => <Card key={x.id} className="mb-3 flex items-center justify-between gap-2"><div className="min-w-0 flex-1"><b>{x.title}</b><p className="text-xs text-slate-400">{formatDateVN(x.date)} · {x.category}</p></div><b className="text-rose-500">-{money(x.amount)}</b><EditButton onClick={() => open({ kind: "transactions", item: x })} /></Card>)}</div><AddButton label={t("add")} onClick={() => open({ kind: "transactions" })} /></>;
+
+  const monthlyTotals = Array.from({ length: 12 }, (_, index) => {
+    const total = expenseItems.filter(item => {
+      const parsed = parseDate(item.date);
+      return parsed && String(parsed.getFullYear()) === year && parsed.getMonth() === index;
+    }).reduce((sum, item) => sum + item.amount, 0);
+    return { month: index + 1, total };
+  });
+  const maxMonth = Math.max(1, ...monthlyTotals.map(item => item.total));
+
+  return <div className="space-y-5">
+    <div className="mb-4 grid gap-3 md:grid-cols-[110px_140px_180px_1fr]">
+      <select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select>
+      <select className={filterClass} value={month} onChange={event => setMonth(event.target.value)}><option value="all">Tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select>
+      <select className={filterClass} value={category} onChange={event => setCategory(event.target.value)}><option value="all">Khoản chi</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select>
+      <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm chi tiêu..." />
+    </div>
+
+    <div className="grid grid-cols-2 gap-3 lg:max-w-xl">
+      <Card><p className="text-xs text-slate-400">Tổng chi theo lọc</p><b className="text-rose-500">{money(totalExpense)}</b></Card>
+      <Card><p className="text-xs text-slate-400">{t("income")}</p><b className="text-emerald-500">{money(data.transactions.filter(x => x.type === "income").reduce((sum, item) => sum + item.amount, 0))}</b></Card>
+    </div>
+
+    <div className="flex gap-2 border-b border-[var(--app-border)] pb-2">
+      <button onClick={() => setViewMode("list")} className={`px-4 py-2 text-sm font-bold rounded-lg ${viewMode === "list" ? "bg-slate-200 dark:bg-white/10" : "text-slate-400"}`}>Danh sách</button>
+      <button onClick={() => setViewMode("chart")} className={`px-4 py-2 text-sm font-bold rounded-lg ${viewMode === "chart" ? "bg-slate-200 dark:bg-white/10" : "text-slate-400"}`}>Biểu đồ</button>
+    </div>
+
+    {viewMode === "chart" && (
+      <Card>
+        <div className="mb-4 flex items-center justify-between"><b>Tổng chi theo 12 tháng</b></div>
+        <div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">
+          {monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2">
+            <div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5">
+              <div className="w-full rounded-md bg-rose-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} />
+            </div>
+            <span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span>
+          </div>)}
+        </div>
+      </Card>
+    )}
+
+    {viewMode === "list" && (
+      <>
+        <div className="grid gap-x-4 lg:grid-cols-2">
+          {transactions.map(x => <Card key={x.id} className="mb-3 flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <b>{x.title}</b>
+              <p className="text-xs text-slate-400">{formatDateVN(x.date)} · {x.category}</p>
+            </div>
+            <b className="text-rose-500">-{money(x.amount)}</b>
+            <EditButton onClick={() => open({ kind: "transactions", item: x })} />
+          </Card>)}
+        </div>
+        {!transactions.length && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu.</div>}
+        <AddButton label={t("add")} onClick={() => open({ kind: "transactions" })} />
+      </>
+    )}
+  </div>;
 }
 function LegacyExpensePreview({ data, open, t }: ListProps) {
   const [month, setMonth] = useState("all");
