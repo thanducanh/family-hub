@@ -466,7 +466,7 @@ function UserEditor({ user, close, saved, presetMemberId = "" }: { user: Managed
 function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUser, refreshed }: { account: ManagedUser | null; member: Member; actor: AuthUser; canManage: boolean; isCurrent: boolean; savedUser: (user: AuthUser) => void; refreshed: () => void }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [isEditing, setIsEditing] = useState(false);
+  const [editType, setEditType] = useState<'none' | 'account' | 'password'>('none');
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [form, setForm] = useState({
@@ -483,15 +483,13 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
 
   async function submitAdmin() {
     if (!canManage) return;
-    if (form.newPassword || form.confirmPassword) {
+    if (!account) {
       if (form.newPassword.length < 6) return setError("Mật khẩu mới cần ít nhất 6 ký tự.");
       if (form.newPassword !== form.confirmPassword) return setError("Nhập lại mật khẩu mới chưa khớp.");
     }
     const payload = account 
-      ? { ...account, username: form.username, role: form.role, active: form.active, memberId: member.id, password: form.newPassword || undefined } 
+      ? { ...account, username: form.username, role: form.role, active: form.active, memberId: member.id } 
       : { username: form.username, role: form.role, active: true, memberId: member.id, password: form.newPassword, displayName: member.nickname || member.name };
-    
-    if (!account && form.newPassword.length < 6) return setError("Mật khẩu mới cần ít nhất 6 ký tự.");
     
     const response = await fetch("/api/users", { 
       method: account ? "PUT" : "POST", 
@@ -500,10 +498,8 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
     });
     const result = await readJsonSafe<{ error?: string; user?: ManagedUser }>(response);
     if (!response.ok || !result?.user) return setError(result?.error || "Không thể lưu tài khoản.");
-    if (form.newPassword) addAccountPasswordNotification(result.user.id, "Quản trị viên đã đổi mật khẩu tài khoản của bạn.", { id: actor.id, name: actor.displayName, avatar: actor.avatar });
-    setForm(current => ({ ...current, newPassword: "", confirmPassword: "" }));
     setSuccess(account ? "Đã lưu tài khoản." : "Đã tạo tài khoản.");
-    setIsEditing(false);
+    setEditType('none');
     refreshed();
   }
 
@@ -515,24 +511,38 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
     const response = await fetch("/api/auth/change-password", { 
       method: "POST", 
       headers: { "Content-Type": "application/json" }, 
-      body: JSON.stringify({ currentPassword: form.currentPassword, newPassword: form.newPassword }) 
+      body: JSON.stringify({ newPassword: form.newPassword }) 
     });
     const result = await readJsonSafe<{ error?: string; user?: AuthUser }>(response);
     if (!response.ok || !result?.user) return setError(result?.error || "Không thể đổi mật khẩu.");
     addAccountPasswordNotification(result.user.id, "Bạn đã đổi mật khẩu thành công.", { id: result.user.id, name: result.user.displayName, avatar: result.user.avatar });
     savedUser(result.user);
-    setForm(current => ({ ...current, currentPassword: "", newPassword: "", confirmPassword: "" }));
+    setForm(current => ({ ...current, newPassword: "", confirmPassword: "" }));
     setSuccess("Đã đổi mật khẩu.");
-    setIsEditing(false);
+    setEditType('none');
+  }
+
+  async function resetPassword() {
+    if (!account || !canManage) return;
+    if (form.newPassword.length < 6) return setError("Mật khẩu mới cần ít nhất 6 ký tự.");
+    if (form.newPassword !== form.confirmPassword) return setError("Nhập lại mật khẩu mới chưa khớp.");
+    const response = await fetch("/api/users/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: account.id, password: form.newPassword }) });
+    const result = await readJsonSafe<{ error?: string }>(response);
+    if (!response.ok) return setError(result?.error || "Không thể reset mật khẩu.");
+    addAccountPasswordNotification(account.id, "Quản trị viên đã đổi mật khẩu tài khoản của bạn.", { id: actor.id, name: actor.displayName, avatar: actor.avatar });
+    setForm(current => ({ ...current, newPassword: "", confirmPassword: "" }));
+    setSuccess("Đã đổi mật khẩu.");
+    setEditType('none');
+    refreshed();
   }
 
   async function deleteAccount() {
-    if (!account || !canManage || account.isSystem || !confirm(`Xóa tài khoản ${account.username}?`)) return;
+    if (!account || !canManage || account.isSystem || !confirm(`Xác nhận xóa liên kết tài khoản ${account.username}?`)) return;
     const response = await fetch(`/api/users?id=${account.id}`, { method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
     if (!response.ok) return setError(result?.error || "Không thể xóa tài khoản.");
-    setSuccess("Đã xóa tài khoản.");
-    setIsEditing(false);
+    setSuccess("Đã xóa liên kết tài khoản.");
+    setEditType('none');
     refreshed();
   }
 
@@ -540,31 +550,35 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
     event.preventDefault();
     setError("");
     setSuccess("");
-    if (canManage) {
-      await submitAdmin();
-    } else {
-      if (form.newPassword || form.confirmPassword) {
+    if (editType === 'password') {
+      if (canManage) {
+        await resetPassword();
+      } else {
         await submitSelf();
+      }
+    } else if (editType === 'account') {
+      if (canManage) {
+        await submitAdmin();
       } else {
         setSuccess("Đã lưu thay đổi.");
-        setIsEditing(false);
+        setEditType('none');
       }
     }
   }
 
   const isAdmin = actor.role === "full_access";
-  const showMenuButton = !isEditing && (account ? (canManage || isCurrent) : canManage);
+  const showMenuButton = editType === 'none' && (account ? (canManage || isCurrent) : canManage);
 
   return (
     <Card>
       <div className="flex items-center justify-between">
         <h3 className="font-semibold">Tài khoản đăng nhập</h3>
         
-        {isEditing ? (
+        {editType !== 'none' ? (
           <div className="flex gap-2">
             <button 
               type="button" 
-              onClick={() => { setIsEditing(false); setError(""); setSuccess(""); }} 
+              onClick={() => { setEditType('none'); setError(""); setSuccess(""); }} 
               className="rounded-lg border border-[var(--app-border)] px-3 py-1.5 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5"
             >
               Hủy
@@ -574,7 +588,7 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
               form="account-form" 
               className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600"
             >
-              Lưu thay đổi
+              {editType === 'password' ? 'Lưu mật khẩu' : 'Lưu thay đổi'}
             </button>
           </div>
         ) : (
@@ -595,12 +609,12 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
                   <div className="w-full rounded-t-3xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onClick={e => e.stopPropagation()}>
                     <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-slate-300" />
                     <div className="space-y-1.5">
-                      {account && (
-                        <button type="button" onClick={() => { setIsEditing(false); setMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Xem</button>
-                      )}
-                      <button type="button" onClick={() => { setIsEditing(true); setMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/5">
+                      <button type="button" onClick={() => { setEditType(account ? 'account' : 'account'); setMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/5">
                         {account ? "Sửa tài khoản" : "Tạo tài khoản"}
                       </button>
+                      {account && (
+                        <button type="button" onClick={() => { setEditType('password'); setMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Đổi mật khẩu</button>
+                      )}
                       {account && canManage && !account.isSystem && (
                         <button type="button" onClick={() => { deleteAccount(); setMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa liên kết tài khoản</button>
                       )}
@@ -614,12 +628,12 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
                 <div className="hidden sm:block">
                   <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                   <div className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl">
-                    {account && (
-                      <button type="button" onClick={() => { setIsEditing(false); setMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Xem</button>
-                    )}
-                    <button type="button" onClick={() => { setIsEditing(true); setMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">
+                    <button type="button" onClick={() => { setEditType(account ? 'account' : 'account'); setMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">
                       {account ? "Sửa tài khoản" : "Tạo tài khoản"}
                     </button>
+                    {account && (
+                      <button type="button" onClick={() => { setEditType('password'); setMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Đổi mật khẩu</button>
+                    )}
                     {account && canManage && !account.isSystem && (
                       <button type="button" onClick={() => { deleteAccount(); setMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa liên kết tài khoản</button>
                     )}
@@ -637,59 +651,83 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
         </p>
       )}
 
-      {isEditing ? (
+      {editType !== 'none' ? (
         <form id="account-form" onSubmit={handleSubmit} className="mt-5 space-y-4">
-          <Field label="Tên đăng nhập">
-            <input 
-              required 
-              disabled={!canManage || systemLocked} 
-              className={inputClass} 
-              value={form.username} 
-              onChange={event => set("username", event.target.value)} 
-            />
-          </Field>
+          {editType === 'account' && (
+            <>
+              <Field label="Tên đăng nhập">
+                <input 
+                  required 
+                  disabled={!canManage || systemLocked} 
+                  className={inputClass} 
+                  value={form.username} 
+                  onChange={event => set("username", event.target.value)} 
+                />
+              </Field>
 
-          {/* PC: side-by-side, Mobile: stacked */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <PasswordField 
-              label={account ? "Mật khẩu mới" : "Mật khẩu"} 
-              value={form.newPassword} 
-              setValue={value => set("newPassword", value)} 
-              autoComplete="new-password" 
-              required={!account} 
-            />
-            <PasswordField 
-              label="Nhập lại mật khẩu mới" 
-              value={form.confirmPassword} 
-              setValue={value => set("confirmPassword", value)} 
-              autoComplete="new-password" 
-              required={!account} 
-            />
-          </div>
+              {!account && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <PasswordField 
+                    label="Mật khẩu" 
+                    value={form.newPassword} 
+                    setValue={value => set("newPassword", value)} 
+                    autoComplete="new-password" 
+                    required={true} 
+                  />
+                  <PasswordField 
+                    label="Nhập lại mật khẩu mới" 
+                    value={form.confirmPassword} 
+                    setValue={value => set("confirmPassword", value)} 
+                    autoComplete="new-password" 
+                    required={true} 
+                  />
+                </div>
+              )}
 
-          {isAdmin && (
-            <Field label="Quyền hệ thống">
-              <select 
-                disabled={systemLocked} 
-                className={inputClass} 
-                value={form.role} 
-                onChange={event => set("role", event.target.value as UserRole)}
-              >
-                <option value="full_access">Toàn quyền</option>
-                <option value="self_only">Chỉ xem chính mình</option>
-              </select>
-            </Field>
+              {isAdmin && (
+                <Field label="Quyền hệ thống">
+                  <select 
+                    disabled={systemLocked} 
+                    className={inputClass} 
+                    value={form.role} 
+                    onChange={event => set("role", event.target.value as UserRole)}
+                  >
+                    <option value="full_access">Toàn quyền</option>
+                    <option value="self_only">Chỉ xem chính mình</option>
+                  </select>
+                </Field>
+              )}
+
+              <label className="flex items-center gap-2 text-sm">
+                <input 
+                  disabled={systemLocked || !canManage} 
+                  type="checkbox" 
+                  checked={systemLocked || form.active} 
+                  onChange={event => set("active", event.target.checked)} 
+                /> 
+                Tài khoản hoạt động
+              </label>
+            </>
           )}
 
-          <label className="flex items-center gap-2 text-sm">
-            <input 
-              disabled={systemLocked || !canManage} 
-              type="checkbox" 
-              checked={systemLocked || form.active} 
-              onChange={event => set("active", event.target.checked)} 
-            /> 
-            Tài khoản hoạt động
-          </label>
+          {editType === 'password' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <PasswordField 
+                label="Mật khẩu mới" 
+                value={form.newPassword} 
+                setValue={value => set("newPassword", value)} 
+                autoComplete="new-password" 
+                required={true} 
+              />
+              <PasswordField 
+                label="Nhập lại mật khẩu mới" 
+                value={form.confirmPassword} 
+                setValue={value => set("confirmPassword", value)} 
+                autoComplete="new-password" 
+                required={true} 
+              />
+            </div>
+          )}
 
           {error && <p className="text-sm text-rose-500">{error}</p>}
           {success && <p className="text-sm text-emerald-500">{success}</p>}
