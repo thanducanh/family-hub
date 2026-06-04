@@ -2,6 +2,8 @@ export type Language = "vi" | "en" | "ja";
 export type Theme = "light" | "dark" | "system";
 export type TaskStatus = "todo" | "doing" | "done";
 export type TransactionType = "income" | "expense";
+export type IncomeSourceType = "fixed" | "variable";
+export type IncomeFrequency = "monthly" | "weekly" | "yearly" | "one_time" | "custom";
 export type TaskPriority = "low" | "normal" | "high";
 export type EventType = "family" | "birthday" | "medical" | "school";
 export type NoteKind = "general" | "member";
@@ -12,6 +14,8 @@ export interface LinkedAccount { id: string; username: string; email: string; di
 export interface Member { id: string; name: string; nickname: string; birthday: string; gender: Gender; role: FamilyRole; phone: string; avatar: string; avatarPreview?: string; notes: string; color: string; user?: LinkedAccount | null; }
 export interface Task { id: string; title: string; memberId: string; assignee: string; due: string; dueDate: string; priority: TaskPriority; status: TaskStatus; }
 export interface Transaction { id: string; title: string; memberId: string; amount: number; type: TransactionType; category: string; date: string; bankAccountId?: string; estimatedCashback?: number; actualCashback?: number; }
+export interface IncomeSource { id: string; memberId: string; name: string; type: IncomeSourceType; amount: number; frequency: IncomeFrequency; receivedDate: string; startDate: string; note: string; active: boolean; createdAt?: string; updatedAt?: string; memberName?: string; }
+export interface IncomeRecord { id: string; sourceId: string; memberId: string; amount: number; receivedDate: string; note: string; createdAt?: string; sourceName?: string; sourceType?: IncomeSourceType; memberName?: string; generated?: boolean; }
 export interface EventItem { id: string; title: string; memberId: string; type: EventType; date: string; time: string; color: string; calendarId?: string; description?: string; startDate?: string; endDate?: string; startTime?: string; endTime?: string; allDay?: boolean; location?: string; createdByUserId?: string; repeatRule?: string; lunarDate?: string; relatedMemberIds?: string[]; }
 export interface Note { id: string; title: string; memberId: string; kind: NoteKind; important: boolean; tag: string; content: string; updatedAt: string; }
 

@@ -6,7 +6,7 @@ import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
-import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, FamilyRole, Language, Member, Note, Task, Theme, Transaction } from "@/types";
+import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, FamilyRole, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, Language, Member, Note, Task, Theme, Transaction } from "@/types";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
 type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
@@ -1351,6 +1351,84 @@ function Tasks({ data, update, open, t }: TaskProps) {
   return <><select className={`${filterClass} mb-4 max-w-xs`} value={status} onChange={event => setStatus(event.target.value as Task["status"] | "all")}><option value="all">Tất cả công việc</option><option value="todo">Chờ</option><option value="doing">Đang làm</option><option value="done">Hoàn thành</option></select><div className="grid gap-x-4 md:grid-cols-2">{tasks.map(x => <TaskRow key={x.id} task={x} toggle={() => toggle(x.id)} edit={() => open({ kind: "tasks", item: x })} />)}</div><AddButton label={t("add")} onClick={() => open({ kind: "tasks" })} /></>;
 }
 function Finance({ data, open, t }: ListProps) {
+  const [tab, setTab] = useState<"income" | "expense">("income");
+  return <><div className="mb-4 inline-flex rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1 text-sm font-bold"><button onClick={() => setTab("income")} className={`rounded-lg px-4 py-2 ${tab === "income" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Thu nhập</button><button onClick={() => setTab("expense")} className={`rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button></div>{tab === "income" ? <IncomeManagement /> : <ExpensePreview data={data} open={open} t={t} />}</>;
+}
+type IncomeApiData = {
+  members: { id: string; name: string }[];
+  sources: IncomeSource[];
+  allRecords: IncomeRecord[];
+};
+const incomeTypeLabel: Record<IncomeSourceType, string> = { fixed: "Cố định", variable: "Không cố định" };
+const frequencyLabel: Record<IncomeFrequency, string> = { monthly: "Hàng tháng", weekly: "Hàng tuần", yearly: "Hàng năm", one_time: "Một lần", custom: "Tùy chỉnh" };
+function IncomeManagement() {
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [memberFilter, setMemberFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState<IncomeSourceType | "all">("all");
+  const [hiddenMembers, setHiddenMembers] = useState<Set<string>>(() => new Set());
+  const [incomeData, setIncomeData] = useState<IncomeApiData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<IncomeSource | "new" | null>(null);
+  const visibleMemberIds = new Set((incomeData?.members || []).filter(member => !hiddenMembers.has(member.id) && (memberFilter === "all" || member.id === memberFilter)).map(member => member.id));
+  const load = useCallback(async () => {
+    setLoading(true);
+    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
+    const result = await readJsonSafe<{ data?: IncomeApiData; error?: string }>(response);
+    if (response.ok && result?.data) setIncomeData(result.data);
+    else alert(result?.error || "Không thể tải dữ liệu thu nhập.");
+    setLoading(false);
+  }, [year]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  const sources = (incomeData?.sources || []).filter(source => visibleMemberIds.has(source.memberId) && (typeFilter === "all" || source.type === typeFilter));
+  const records = (incomeData?.allRecords || []).filter(record => visibleMemberIds.has(record.memberId) && (typeFilter === "all" || record.sourceType === typeFilter));
+  const monthlyTotals = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, total: records.filter(record => Number(record.receivedDate.slice(5, 7)) === index + 1).reduce((sum, record) => sum + record.amount, 0) }));
+  const totalYear = monthlyTotals.reduce((sum, item) => sum + item.total, 0);
+  const fixedMonthly = sources.filter(source => source.active && source.type === "fixed" && source.frequency === "monthly").reduce((sum, source) => sum + source.amount, 0);
+  const variableTotal = records.filter(record => record.sourceType === "variable").reduce((sum, record) => sum + record.amount, 0);
+  const maxMonth = Math.max(1, ...monthlyTotals.map(item => item.total));
+  function toggleMember(id: string) {
+    setHiddenMembers(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  async function remove(source: IncomeSource) {
+    if (!confirm(`Xóa nguồn thu "${source.name}"?`)) return;
+    const response = await fetch(`/api/incomes?id=${encodeURIComponent(source.id)}`, { method: "DELETE" });
+    if (!response.ok) {
+      const result = await readJsonSafe<{ error?: string }>(response);
+      alert(result?.error || "Không thể xóa nguồn thu.");
+      return;
+    }
+    void load();
+  }
+  return <div className="space-y-5">
+    <div className="grid gap-3 md:grid-cols-[120px_1fr_180px_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Tất cả thành viên</option>{incomeData?.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select><select className={filterClass} value={typeFilter} onChange={event => setTypeFilter(event.target.value as IncomeSourceType | "all")}><option value="all">Tất cả nguồn thu</option><option value="fixed">Cố định</option><option value="variable">Không cố định</option></select><button onClick={() => setEditing("new")} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm nguồn thu</button></div>
+    <div className="flex flex-wrap gap-2">{incomeData?.members.map(member => <button key={member.id} onClick={() => toggleMember(member.id)} className={`rounded-full border px-3 py-1.5 text-xs font-bold ${hiddenMembers.has(member.id) ? "border-slate-200 text-slate-400 opacity-60 dark:border-white/10" : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"}`}>{member.name}</button>)}</div>
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Tổng thu năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card><Card><p className="text-xs text-slate-400">Thu cố định/tháng</p><b>{money(fixedMonthly)}</b></Card><Card><p className="text-xs text-slate-400">Thu không cố định</p><b>{money(variableTotal)}</b></Card><Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b>{money(totalYear / 12)}</b></Card></div>
+    <Card><div className="mb-4 flex items-center justify-between"><b>Biểu đồ {year}</b><span className="text-xs text-slate-400">{records.length} dòng thu</span></div><div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">{monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2"><div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div title={money(item.total)} className="w-full rounded-md bg-emerald-500 transition-all" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div><span className="text-xs font-bold text-slate-400">T{item.month}</span></div>)}</div></Card>
+    <Card className="overflow-hidden p-0"><div className="flex items-center justify-between border-b border-[var(--app-border)] p-4"><b>Danh sách thu nhập</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div><div className="hidden overflow-x-auto md:block"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5"><tr><th className="px-4 py-3">Tháng/ngày</th><th className="px-4 py-3">Thành viên</th><th className="px-4 py-3">Nguồn thu</th><th className="px-4 py-3">Loại</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr></thead><tbody>{records.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]"><td className="px-4 py-3">{record.receivedDate}</td><td className="px-4 py-3">{record.memberName}</td><td className="px-4 py-3">{record.sourceName}{record.generated && <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">tự tính</span>}</td><td className="px-4 py-3">{incomeTypeLabel[record.sourceType || "variable"]}</td><td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3 text-slate-500">{record.note}</td><td className="px-4 py-3 text-right">{!record.generated && <span className="text-xs text-slate-400">Record</span>}</td></tr>)}</tbody></table></div><div className="space-y-3 p-3 md:hidden">{records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.sourceName}</b><p className="text-xs text-slate-400">{record.receivedDate} · {record.memberName} · {incomeTypeLabel[record.sourceType || "variable"]}</p></div><b className="text-emerald-500">{money(record.amount)}</b></div>{record.note && <p className="mt-2 text-sm text-slate-500">{record.note}</p>}</div>)}</div>{!records.length && <div className="p-6"><EmptyState /></div>}</Card>
+    <SectionTitle label="Nguồn thu" /><div className="grid gap-3 lg:grid-cols-2">{sources.map(source => <Card key={source.id} className="flex items-center justify-between gap-3"><div className="min-w-0"><b>{source.name}</b><p className="text-xs text-slate-400">{source.memberName} · {incomeTypeLabel[source.type]} · {frequencyLabel[source.frequency]} · {source.active ? "Đang dùng" : "Đã tắt"}</p></div><div className="flex shrink-0 items-center gap-1"><b className="text-emerald-500">{money(source.amount)}</b><EditButton onClick={() => setEditing(source)} /><button onClick={() => remove(source)} className="rounded-xl px-3 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button></div></Card>)}</div>{editing && incomeData && <IncomeSourceEditor source={editing} members={incomeData.members} close={() => setEditing(null)} saved={() => { setEditing(null); void load(); }} />}
+  </div>;
+}
+function IncomeSourceEditor({ source, members, close, saved }: { source: IncomeSource | "new"; members: { id: string; name: string }[]; close: () => void; saved: () => void }) {
+  const existing = source !== "new" ? source : null;
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState({ memberId: existing?.memberId || members[0]?.id || "", name: existing?.name || "", type: (existing?.type || "fixed") as IncomeSourceType, amount: String(existing?.amount || ""), frequency: (existing?.frequency || "monthly") as IncomeFrequency, receivedDate: existing?.receivedDate || existing?.startDate || today, note: existing?.note || "", active: existing?.active ?? true, createRecord: !existing });
+  function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm(current => ({ ...current, [key]: value })); }
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const payload = { ...form, amount: Number(form.amount), startDate: form.receivedDate };
+    const url = existing ? `/api/incomes?id=${encodeURIComponent(existing.id)}` : "/api/incomes";
+    const response = await fetch(url, { method: existing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const result = await readJsonSafe<{ error?: string }>(response);
+    if (!response.ok) { alert(result?.error || "Không thể lưu nguồn thu."); return; }
+    saved();
+  }
+  return <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 p-0 md:items-center md:p-6" onMouseDown={close}><form onSubmit={submit} onMouseDown={event => event.stopPropagation()} className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-lg md:rounded-3xl"><div className="mx-auto mb-4 h-1 w-12 rounded-full bg-slate-300 md:hidden" /><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">{existing ? "Sửa" : "Thêm"} nguồn thu</h2><button type="button" onClick={close} className="rounded-full px-3 py-1 text-xl text-slate-400">×</button></div><div className="space-y-4"><Field label="Thành viên"><select required className={inputClass} value={form.memberId} onChange={event => set("memberId", event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Tên nguồn thu"><input required className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Loại"><select className={inputClass} value={form.type} onChange={event => set("type", event.target.value as IncomeSourceType)}><option value="fixed">Cố định</option><option value="variable">Không cố định</option></select></Field><Field label="Số tiền"><input required min="0" type="number" className={inputClass} value={form.amount} onChange={event => set("amount", event.target.value)} /></Field><Field label="Tần suất"><select className={inputClass} value={form.frequency} onChange={event => set("frequency", event.target.value as IncomeFrequency)}>{Object.entries(frequencyLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label="Ngày nhận / ngày bắt đầu"><input required type="date" className={inputClass} value={form.receivedDate} onChange={event => set("receivedDate", event.target.value)} /></Field><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={event => set("active", event.target.checked)} /> Đang dùng</label>{!existing && form.type === "variable" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.createRecord} onChange={event => set("createRecord", event.target.checked)} /> Ghi nhận khoản thu này ngay</label>}</div><div className="mt-6 flex gap-3"><button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold">Hủy</button><button className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
+}
+function ExpensePreview({ data, open, t }: ListProps) {
   const [month, setMonth] = useState("all");
   const [type, setType] = useState<Transaction["type"] | "all">("all");
   const total = (type: "income" | "expense") => data.transactions.filter(x => x.type === type).reduce((a,x) => a+x.amount, 0);
