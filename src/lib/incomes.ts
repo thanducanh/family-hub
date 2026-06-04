@@ -12,7 +12,7 @@ export type IncomeRecordRow = {
   note: string; createdAt: string; updatedAt: string;
 };
 
-const categories: IncomeCategory[] = ["Lương", "Thưởng", "Tồn tháng trước", "Bán đồ", "Khác"];
+const categories: IncomeCategory[] = ["Lương", "Thưởng", "Khác"];
 const statuses: IncomeStatus[] = ["Đã nhận", "Chưa nhận"];
 const validTypes = new Set(["fixed", "variable"]);
 const validFrequencies = new Set(["monthly", "weekly", "yearly", "one_time", "custom"]);
@@ -93,7 +93,7 @@ export async function fetchIncomeData(year: number) {
       FROM income_records r
       LEFT JOIN members m ON m.id = r.member_id AND m.deleted_at IS NULL
       WHERE r.year = $1
-      ORDER BY r.month DESC, r.income_date DESC, r.created_at DESC`, [year]),
+      ORDER BY r.income_date ASC, r.created_at ASC`, [year]),
   ]);
 
   const members = membersResult.rows.map(row => ({ id: String(row.id), name: String(row.name || "") }));
@@ -106,7 +106,7 @@ export async function fetchIncomeData(year: number) {
 function buildIncomeStats(year: number, records: IncomeRecordRow[]) {
   const monthlyTotals = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, total: 0 }));
   const byMember: Record<string, { memberId: string; memberName: string; total: number }> = {};
-  const byCategory: Record<IncomeCategory, number> = { "Lương": 0, "Thưởng": 0, "Tồn tháng trước": 0, "Bán đồ": 0, "Khác": 0 };
+  const byCategory: Record<IncomeCategory, number> = { "Lương": 0, "Thưởng": 0, "Khác": 0 };
   for (const record of records) {
     if (record.year !== year || record.status !== "Đã nhận") continue;
     monthlyTotals[record.month - 1].total += record.amount;
