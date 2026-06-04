@@ -7,7 +7,7 @@ export type IncomeSourceRow = {
   note: string; active: boolean; createdAt: string; updatedAt: string;
 };
 export type IncomeRecordRow = {
-  id: string; sourceId: string; memberId: string; memberName: string; incomeDate: string; receivedDate: string;
+  id: string; sourceId: string; memberId: string; memberName: string; workSource: string; incomeDate: string; receivedDate: string;
   year: number; month: number; category: IncomeCategory; name: string; amount: number; status: IncomeStatus;
   note: string; createdAt: string; updatedAt: string;
 };
@@ -18,6 +18,7 @@ const validTypes = new Set(["fixed", "variable"]);
 const validFrequencies = new Set(["monthly", "weekly", "yearly", "one_time", "custom"]);
 
 export const incomeCategories = categories;
+export const workSourceOptions = ["Công việc chính", "Job 2", "Freelance", "Thu nhập thêm", "Khác"];
 export const incomeTemplateNames = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền tồn tháng trước", "Khác"];
 
 export function normalizeYear(value: string | null) {
@@ -69,6 +70,7 @@ export function toIncomeYearlySummary(row: Record<string, unknown>): IncomeYearl
     name: String(row.name || ""),
     amount: Number(row.amount || 0),
     note: String(row.note || ""),
+    workSource: String(row.work_source || ""),
     createdAt: String(row.created_at || ""),
     updatedAt: String(row.updated_at || ""),
   };
@@ -81,6 +83,7 @@ export function toIncomeRecord(row: Record<string, unknown>): IncomeRecordRow {
     sourceId: String(row.source_id || ""),
     memberId: row.member_id ? String(row.member_id) : "",
     memberName: String(row.member_name || ""),
+    workSource: String(row.work_source || ""),
     incomeDate,
     receivedDate: incomeDate,
     year: Number(row.year || incomeDate.slice(0, 4) || 0),

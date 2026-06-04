@@ -1475,7 +1475,8 @@ const incomeStatuses: IncomeStatus[] = ["Đã nhận", "Chưa nhận"];
 const incomeTemplates = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền tồn tháng trước", "Khác"];
 const incomeTypeLabel: Record<IncomeSourceType, string> = { fixed: "Cố định", variable: "Không cố định" };
 const frequencyLabel: Record<IncomeFrequency, string> = { monthly: "Hàng tháng", weekly: "Hàng tuần", yearly: "Hàng năm", one_time: "Một lần", custom: "Tùy chỉnh" };
-type IncomeDraft = { id?: string; incomeDate: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string };
+const workSourceOptions = ["Công việc chính", "Job 2", "Freelance", "Thu nhập thêm", "Khác"];
+type IncomeDraft = { id?: string; incomeDate: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string; };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MonthlyTooltip({ active, payload }: any) {
   if (active && payload && payload.length) {
