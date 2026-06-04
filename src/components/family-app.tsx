@@ -1372,7 +1372,6 @@ const emptyBankForm = (memberId = ""): BankAccount => ({ id: "", memberId, bankN
 function maskLast(value: string, prefix = "******") { const digits = value.replace(/\s+/g, ""); return digits ? `${prefix}${digits.slice(-4)}` : "Chưa cập nhật"; }
 function maskCard(value: string) { const digits = value.replace(/\D/g, ""); return digits ? `**** **** **** ${digits.slice(-4)}` : "Không có số thẻ"; }
 function bankProgress(account: BankAccount) { const spent = 0, target = account.annualFeeWaiverTarget || 0, missing = Math.max(0, target - spent); return { spent, target, missing, label: target ? `Đã chi ${money(spent)} / ${money(target)} để miễn phí thường niên` : "Không có điều kiện miễn phí" }; }
-function annualFeeStatus(account: BankAccount) { if (!account.annualFeeEnabled || account.annualFeeWaiverType === "Không có") return ""; const progress = bankProgress(account); return progress.missing <= 0 ? "Đã đủ điều kiện miễn phí" : `Còn thiếu ${money(progress.missing)} để miễn phí thường niên`; }
 function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }) {
   const canEdit = user.role === "full_access" || user.memberId === member.id;
   const [accounts, setAccounts] = useState<BankAccount[]>(() => bankCardsByMemberCache.get(member.id) || []);
@@ -1592,10 +1591,88 @@ function BankActionMenu({ account, detail, edit, remove, canEdit = true, dark = 
   const itemClass = "block w-full rounded-lg px-3 py-2 text-left text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5";
   return <div ref={ref} className="relative flex justify-end"><button type="button" onClick={() => setOpen(current => !current)} className={`grid size-10 place-items-center rounded-xl text-xl font-bold ${dark ? "bg-white/15 text-white hover:bg-white/20" : "border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5"}`} aria-label="Thao tác thẻ">⋯</button>{open && <div className="absolute right-0 top-11 z-30 w-40 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 text-slate-700 shadow-xl dark:text-slate-100"><button className={itemClass} onClick={() => { setOpen(false); detail(account); }}>Xem chi tiết</button>{canEdit && <button className={itemClass} onClick={() => { setOpen(false); edit(account); }}>Sửa</button>}{canEdit && <button className={`${itemClass} text-rose-500`} onClick={() => { setOpen(false); remove(account); }}>Xóa</button>}</div>}</div>;
 }
+interface CardFees {
+  interestRate: string;
+  foreignFee: string;
+  cashFee: string;
+  feeNote: string;
+  firstYearFree: boolean;
+  openYear: string;
+  checkYear: string;
+}
+
+export function parseFees(note: string, productName: string): CardFees {
+  const currentYear = String(new Date().getFullYear());
+  const defaultFees: CardFees = {
+    interestRate: "",
+    foreignFee: "",
+    cashFee: "",
+    feeNote: "",
+    firstYearFree: false,
+    openYear: "",
+    checkYear: currentYear
+  };
+
+  if (productName && productName.trim().toLowerCase().includes("bidv visa platinum cashback 360")) {
+    defaultFees.firstYearFree = true;
+    defaultFees.feeNote = "Mốc miễn phí có thể thay đổi theo nhóm khách hàng và địa bàn của BIDV từng thời kỳ.";
+    defaultFees.interestRate = "15.5% - 16.5%/năm";
+    defaultFees.foreignFee = "2.1%";
+    defaultFees.cashFee = "3%, tối thiểu 50.000 đ";
+  }
+
+  if (note && note.startsWith("FEES_JSON:")) {
+    try {
+      const parsed = JSON.parse(note.substring("FEES_JSON:".length));
+      return { ...defaultFees, ...parsed };
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  if (note && !note.startsWith("FEES_JSON:")) {
+    defaultFees.feeNote = note;
+  }
+
+  return defaultFees;
+}
+
+export function serializeFees(fees: CardFees): string {
+  return "FEES_JSON:" + JSON.stringify(fees);
+}
+
 export function BankAccountSheet({ account, members, close, saved, inline = false }: { account: BankAccount; members: Member[]; close: () => void; saved: (account: BankAccount) => void; inline?: boolean }) {
   const [form, setForm] = useState<BankAccount>({ ...emptyBankForm(account.memberId), ...account, benefits: account.benefits || [] });
   const [error, setError] = useState("");
+  const [fees, setFees] = useState<CardFees>(() => parseFees(account.note || "", account.productName || ""));
+
   const set = (key: keyof BankAccount, value: string | number | boolean) => setForm(current => ({ ...current, [key]: value }));
+
+  const updateFee = <K extends keyof CardFees>(key: K, value: CardFees[K]) => {
+    setFees(prev => {
+      const updated = { ...prev, [key]: value };
+      setForm(current => ({ ...current, note: serializeFees(updated) }));
+      return updated;
+    });
+  };
+
+  const handleProductNameChange = (value: string) => {
+    setForm(current => {
+      const updated = { ...current, productName: value };
+      if (value.trim().toLowerCase().includes("bidv visa platinum cashback 360")) {
+        updated.annualFeeAmount = 1000000;
+        updated.annualFeeWaiverTarget = 10000000;
+        updated.annualFeeCycle = "năm";
+        updated.annualFeeWaiverType = "Theo tổng chi tiêu năm";
+        
+        const bidvFees = parseFees("", value);
+        updated.note = serializeFees(bidvFees);
+        setFees(bidvFees);
+      }
+      return updated;
+    });
+  };
+
   const setBenefit = (id: string, key: keyof BankCardBenefit, value: string | number | boolean) => setForm(current => ({ ...current, benefits: current.benefits.map(benefit => benefit.id === id ? { ...benefit, [key]: value } : benefit) }));
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setError("");
@@ -1647,7 +1724,7 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
               </select>
             </Field>
             <Field label="Tên sản phẩm thẻ">
-              <input className={inputClass} value={form.productName} onChange={event => set("productName", event.target.value)} placeholder="BIDV Visa Platinum Cashback 360" />
+              <input className={inputClass} value={form.productName} onChange={event => handleProductNameChange(event.target.value)} placeholder="BIDV Visa Platinum Cashback 360" />
             </Field>
             <Field label="Ngày sao kê">
               <input className={inputClass} inputMode="numeric" value={form.statementDay} onChange={event => set("statementDay", event.target.value)} />
@@ -1673,40 +1750,79 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
             </Field>
             <div className="md:col-span-2">
               <Field label="Ghi chú">
-                <textarea rows={3} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} />
+                <textarea rows={3} className={inputClass} value={form.note && form.note.startsWith("FEES_JSON:") ? (parseFees(form.note, form.productName || "").feeNote || "") : form.note} onChange={event => set("note", event.target.value)} />
               </Field>
             </div>
           </div>
         </div>
 
         <div>
-          <h3 className="text-sm font-bold text-indigo-600">B. Phí thường niên</h3>
+          <h3 className="text-sm font-bold text-indigo-600">B. Biểu phí & điều kiện miễn phí</h3>
           <div className="mt-3 grid gap-4 md:grid-cols-2">
-            <label className="flex items-center gap-2 text-sm font-semibold">
-              <input type="checkbox" checked={form.annualFeeEnabled} onChange={event => set("annualFeeEnabled", event.target.checked)} />
-              Có phí thường niên
-            </label>
-            <Field label="Số tiền phí thường niên">
-              <input className={inputClass} type="number" min="0" value={form.annualFeeAmount} onChange={event => set("annualFeeAmount", Number(event.target.value))} />
-            </Field>
-            <Field label="Điều kiện miễn phí">
-              <select className={inputClass} value={form.annualFeeWaiverType} onChange={event => set("annualFeeWaiverType", event.target.value)}>
-                {waiverTypes.map(type => <option key={type}>{type}</option>)}
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Phí thường niên">
+                <input className={inputClass} type="number" min="0" value={form.annualFeeAmount} onChange={event => set("annualFeeAmount", Number(event.target.value))} />
+              </Field>
+              <Field label="Chu kỳ tính">
+                <select className={inputClass} value={form.annualFeeCycle} onChange={event => set("annualFeeCycle", event.target.value)}>
+                  <option value="tháng">tháng</option>
+                  <option value="năm">năm</option>
+                </select>
+              </Field>
+            </div>
+            
+            <Field label="Miễn phí năm đầu">
+              <select className={inputClass} value={fees.firstYearFree ? "yes" : "no"} onChange={event => updateFee("firstYearFree", event.target.value === "yes")}>
+                <option value="no">Không</option>
+                <option value="yes">Có</option>
               </select>
             </Field>
-            <Field label="Mức chi tiêu cần đạt">
+
+            <Field label="Điều kiện miễn phí năm kế tiếp (Mức chi tiêu/năm)">
               <input className={inputClass} type="number" min="0" value={form.annualFeeWaiverTarget} onChange={event => set("annualFeeWaiverTarget", Number(event.target.value))} />
             </Field>
-            <Field label="Chu kỳ tính">
-              <select className={inputClass} value={form.annualFeeCycle} onChange={event => set("annualFeeCycle", event.target.value)}>
-                <option value="tháng">tháng</option>
-                <option value="năm">năm</option>
-              </select>
+
+            <Field label="Lãi suất (/năm)">
+              <input className={inputClass} value={fees.interestRate} onChange={event => updateFee("interestRate", event.target.value)} placeholder="15.5% - 16.5%/năm" />
             </Field>
-            <Field label="Ngày bắt đầu chu kỳ">
-              <input className={inputClass} type="date" value={form.annualFeeCycleStart} onChange={event => set("annualFeeCycleStart", event.target.value)} />
+
+            <Field label="Phí giao dịch nước ngoài">
+              <input className={inputClass} value={fees.foreignFee} onChange={event => updateFee("foreignFee", event.target.value)} placeholder="2.1%" />
             </Field>
-            <p className="rounded-xl bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-600 md:col-span-2">{bankProgress(form).label}</p>
+
+            <Field label="Phí rút tiền mặt">
+              <input className={inputClass} value={fees.cashFee} onChange={event => updateFee("cashFee", event.target.value)} placeholder="3%, tối thiểu 50.000 đ" />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Năm mở thẻ">
+                <input className={inputClass} maxLength={4} placeholder="e.g. 2025" value={fees.openYear} onChange={event => updateFee("openYear", event.target.value)} />
+              </Field>
+              <Field label="Năm cần kiểm tra">
+                <input className={inputClass} maxLength={4} placeholder="e.g. 2026" value={fees.checkYear} onChange={event => updateFee("checkYear", event.target.value)} />
+              </Field>
+            </div>
+
+            {(() => {
+              const openYr = parseInt(fees.openYear);
+              const checkYr = parseInt(fees.checkYear);
+              if (!isNaN(openYr) && !isNaN(checkYr)) {
+                if (checkYr === openYr) {
+                  return <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-600 md:col-span-2">Miễn phí thường niên năm đầu</p>;
+                } else if (checkYr > openYr) {
+                  return <p className="rounded-xl bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-700 md:col-span-2">Cần chi tiêu đủ {money(form.annualFeeWaiverTarget)}/năm để miễn phí, nếu không có thể bị thu {money(form.annualFeeAmount)}.</p>;
+                }
+              }
+              return null;
+            })()}
+
+            <p className="rounded-xl bg-indigo-50 px-4 py-3 text-xs font-semibold text-indigo-600 md:col-span-2">💡 Dù trả đúng hạn, vẫn cần theo dõi phí thường niên, lãi suất, phí giao dịch nước ngoài và phí rút tiền mặt.</p>
+
+            <div className="md:col-span-2">
+              <Field label="Ghi chú biểu phí">
+                <textarea rows={2} className={inputClass} value={fees.feeNote} onChange={event => updateFee("feeNote", event.target.value)} placeholder="Mốc miễn phí có thể thay đổi..." />
+              </Field>
+            </div>
           </div>
         </div>
 
@@ -1785,7 +1901,10 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
 }
 export function BankAccountDetail({ account, memberName: owner, close, loading = false, inline = false }: { account: BankAccount; memberName: string; close: () => void; loading?: boolean; inline?: boolean }) {
   const [showFull, setShowFull] = useState(false);
-  const progress = bankProgress(account), feeStatus = annualFeeStatus(account);
+  const progress = bankProgress(account);
+  const fees = parseFees(account.note || "", account.productName || "");
+  const [openYear, setOpenYear] = useState(fees.openYear || "");
+  const [checkYear, setCheckYear] = useState(fees.checkYear || String(new Date().getFullYear()));
 
   const content = (
     <>
@@ -1799,7 +1918,7 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
         <section>
           <h3 className="font-semibold">Thông tin thẻ</h3>
           <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
-            {[["Ngân hàng", account.bankName], ["Sản phẩm", account.productName || "Chưa cập nhật"], ["Thành viên", owner], ["Chủ thẻ", account.accountHolder], ["Loại", account.cardType], ["Tổ chức thẻ", account.cardNetwork], ["Trạng thái", account.status], ["Hạn mức tín dụng", money(account.creditLimit)], ["Ngày sao kê", account.statementDay || "Không có"], ["Ngày đến hạn", account.dueDay || "Không có"], ["Số tài khoản", showFull ? account.accountNumber || "Không có" : maskLast(account.accountNumber)], ["Số thẻ", showFull ? account.cardNumber || "Không có" : maskCard(account.cardNumber)], ["Hết hạn", account.expiryMonth || account.expiryYear ? `${account.expiryMonth}/${account.expiryYear}` : "Không áp dụng"], ["Ghi chú", account.note || "Không có"]].map(([label, value]) => (
+            {[["Ngân hàng", account.bankName], ["Sản phẩm", account.productName || "Chưa cập nhật"], ["Thành viên", owner], ["Chủ thẻ", account.accountHolder], ["Loại", account.cardType], ["Tổ chức thẻ", account.cardNetwork], ["Trạng thái", account.status], ["Hạn mức tín dụng", money(account.creditLimit)], ["Ngày sao kê", account.statementDay || "Không có"], ["Ngày đến hạn", account.dueDay || "Không có"], ["Số tài khoản", showFull ? account.accountNumber || "Không có" : maskLast(account.accountNumber)], ["Số thẻ", showFull ? account.cardNumber || "Không có" : maskCard(account.cardNumber)], ["Hết hạn", account.expiryMonth || account.expiryYear ? `${account.expiryMonth}/${account.expiryYear}` : "Không áp dụng"], ["Ghi chú", account.note && account.note.startsWith("FEES_JSON:") ? (parseFees(account.note, account.productName || "").feeNote || "Không có") : (account.note || "Không có")]].map(([label, value]) => (
               <div key={label}>
                 <p className="text-xs text-slate-400">{label}</p>
                 <p className="mt-1 font-medium">{value}</p>
@@ -1809,12 +1928,86 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
         </section>
         
         <section>
-          <h3 className="font-semibold">Phí thường niên</h3>
-          <div className="mt-3 rounded-xl border border-[var(--app-border)] p-4 text-sm">
-            <p>Phí thường niên: <b>{account.annualFeeEnabled ? money(account.annualFeeAmount) : "Không có"}</b></p>
-            <p className="mt-2">Điều kiện miễn phí: <b>{account.annualFeeWaiverType}</b></p>
-            <p className="mt-2">{progress.label}</p>
-            {feeStatus && <p className={`mt-3 rounded-lg px-3 py-2 font-semibold ${feeStatus.startsWith("Đã đủ") ? "bg-emerald-50 text-emerald-600" : "bg-orange-50 text-orange-600"}`}>{feeStatus}</p>}
+          <h3 className="font-semibold">Biểu phí & điều kiện miễn phí</h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-[var(--app-border)] p-3 text-sm space-y-2 bg-[var(--app-card)]">
+              <div>
+                <p className="text-xs text-slate-400">Phí thường niên</p>
+                <p className="font-medium mt-0.5">{account.annualFeeAmount ? `${money(account.annualFeeAmount)}/năm` : "Miễn phí"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Miễn phí năm đầu</p>
+                <p className="font-medium mt-0.5">{fees.firstYearFree ? "Có" : "Không"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Điều kiện miễn phí năm kế tiếp</p>
+                <p className="font-medium mt-0.5">{account.annualFeeWaiverTarget ? `Chi tiêu từ ${money(account.annualFeeWaiverTarget)}/năm` : "Không có điều kiện"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Lãi suất</p>
+                <p className="font-medium mt-0.5">{fees.interestRate || "Chưa cập nhật"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Phí giao dịch nước ngoài</p>
+                <p className="font-medium mt-0.5">{fees.foreignFee || "Chưa cập nhật"}</p>
+                {fees.foreignFee && <p className="text-[11px] text-slate-400 mt-0.5">Bao gồm phí xử lý giao dịch tại ĐVCNT nước ngoài và phí chuyển đổi ngoại tệ.</p>}
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Phí rút tiền mặt</p>
+                <p className="font-medium mt-0.5">{fees.cashFee || "Chưa cập nhật"}</p>
+              </div>
+              {fees.feeNote && (
+                <div className="pt-1 border-t border-[var(--app-border)]">
+                  <p className="text-xs text-slate-400">Ghi chú biểu phí</p>
+                  <p className="text-xs text-slate-500 mt-1 font-medium italic">{fees.feeNote}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-[var(--app-border)] p-3 text-sm space-y-3 bg-[var(--app-card)] flex flex-col justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-slate-500 mb-2">Tra cứu phí theo năm</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Năm mở thẻ</label>
+                    <input 
+                      type="number" 
+                      className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-background)] px-2 py-1.5 text-xs outline-none" 
+                      value={openYear} 
+                      onChange={e => setOpenYear(e.target.value)} 
+                      placeholder="Ví dụ: 2025"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Năm kiểm tra</label>
+                    <input 
+                      type="number" 
+                      className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-background)] px-2 py-1.5 text-xs outline-none" 
+                      value={checkYear} 
+                      onChange={e => setCheckYear(e.target.value)} 
+                      placeholder="Ví dụ: 2026"
+                    />
+                  </div>
+                </div>
+                
+                {(() => {
+                  const openYr = parseInt(openYear);
+                  const checkYr = parseInt(checkYear);
+                  if (!isNaN(openYr) && !isNaN(checkYr)) {
+                    if (checkYr === openYr) {
+                      return <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-600 text-center">Miễn phí thường niên năm đầu</p>;
+                    } else if (checkYr > openYr) {
+                      return <p className="mt-3 rounded-lg bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-700 text-center">Cần chi tiêu đủ {money(account.annualFeeWaiverTarget)}/năm để miễn phí, nếu không có thể bị thu {money(account.annualFeeAmount)}.</p>;
+                    }
+                  }
+                  return null;
+                })()}
+              </div>
+
+              <p className="text-[11px] font-semibold text-indigo-600 bg-indigo-50/50 p-2.5 rounded-lg border border-indigo-100">
+                💡 Dù trả đúng hạn, vẫn cần theo dõi phí thường niên, lãi suất, phí giao dịch nước ngoài và phí rút tiền mặt.
+              </p>
+            </div>
           </div>
         </section>
         
