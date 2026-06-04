@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from "recharts";
 import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
@@ -1475,6 +1476,53 @@ const incomeTemplates = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền tồ
 const incomeTypeLabel: Record<IncomeSourceType, string> = { fixed: "Cố định", variable: "Không cố định" };
 const frequencyLabel: Record<IncomeFrequency, string> = { monthly: "Hàng tháng", weekly: "Hàng tuần", yearly: "Hàng năm", one_time: "Một lần", custom: "Tùy chỉnh" };
 type IncomeDraft = { id?: string; incomeDate: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function MonthlyTooltip({ active, payload }: any) {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-white/10 dark:bg-[var(--app-card)]">
+        <p className="mb-2 font-bold text-slate-700 dark:text-slate-200">{data.monthName}</p>
+        {Object.entries(data.details).map(([name, val]) => (
+          <div key={name} className="flex justify-between gap-4 text-xs">
+            <span className="text-slate-500">{name}</span>
+            <span className="font-semibold text-emerald-600">{money(val as number)}</span>
+          </div>
+        ))}
+        <div className="mt-2 border-t border-slate-100 pt-2 text-sm font-bold text-emerald-500 dark:border-white/10">
+          Tổng: {money(data.total)}
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function YearlyTooltip({ active, payload }: any) {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-white/10 dark:bg-[var(--app-card)]">
+        <p className="mb-2 font-bold text-slate-700 dark:text-slate-200">Năm {data.year}</p>
+        <div className="flex justify-between gap-4 text-sm font-bold text-indigo-500">
+          <span>Tổng thu:</span>
+          <span>{money(data.total)}</span>
+        </div>
+        {data.diff !== undefined && (
+          <div className="mt-2 text-xs">
+            <span className="text-slate-500">So với năm {data.year - 1}: </span>
+            <span className={`font-semibold ${data.diff > 0 ? "text-emerald-500" : "text-rose-500"}`}>
+              {data.diff > 0 ? "↑" : "↓"} {money(Math.abs(data.diff))} ({data.percent})
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+  return null;
+}
+
 function IncomeSheetManagement() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [monthFilter, setMonthFilter] = useState("all");
@@ -1489,6 +1537,7 @@ function IncomeSheetManagement() {
   const [activeTab, setActiveTab] = useState<"monthly" | "yearly">("monthly");
   const [loading, setLoading] = useState(true);
   const [activeIncomeMenuId, setActiveIncomeMenuId] = useState<string | null>(null);
+  const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set());
   
   const load = useCallback(async () => {
     setLoading(true);
@@ -1512,7 +1561,15 @@ function IncomeSheetManagement() {
   });
   
   const receivedStatus = incomeStatuses[0];
-  const monthlyTotals = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, total: allRecords.filter(record => record.month === index + 1 && record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0) }));
+  const monthlyTotals = Array.from({ length: 12 }, (_, index) => {
+    const monthRecords = allRecords.filter(record => record.month === index + 1 && record.status === receivedStatus);
+    const total = monthRecords.reduce((sum, record) => sum + record.amount, 0);
+    const details = monthRecords.reduce((acc, record) => {
+      acc[record.name] = (acc[record.name] || 0) + record.amount;
+      return acc;
+    }, {} as Record<string, number>);
+    return { month: index + 1, monthName: `Tháng ${index + 1}`, total, details };
+  });
   const visibleMonthTotal = records.filter(record => record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
   
   // Tổng năm = tổng records + tổng yearlySummaries
@@ -1527,12 +1584,20 @@ function IncomeSheetManagement() {
     return { category, total: recordTotal + summaryTotal };
   });
   
-  const maxMonth = Math.max(1, ...monthlyTotals.map(item => item.total));
   const renderedMonths = Array.from(new Set(records.map(record => record.month))).sort((left, right) => left - right);
   
   const yearlyChartData = incomeData?.yearlyComparison || [];
-  const maxYearTotal = Math.max(1, ...yearlyChartData.map(d => d.total));
-  const prevYearTotal = yearlyChartData.find(d => d.year === Number(year) - 1)?.total;
+  const processedYearlyChartData = yearlyChartData.slice().sort((a,b) => a.year - b.year).map((item, index, array) => {
+    const prevTotal = array[index - 1]?.total;
+    let diff = undefined;
+    let percent = undefined;
+    if (prevTotal !== undefined) {
+      diff = item.total - prevTotal;
+      percent = prevTotal === 0 ? "100%" : (Math.abs(diff) / prevTotal * 100).toFixed(1) + "%";
+    }
+    return { ...item, diff, percent, prevTotal };
+  });
+  const prevYearTotal = processedYearlyChartData.find(d => d.year === Number(year))?.prevTotal;
 
   function renderCompare(current: number, prev: number | undefined) {
     if (!showComparison) return null;
@@ -1541,6 +1606,15 @@ function IncomeSheetManagement() {
     if (d === 0) return <p className="mt-1 text-[10px] text-slate-400">Không đổi so với năm trước</p>;
     const percent = prev === 0 ? "100%" : (Math.abs(d) / Math.abs(prev) * 100).toFixed(1) + "%";
     return <p className={`mt-1 text-[10px] font-bold ${d > 0 ? "text-emerald-500" : "text-rose-500"}`}>{d > 0 ? "↑" : "↓"} {money(Math.abs(d))} ({percent})</p>;
+  }
+  
+  function toggleMonth(month: number) {
+    setExpandedMonths(current => {
+      const next = new Set(current);
+      if (next.has(month)) next.delete(month);
+      else next.add(month);
+      return next;
+    });
   }
   
   async function remove(record: IncomeRecord) {
@@ -1641,20 +1715,38 @@ function IncomeSheetManagement() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <Card>
         <div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div>
-        <div className="flex h-64 w-full items-end justify-between gap-1 overflow-x-auto pb-2 md:gap-2">
-          {monthlyTotals.map(item => <div key={item.month} className="flex min-w-[30px] max-w-[60px] flex-1 flex-col items-center gap-2">
-            <div className="flex h-[240px] w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div>
-            <span className="text-xs font-bold text-slate-400">{`T${item.month}`}</span>
-          </div>)}
+        <div className="h-64 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={monthlyTotals} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.2} />
+              <XAxis dataKey="monthName" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#94a3b8" }} dy={10} />
+              <YAxis hide />
+              <RechartsTooltip content={<MonthlyTooltip />} cursor={{ fill: "transparent" }} />
+              <Bar dataKey="total" radius={[6, 6, 0, 0]} maxBarSize={60}>
+                {monthlyTotals.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill="#10b981" />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </Card>
       <Card>
         <div className="mb-4 flex items-center justify-between"><b>So sánh thu nhập theo năm</b></div>
-        <div className="flex h-64 w-full items-end justify-between gap-2 overflow-x-auto pb-2 md:justify-center md:gap-6">
-          {yearlyChartData.map(item => <div key={item.year} className="flex min-w-[60px] max-w-[120px] flex-1 flex-col items-center gap-2">
-            <div className="flex h-[240px] w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-indigo-500" style={{ height: `${Math.max(4, item.total / maxYearTotal * 100)}%` }} /></div>
-            <span className="text-xs font-bold text-slate-400">{item.year}</span>
-          </div>)}
+        <div className="h-64 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={processedYearlyChartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.2} />
+              <XAxis dataKey="year" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#94a3b8" }} dy={10} />
+              <YAxis hide />
+              <RechartsTooltip content={<YearlyTooltip />} cursor={{ fill: "transparent" }} />
+              <Bar dataKey="total" radius={[6, 6, 0, 0]} maxBarSize={120}>
+                {processedYearlyChartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill="#6366f1" />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </Card>
     </div>
@@ -1677,17 +1769,27 @@ function IncomeSheetManagement() {
               {renderedMonths.map(month => {
                 const items = records.filter(record => record.month === month);
                 const subtotal = items.filter(record => record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
+                const isExpanded = expandedMonths.has(month);
                 return <Fragment key={`m-${month}`}>
-                  {items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]">
-                    <td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td><td className="px-4 py-3">{record.month}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3">{record.name}</td>
-                    <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3 text-slate-500">{record.note}</td>
+                  <tr className="cursor-pointer border-t border-[var(--app-border)] bg-slate-50/50 hover:bg-slate-100 dark:bg-white/5 dark:hover:bg-white/10" onClick={() => toggleMonth(month)}>
+                    <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200" colSpan={4}>
+                      Tháng {month} <span className="ml-2 text-xs font-normal text-slate-400">({items.length} khoản thu)</span>
+                      <span className="ml-2 inline-block w-4 text-center text-[10px] text-slate-400">{isExpanded ? "▲" : "▼"}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(subtotal)}</td>
+                    <td className="px-4 py-3" colSpan={2}></td>
+                  </tr>
+                  {isExpanded && items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)] bg-white dark:bg-[var(--app-card)]">
+                    <td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td>
+                    <td className="px-4 py-3">{record.month}</td>
+                    <td className="px-4 py-3">{record.category}</td>
+                    <td className="px-4 py-3">{record.name}</td>
+                    <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td>
+                    <td className="px-4 py-3 text-slate-500">{record.note}</td>
                     <td className="px-4 py-3 text-right">
                       <IncomeRecordActionMenu record={record} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => edit(record)} remove={() => remove(record)} />
                     </td>
                   </tr>)}
-                  <tr className="bg-emerald-50/70 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10">
-                    <td className="px-4 py-2" colSpan={4}>Tổng tháng {month}</td><td className="px-4 py-2 text-right">{money(subtotal)}</td><td className="px-4 py-2" colSpan={2}></td>
-                  </tr>
                 </Fragment>;
               })}
             </tbody>
