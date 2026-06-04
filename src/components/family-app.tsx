@@ -1467,6 +1467,18 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
     });
   }
 
+  if (["edit", "new"].includes(subView) && selectedCard) {
+    return (
+      <BankAccountSheet
+        account={selectedCard}
+        members={[member]}
+        close={() => { setSubView("list"); setSelectedCard(null); }}
+        saved={onCardSaved}
+        inline={true}
+      />
+    );
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1493,14 +1505,6 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
           memberName={member.nickname || member.name}
           close={() => { setSubView("list"); setSelectedCard(null); }}
           loading={rewardsLoading}
-        />
-      )}
-      {["edit", "new"].includes(subView) && selectedCard && (
-        <BankAccountSheet
-          account={selectedCard}
-          members={[member]}
-          close={() => { setSubView("list"); setSelectedCard(null); }}
-          saved={onCardSaved}
         />
       )}
     </div>
@@ -1574,7 +1578,7 @@ function BankActionMenu({ account, detail, edit, remove, canEdit = true, dark = 
   const itemClass = "block w-full rounded-lg px-3 py-2 text-left text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5";
   return <div ref={ref} className="relative flex justify-end"><button type="button" onClick={() => setOpen(current => !current)} className={`grid size-10 place-items-center rounded-xl text-xl font-bold ${dark ? "bg-white/15 text-white hover:bg-white/20" : "border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5"}`} aria-label="Thao tác thẻ">⋯</button>{open && <div className="absolute right-0 top-11 z-30 w-40 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 text-slate-700 shadow-xl dark:text-slate-100"><button className={itemClass} onClick={() => { setOpen(false); detail(account); }}>Xem chi tiết</button>{canEdit && <button className={itemClass} onClick={() => { setOpen(false); edit(account); }}>Sửa</button>}{canEdit && <button className={`${itemClass} text-rose-500`} onClick={() => { setOpen(false); remove(account); }}>Xóa</button>}</div>}</div>;
 }
-export function BankAccountSheet({ account, members, close, saved }: { account: BankAccount; members: Member[]; close: () => void; saved: (account: BankAccount) => void }) {
+export function BankAccountSheet({ account, members, close, saved, inline = false }: { account: BankAccount; members: Member[]; close: () => void; saved: (account: BankAccount) => void; inline?: boolean }) {
   const [form, setForm] = useState<BankAccount>({ ...emptyBankForm(account.memberId), ...account, benefits: account.benefits || [] });
   const [error, setError] = useState("");
   const set = (key: keyof BankAccount, value: string | number | boolean) => setForm(current => ({ ...current, [key]: value }));
@@ -1586,10 +1590,183 @@ export function BankAccountSheet({ account, members, close, saved }: { account: 
     if (!response.ok || !result?.data) return setError(result?.error || "Không thể lưu thẻ ngân hàng.");
     saved(result.data);
   }
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 md:items-center md:p-6" onMouseDown={close}><form onSubmit={submit} onMouseDown={event => event.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-3xl md:rounded-3xl"><h2 className="text-lg font-bold">{account.id ? "Sửa thẻ ngân hàng" : "Thêm thẻ ngân hàng"}</h2><p className="mt-2 rounded-xl bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-700 dark:bg-orange-400/10 dark:text-orange-200">Thông tin ngân hàng là dữ liệu nhạy cảm.</p>
-    <div className="mt-5 space-y-6"><div><h3 className="text-sm font-bold text-indigo-600">A. Thông tin cơ bản</h3><div className="mt-3 grid gap-4 md:grid-cols-2"><Field label="Thành viên sở hữu"><select required className={inputClass} value={form.memberId} onChange={event => set("memberId", event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.nickname || member.name}</option>)}</select></Field><Field label="Ngân hàng"><select required className={inputClass} value={form.bankName} onChange={event => set("bankName", event.target.value)}>{bankNames.map(name => <option key={name}>{name}</option>)}</select></Field><Field label="Tên chủ tài khoản"><input required className={inputClass} value={form.accountHolder} onChange={event => set("accountHolder", event.target.value)} /></Field><Field label="Số tài khoản"><input className={inputClass} value={form.accountNumber} onChange={event => set("accountNumber", event.target.value)} /></Field><Field label="Số thẻ"><input className={inputClass} value={form.cardNumber} onChange={event => set("cardNumber", event.target.value)} /></Field><Field label="Loại thẻ"><select className={inputClass} value={form.cardType} onChange={event => { set("cardType", event.target.value); set("accountType", event.target.value); }}>{bankCardTypes.map(type => <option key={type}>{type}</option>)}</select></Field><Field label="Tổ chức thẻ"><select className={inputClass} value={form.cardNetwork} onChange={event => set("cardNetwork", event.target.value)}>{bankNetworks.map(value => <option key={value}>{value}</option>)}</select></Field><Field label="Tên sản phẩm thẻ"><input className={inputClass} value={form.productName} onChange={event => set("productName", event.target.value)} placeholder="BIDV Visa Platinum Cashback 360" /></Field><Field label="Ngày sao kê"><input className={inputClass} inputMode="numeric" value={form.statementDay} onChange={event => set("statementDay", event.target.value)} /></Field><Field label="Ngày đến hạn thanh toán"><input className={inputClass} inputMode="numeric" value={form.dueDay} onChange={event => set("dueDay", event.target.value)} /></Field><Field label="Hạn mức tín dụng"><input className={inputClass} type="number" min="0" value={form.creditLimit} onChange={event => set("creditLimit", Number(event.target.value))} /></Field><div className="grid grid-cols-2 gap-2"><Field label="Tháng hết hạn"><input className={inputClass} inputMode="numeric" maxLength={2} value={form.expiryMonth} onChange={event => set("expiryMonth", event.target.value)} /></Field><Field label="Năm hết hạn"><input className={inputClass} inputMode="numeric" maxLength={4} value={form.expiryYear} onChange={event => set("expiryYear", event.target.value)} /></Field></div><Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={event => set("status", event.target.value)}>{bankStatuses.map(status => <option key={status}>{status}</option>)}</select></Field><div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field></div></div></div>
-    <div><h3 className="text-sm font-bold text-indigo-600">B. Phí thường niên</h3><div className="mt-3 grid gap-4 md:grid-cols-2"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={form.annualFeeEnabled} onChange={event => set("annualFeeEnabled", event.target.checked)} /> Có phí thường niên</label><Field label="Số tiền phí thường niên"><input className={inputClass} type="number" min="0" value={form.annualFeeAmount} onChange={event => set("annualFeeAmount", Number(event.target.value))} /></Field><Field label="Điều kiện miễn phí"><select className={inputClass} value={form.annualFeeWaiverType} onChange={event => set("annualFeeWaiverType", event.target.value)}>{waiverTypes.map(type => <option key={type}>{type}</option>)}</select></Field><Field label="Mức chi tiêu cần đạt"><input className={inputClass} type="number" min="0" value={form.annualFeeWaiverTarget} onChange={event => set("annualFeeWaiverTarget", Number(event.target.value))} /></Field><Field label="Chu kỳ tính"><select className={inputClass} value={form.annualFeeCycle} onChange={event => set("annualFeeCycle", event.target.value)}><option value="tháng">tháng</option><option value="năm">năm</option></select></Field><Field label="Ngày bắt đầu chu kỳ"><input className={inputClass} type="date" value={form.annualFeeCycleStart} onChange={event => set("annualFeeCycleStart", event.target.value)} /></Field><p className="rounded-xl bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-600 md:col-span-2">{bankProgress(form).label}</p></div></div>
-    <div><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-bold text-indigo-600">C. Ưu đãi / Cashback</h3><button type="button" onClick={() => setForm(current => ({ ...current, benefits: [...current.benefits, emptyBenefit()] }))} className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-bold text-indigo-600">+ Thêm ưu đãi</button></div><div className="mt-3 space-y-3">{form.benefits.length ? form.benefits.map(benefit => <div key={benefit.id} className="rounded-xl border border-[var(--app-border)] p-3"><div className="grid gap-3 md:grid-cols-2"><Field label="Tên ưu đãi"><input className={inputClass} value={benefit.name} onChange={event => setBenefit(benefit.id, "name", event.target.value)} /></Field><Field label="Nhóm chi tiêu áp dụng"><select className={inputClass} value={benefit.category} onChange={event => setBenefit(benefit.id, "category", event.target.value)}>{benefitCategories.map(category => <option key={category}>{category}</option>)}</select></Field><Field label="Loại ưu đãi"><select className={inputClass} value={benefit.benefitType} onChange={event => setBenefit(benefit.id, "benefitType", event.target.value)}>{benefitTypes.map(type => <option key={type}>{type}</option>)}</select></Field><Field label="Giá trị"><input className={inputClass} type="number" value={benefit.benefitValue} onChange={event => setBenefit(benefit.id, "benefitValue", Number(event.target.value))} /></Field><Field label="Mức hoàn tối đa/tháng"><input className={inputClass} type="number" value={benefit.monthlyCap} onChange={event => setBenefit(benefit.id, "monthlyCap", Number(event.target.value))} /></Field><Field label="Chi tiêu tối thiểu/giao dịch"><input className={inputClass} type="number" value={benefit.minTransactionAmount} onChange={event => setBenefit(benefit.id, "minTransactionAmount", Number(event.target.value))} /></Field><div className="md:col-span-2"><Field label="Ghi chú điều kiện"><textarea rows={2} className={inputClass} value={benefit.conditionNote} onChange={event => setBenefit(benefit.id, "conditionNote", event.target.value)} /></Field></div><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={benefit.active} onChange={event => setBenefit(benefit.id, "active", event.target.checked)} /> Ưu đãi đang hoạt động</label><button type="button" onClick={() => setForm(current => ({ ...current, benefits: current.benefits.filter(item => item.id !== benefit.id) }))} className="w-fit rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-500">Xóa ưu đãi</button></div></div>) : <p className="rounded-xl border border-dashed border-[var(--app-border)] px-4 py-6 text-center text-sm text-slate-400">Chưa có rule ưu đãi.</p>}</div></div></div>{error && <p className="mt-4 text-sm text-rose-500">{error}</p>}<div className="mt-6 flex gap-3"><button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Hủy</button><button className="flex-1 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
+
+  const formContent = (
+    <>
+      {inline && (
+        <div className="mb-4">
+          <button type="button" onClick={close} className="text-sm font-semibold text-indigo-600">← Quay lại danh sách thẻ</button>
+        </div>
+      )}
+      <h2 className="text-lg font-bold">{account.id ? "Sửa thẻ ngân hàng" : "Thêm thẻ ngân hàng"}</h2>
+      <p className="mt-2 rounded-xl bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-700 dark:bg-orange-400/10 dark:text-orange-200">Thông tin ngân hàng là dữ liệu nhạy cảm.</p>
+      <div className="mt-5 space-y-6">
+        <div>
+          <h3 className="text-sm font-bold text-indigo-600">A. Thông tin cơ bản</h3>
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <Field label="Thành viên sở hữu">
+              <select required className={inputClass} value={form.memberId} onChange={event => set("memberId", event.target.value)}>
+                {members.map(member => <option key={member.id} value={member.id}>{member.nickname || member.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Ngân hàng">
+              <select required className={inputClass} value={form.bankName} onChange={event => set("bankName", event.target.value)}>
+                {bankNames.map(name => <option key={name}>{name}</option>)}
+              </select>
+            </Field>
+            <Field label="Tên chủ tài khoản">
+              <input required className={inputClass} value={form.accountHolder} onChange={event => set("accountHolder", event.target.value)} />
+            </Field>
+            <Field label="Số tài khoản">
+              <input className={inputClass} value={form.accountNumber} onChange={event => set("accountNumber", event.target.value)} />
+            </Field>
+            <Field label="Số thẻ">
+              <input className={inputClass} value={form.cardNumber} onChange={event => set("cardNumber", event.target.value)} />
+            </Field>
+            <Field label="Loại thẻ">
+              <select className={inputClass} value={form.cardType} onChange={event => { set("cardType", event.target.value); set("accountType", event.target.value); }}>
+                {bankCardTypes.map(type => <option key={type}>{type}</option>)}
+              </select>
+            </Field>
+            <Field label="Tổ chức thẻ">
+              <select className={inputClass} value={form.cardNetwork} onChange={event => set("cardNetwork", event.target.value)}>
+                {bankNetworks.map(value => <option key={value}>{value}</option>)}
+              </select>
+            </Field>
+            <Field label="Tên sản phẩm thẻ">
+              <input className={inputClass} value={form.productName} onChange={event => set("productName", event.target.value)} placeholder="BIDV Visa Platinum Cashback 360" />
+            </Field>
+            <Field label="Ngày sao kê">
+              <input className={inputClass} inputMode="numeric" value={form.statementDay} onChange={event => set("statementDay", event.target.value)} />
+            </Field>
+            <Field label="Ngày đến hạn thanh toán">
+              <input className={inputClass} inputMode="numeric" value={form.dueDay} onChange={event => set("dueDay", event.target.value)} />
+            </Field>
+            <Field label="Hạn mức tín dụng">
+              <input className={inputClass} type="number" min="0" value={form.creditLimit} onChange={event => set("creditLimit", Number(event.target.value))} />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Tháng hết hạn">
+                <input className={inputClass} inputMode="numeric" maxLength={2} value={form.expiryMonth} onChange={event => set("expiryMonth", event.target.value)} />
+              </Field>
+              <Field label="Năm hết hạn">
+                <input className={inputClass} inputMode="numeric" maxLength={4} value={form.expiryYear} onChange={event => set("expiryYear", event.target.value)} />
+              </Field>
+            </div>
+            <Field label="Trạng thái">
+              <select className={inputClass} value={form.status} onChange={event => set("status", event.target.value)}>
+                {bankStatuses.map(status => <option key={status}>{status}</option>)}
+              </select>
+            </Field>
+            <div className="md:col-span-2">
+              <Field label="Ghi chú">
+                <textarea rows={3} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} />
+              </Field>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-bold text-indigo-600">B. Phí thường niên</h3>
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <label className="flex items-center gap-2 text-sm font-semibold">
+              <input type="checkbox" checked={form.annualFeeEnabled} onChange={event => set("annualFeeEnabled", event.target.checked)} />
+              Có phí thường niên
+            </label>
+            <Field label="Số tiền phí thường niên">
+              <input className={inputClass} type="number" min="0" value={form.annualFeeAmount} onChange={event => set("annualFeeAmount", Number(event.target.value))} />
+            </Field>
+            <Field label="Điều kiện miễn phí">
+              <select className={inputClass} value={form.annualFeeWaiverType} onChange={event => set("annualFeeWaiverType", event.target.value)}>
+                {waiverTypes.map(type => <option key={type}>{type}</option>)}
+              </select>
+            </Field>
+            <Field label="Mức chi tiêu cần đạt">
+              <input className={inputClass} type="number" min="0" value={form.annualFeeWaiverTarget} onChange={event => set("annualFeeWaiverTarget", Number(event.target.value))} />
+            </Field>
+            <Field label="Chu kỳ tính">
+              <select className={inputClass} value={form.annualFeeCycle} onChange={event => set("annualFeeCycle", event.target.value)}>
+                <option value="tháng">tháng</option>
+                <option value="năm">năm</option>
+              </select>
+            </Field>
+            <Field label="Ngày bắt đầu chu kỳ">
+              <input className={inputClass} type="date" value={form.annualFeeCycleStart} onChange={event => set("annualFeeCycleStart", event.target.value)} />
+            </Field>
+            <p className="rounded-xl bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-600 md:col-span-2">{bankProgress(form).label}</p>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold text-indigo-600">C. Ưu đãi / Cashback</h3>
+            <button type="button" onClick={() => setForm(current => ({ ...current, benefits: [...current.benefits, emptyBenefit()] }))} className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-bold text-indigo-600">+ Thêm ưu đãi</button>
+          </div>
+          <div className="mt-3 space-y-3">
+            {form.benefits.length ? form.benefits.map(benefit => (
+              <div key={benefit.id} className="rounded-xl border border-[var(--app-border)] p-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Tên ưu đãi">
+                    <input className={inputClass} value={benefit.name} onChange={event => setBenefit(benefit.id, "name", event.target.value)} />
+                  </Field>
+                  <Field label="Nhóm chi tiêu áp dụng">
+                    <select className={inputClass} value={benefit.category} onChange={event => setBenefit(benefit.id, "category", event.target.value)}>
+                      {benefitCategories.map(category => <option key={category}>{category}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Loại ưu đãi">
+                    <select className={inputClass} value={benefit.benefitType} onChange={event => setBenefit(benefit.id, "benefitType", event.target.value)}>
+                      {benefitTypes.map(type => <option key={type}>{type}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Giá trị">
+                    <input className={inputClass} type="number" value={benefit.benefitValue} onChange={event => setBenefit(benefit.id, "benefitValue", Number(event.target.value))} />
+                  </Field>
+                  <Field label="Mức hoàn tối đa/tháng">
+                    <input className={inputClass} type="number" value={benefit.monthlyCap} onChange={event => setBenefit(benefit.id, "monthlyCap", Number(event.target.value))} />
+                  </Field>
+                  <Field label="Chi tiêu tối thiểu/giao dịch">
+                    <input className={inputClass} type="number" value={benefit.minTransactionAmount} onChange={event => setBenefit(benefit.id, "minTransactionAmount", Number(event.target.value))} />
+                  </Field>
+                  <div className="md:col-span-2">
+                    <Field label="Ghi chú điều kiện">
+                      <textarea rows={2} className={inputClass} value={benefit.conditionNote} onChange={event => setBenefit(benefit.id, "conditionNote", event.target.value)} />
+                    </Field>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm font-semibold">
+                    <input type="checkbox" checked={benefit.active} onChange={event => setBenefit(benefit.id, "active", event.target.checked)} />
+                    Ưu đãi đang hoạt động
+                  </label>
+                  <button type="button" onClick={() => setForm(current => ({ ...current, benefits: current.benefits.filter(item => item.id !== benefit.id) }))} className="w-fit rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-500">Xóa ưu đãi</button>
+                </div>
+              </div>
+            )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] px-4 py-6 text-center text-sm text-slate-400">Chưa có rule ưu đãi.</p>}
+          </div>
+        </div>
+      </div>
+      {error && <p className="mt-4 text-sm text-rose-500">{error}</p>}
+      <div className="mt-6 flex gap-3">
+        <button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Hủy</button>
+        <button className="flex-1 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">Lưu</button>
+      </div>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <form onSubmit={submit} className="w-full space-y-6">
+        {formContent}
+      </form>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 md:items-center md:p-6" onMouseDown={close}>
+      <form onSubmit={submit} onMouseDown={event => event.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-3xl md:rounded-3xl">
+        {formContent}
+      </form>
+    </div>
+  );
 }
 export function BankAccountDetail({ account, memberName: owner, close, loading = false }: { account: BankAccount; memberName: string; close: () => void; loading?: boolean }) {
   const [showFull, setShowFull] = useState(false);
