@@ -875,11 +875,13 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
   </>;
 }
 type MemberProfileTab = "profile" | "account" | "bank" | "bankRaw" | "security" | "tasks" | "events" | "notes";
+type ProfileSubTab = "basic" | "education" | "skills" | "experience" | "documents";
 function MemberProfile({ member, data, user, close, saved, remove, personal = false, openChangePassword, logout, savedUser = () => undefined, initialEdit = false }: { member: Member | "new"; data: AppData; user: AuthUser; close: () => void; saved: (member: Member) => void; remove: (member: Member) => void; personal?: boolean; openChangePassword?: () => void; logout?: () => void; savedUser?: (user: AuthUser) => void; initialEdit?: boolean }) {
   const existing = member === "new" ? null : member;
   const [tab, setTab] = useState<MemberProfileTab>("profile");
   const [editing, setEditing] = useState(!existing || initialEdit);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [subTab, setSubTab] = useState<ProfileSubTab>("basic");
   const [error, setError] = useState("");
   const [linkedUsers, setLinkedUsers] = useState<ManagedUser[]>([]);
   const [form, setForm] = useState<Member>(() => existing ?? { id: crypto.randomUUID(), name: "", nickname: "", birthday: "", gender: "", role: "Khác" as unknown as FamilyRole, phone: "", avatar: "", notes: "", color: "#cbd5e1" });
@@ -975,7 +977,84 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
                 )}
               </div>
             </Card>
-            <Card className="p-6"><h3 className="font-semibold">Thông tin cá nhân</h3>{editing ? <div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Họ tên"><input required disabled={!canManage} className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Nickname"><input className={inputClass} value={form.nickname} onChange={event => set("nickname", event.target.value)} /></Field><Field label="Vai vế gia đình"><select disabled={!canManage} className={inputClass} value={form.role} onChange={event => set("role", event.target.value as FamilyRole)}>{familyRoles.map(role => <option key={role}>{role}</option>)}</select></Field><BirthdaySelect disabled={!canManage} value={form.birthday} onChange={value => set("birthday", value)} /><Field label="Tuổi hiện tại"><input disabled className={inputClass} value={ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa đủ ngày sinh"} readOnly /></Field><Field label="Giới tính"><select disabled={!canManage} className={inputClass} value={form.gender} onChange={event => set("gender", event.target.value as Member["gender"])}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Số điện thoại"><input className={inputClass} value={form.phone} onChange={event => set("phone", event.target.value)} /></Field><div className="md:col-span-2"><Field label="Ghi chú cá nhân"><textarea rows={4} className={inputClass} value={form.notes} onChange={event => set("notes", event.target.value)} /></Field></div></div> : <div className="mt-5 grid gap-5 text-sm sm:grid-cols-2">{[["Họ tên", form.name], ["Nickname", form.nickname || "Chưa cập nhật"], ["Ngày sinh", formatBirthday(form.birthday)], ["Tuổi hiện tại", ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa cập nhật"], ["Giới tính", form.gender === "male" ? "Nam" : form.gender === "female" ? "Nữ" : form.gender === "other" ? "Khác" : "Chưa cập nhật"], ["Số điện thoại", form.phone || "Chưa cập nhật"], ["Ghi chú", form.notes || "Chưa có ghi chú."]].map(([label, value]) => <div key={label}><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-medium">{value}</p></div>)}</div>}{error && <p className="mt-4 text-sm text-rose-500">{error}</p>}</Card></form>}
+            <Card className="p-6">
+              <div className="flex flex-wrap items-center justify-between border-b border-[var(--app-border)] pb-2 mb-4">
+                <h3 className="font-semibold text-base">Thông tin cá nhân</h3>
+                <div className="flex flex-wrap gap-1 mt-2 sm:mt-0">
+                  {[
+                    { id: "basic", label: "Thông tin cơ bản" },
+                    { id: "education", label: "Trình độ / bằng cấp" },
+                    { id: "skills", label: "Kỹ năng" },
+                    { id: "experience", label: "Kinh nghiệm" },
+                    { id: "documents", label: "Tài liệu" }
+                  ].map(tabItem => (
+                    <button
+                      key={tabItem.id}
+                      type="button"
+                      onClick={() => setSubTab(tabItem.id as ProfileSubTab)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                        subTab === tabItem.id
+                          ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-200"
+                          : "text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5"
+                      }`}
+                    >
+                      {tabItem.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {subTab === "basic" ? (
+                editing ? (
+                  <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    <Field label="Họ tên">
+                      <input required disabled={!canManage} className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} />
+                    </Field>
+                    <Field label="Nickname">
+                      <input className={inputClass} value={form.nickname} onChange={event => set("nickname", event.target.value)} />
+                    </Field>
+                    <BirthdaySelect disabled={!canManage} value={form.birthday} onChange={value => set("birthday", value)} />
+                    <Field label="Tuổi hiện tại">
+                      <input disabled className={inputClass} value={ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa đủ ngày sinh"} readOnly />
+                    </Field>
+                    <Field label="Giới tính">
+                      <select disabled={!canManage} className={inputClass} value={form.gender} onChange={event => set("gender", event.target.value as Member["gender"])}>
+                        <option value="">Chưa chọn</option>
+                        <option value="male">Nam</option>
+                        <option value="female">Nữ</option>
+                        <option value="other">Khác</option>
+                      </select>
+                    </Field>
+                    <Field label="Số điện thoại">
+                      <input className={inputClass} value={form.phone} onChange={event => set("phone", event.target.value)} />
+                    </Field>
+                  </div>
+                ) : (
+                  <div className="mt-5 grid gap-5 text-sm sm:grid-cols-2">
+                    {[
+                      ["Họ tên", form.name],
+                      ["Nickname", form.nickname || "Chưa cập nhật"],
+                      ["Ngày sinh", formatBirthday(form.birthday)],
+                      ["Tuổi hiện tại", ageAtToday(form.birthday) !== null ? `${ageAtToday(form.birthday)} tuổi` : "Chưa cập nhật"],
+                      ["Giới tính", form.gender === "male" ? "Nam" : form.gender === "female" ? "Nữ" : form.gender === "other" ? "Khác" : "Chưa cập nhật"],
+                      ["Số điện thoại", form.phone || "Chưa cập nhật"]
+                    ].map(([label, value]) => (
+                      <div key={label}>
+                        <p className="text-xs text-slate-400">{label}</p>
+                        <p className="mt-1 font-medium">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : (
+                <div className="py-8 text-center text-sm text-slate-400">
+                  Chức năng này sẽ được bổ sung sau.
+                </div>
+              )}
+
+              {error && <p className="mt-4 text-sm text-rose-500">{error}</p>}
+            </Card>
+          </form>}
           {tab === "tasks" && <Card><h3 className="mb-4 font-semibold">Công việc liên quan</h3>{tasks.length ? tasks.map(task => <TaskRow key={task.id} task={task} />) : <EmptyState />}</Card>}
           {tab === "events" && <Card><h3 className="mb-4 font-semibold">Sự kiện liên quan</h3>{events.length ? events.map(event => <EventRow key={event.id} event={event} />) : <EmptyState />}</Card>}
           {tab === "notes" && <Card><h3 className="mb-4 font-semibold">Ghi chú</h3>{notes.length ? notes.map(note => <div key={note.id} className="border-b border-[var(--app-border)] py-3 last:border-0"><b>{note.title}</b><p className="mt-1 text-sm text-slate-500">{note.content}</p></div>) : <EmptyState />}</Card>}
