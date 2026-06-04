@@ -533,3 +533,10 @@ UPDATE income_records SET month = EXTRACT(MONTH FROM income_date)::INTEGER WHERE
 
 CREATE INDEX IF NOT EXISTS idx_income_records_year_month ON income_records(year, month);
 CREATE INDEX IF NOT EXISTS idx_income_records_category ON income_records(category);
+
+
+-- ==========================================
+-- MIGRATION: 024_make_income_record_member_optional.sql
+-- ==========================================
+
+ALTER TABLE income_records ALTER COLUMN member_id DROP NOT NULL;

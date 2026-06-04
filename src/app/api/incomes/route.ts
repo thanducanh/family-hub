@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
   if (!await requireSession()) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
   const body = await request.json() as Record<string, unknown> | Record<string, unknown>[];
   const rows = (Array.isArray(body) ? body : Array.isArray(body.rows) ? body.rows as Record<string, unknown>[] : [body]).map(normalizeRecordPayload);
-  if (!rows.length || rows.some(row => !row.memberId || !row.name)) return NextResponse.json({ ok: false, error: "Thiếu thành viên hoặc tên khoản thu." }, { status: 400 });
+  if (!rows.length || rows.some(row => !row.name)) return NextResponse.json({ ok: false, error: "Thiếu tên khoản thu." }, { status: 400 });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       const result = await client.query(`INSERT INTO income_records
         (id, member_id, income_date, received_date, year, month, category, name, amount, status, note)
         VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10)
-        RETURNING *`, [row.id, row.memberId, row.incomeDate, row.year, row.month, row.category, row.name, row.amount, row.status, row.note]);
+        RETURNING *`, [row.id, row.memberId || null, row.incomeDate, row.year, row.month, row.category, row.name, row.amount, row.status, row.note]);
       saved.push(toIncomeRecord(result.rows[0]));
     }
     await client.query("COMMIT");
@@ -75,10 +75,10 @@ export async function PUT(request: NextRequest) {
   if (!await requireSession()) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
   const id = new URL(request.url).searchParams.get("id");
   const row = normalizeRecordPayload({ ...(await request.json() as Record<string, unknown>), id });
-  if (!row.id || !row.memberId || !row.name) return NextResponse.json({ ok: false, error: "Thiếu id, thành viên hoặc tên khoản thu." }, { status: 400 });
+  if (!row.id || !row.name) return NextResponse.json({ ok: false, error: "Thiếu id hoặc tên khoản thu." }, { status: 400 });
   const result = await pool.query(`UPDATE income_records SET
     member_id=$2, income_date=$3, received_date=$3, year=$4, month=$5, category=$6, name=$7, amount=$8, status=$9, note=$10, updated_at=CURRENT_TIMESTAMP
-    WHERE id=$1 RETURNING *`, [row.id, row.memberId, row.incomeDate, row.year, row.month, row.category, row.name, row.amount, row.status, row.note]);
+    WHERE id=$1 RETURNING *`, [row.id, row.memberId || null, row.incomeDate, row.year, row.month, row.category, row.name, row.amount, row.status, row.note]);
   if (!result.rows[0]) return NextResponse.json({ ok: false, error: "Không tìm thấy dòng thu nhập." }, { status: 404 });
   return NextResponse.json({ ok: true, data: toIncomeRecord(result.rows[0]) });
 }

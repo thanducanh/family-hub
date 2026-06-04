@@ -45,7 +45,7 @@ function status(value: unknown): IncomeStatus {
 export function toIncomeSource(row: Record<string, unknown>): IncomeSourceRow {
   return {
     id: String(row.id),
-    memberId: String(row.member_id),
+    memberId: row.member_id ? String(row.member_id) : "",
     memberName: String(row.member_name || ""),
     name: String(row.name || ""),
     type: validTypes.has(String(row.type)) ? String(row.type) as IncomeSourceType : "fixed",
@@ -65,7 +65,7 @@ export function toIncomeRecord(row: Record<string, unknown>): IncomeRecordRow {
   return {
     id: String(row.id),
     sourceId: String(row.source_id || ""),
-    memberId: String(row.member_id),
+    memberId: row.member_id ? String(row.member_id) : "",
     memberName: String(row.member_name || ""),
     incomeDate,
     receivedDate: incomeDate,
@@ -89,10 +89,10 @@ export async function fetchIncomeData(year: number) {
       JOIN members m ON m.id = s.member_id
       WHERE m.deleted_at IS NULL
       ORDER BY s.active DESC, m.name, s.name`),
-    pool.query(`SELECT r.*, m.name AS member_name
+    pool.query(`SELECT r.*, COALESCE(m.name, '') AS member_name
       FROM income_records r
-      JOIN members m ON m.id = r.member_id
-      WHERE r.year = $1 AND m.deleted_at IS NULL
+      LEFT JOIN members m ON m.id = r.member_id AND m.deleted_at IS NULL
+      WHERE r.year = $1
       ORDER BY r.month DESC, r.income_date DESC, r.created_at DESC`, [year]),
   ]);
 
