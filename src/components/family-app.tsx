@@ -819,6 +819,8 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
   const [query, setQuery] = useState("");
   const [accountFilter, setAccountFilter] = useState<"all" | "with_account" | "without_account">("all");
   const [detail, setDetail] = useState<Member | "new" | null>(null);
+  const [initialEdit, setInitialEdit] = useState(false);
+  const [activeMenuMemberId, setActiveMenuMemberId] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Member | null>(null);
   const [warning, setWarning] = useState("");
   const [localMembers, setLocalMembers] = useState<Member[]>(() => cachedMembers || []);
@@ -841,7 +843,7 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
     const keyword = query.trim().toLocaleLowerCase();
     return (accountFilter === "all" || (accountFilter === "with_account" ? Boolean(member.user) : !member.user)) && (!keyword || [member.name, member.phone].some(value => value?.toLocaleLowerCase().includes(keyword)));
   });
-  const stats = [["Tổng thành viên", visible.length], ["Cha mẹ", visible.filter(member => ["Bố", "Mẹ"].includes(member.role)).length], ["Con", visible.filter(member => member.role === "Con").length], ["Người lớn tuổi / khác", visible.filter(member => !["Bố", "Mẹ", "Con"].includes(member.role)).length]];
+
   async function remove(member: Member) {
     const response = await fetch(`/api/members?id=${encodeURIComponent(member.id)}`, { method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
@@ -854,7 +856,8 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
     });
     setRemoving(null); setWarning("");
   }
-  if (detail) return <MemberProfile key={detail === "new" ? "new" : detail.id} member={detail} data={data} user={user} close={() => setDetail(null)} saved={member => {
+
+  if (detail) return <MemberProfile key={detail === "new" ? "new" : detail.id} member={detail} data={data} user={user} initialEdit={initialEdit} close={() => setDetail(null)} saved={member => {
     update({ ...data, members: data.members.some(item => item.id === member.id) ? data.members.map(item => item.id === member.id ? member : item) : [...data.members, member] });
     setLocalMembers(current => {
       const updated = current.some(item => item.id === member.id) ? current.map(item => item.id === member.id ? member : item) : [...current, member];
@@ -863,19 +866,19 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
     });
     setDetail(member);
   }} remove={member => { setDetail(null); setRemoving(member); setWarning(""); }} />;
-  return <><div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-semibold">Thành viên</h2><p className="mt-1 text-sm text-slate-400">Family Hub / Thành viên</p></div>{canManage && <button onClick={() => setDetail("new")} className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700">+ Thêm thành viên</button>}</div>
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{stats.map(([label, value]) => <Card key={label} className="p-5"><p className="text-sm text-slate-400">{label}</p><p className="mt-3 text-2xl font-bold text-indigo-600">{value}</p></Card>)}</div>
-    <Card className="mt-6 p-4"><div className="grid max-w-[680px] gap-3 md:grid-cols-[minmax(0,440px)_220px]"><input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên hoặc số điện thoại" /><select className={filterClass} value={accountFilter} onChange={event => setAccountFilter(event.target.value as typeof accountFilter)}><option value="all">Tất cả</option><option value="with_account">Có tài khoản</option><option value="without_account">Chưa có tài khoản</option></select></div></Card>
-    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{members.map(member => <Card key={member.id} className="p-5"><div className="flex items-start gap-3"><Avatar member={member} size="size-12" /><div className="min-w-0 flex-1"><h3 className="font-semibold">{member.nickname || member.name}</h3>{member.nickname && <p className="text-xs text-slate-400">{member.name}</p>}{ageAtToday(member.birthday) !== null && <p className="mt-2 text-xs text-slate-400">{ageAtToday(member.birthday)} tuổi</p>}{member.birthday && <p className="mt-1 text-xs text-slate-400">{formatBirthday(member.birthday)}</p>}{member.phone && <p className="mt-1 text-xs text-slate-400">{member.phone}</p>}</div></div><div className="mt-5 flex flex-wrap gap-2 border-t border-[var(--app-border)] pt-4"><button onClick={() => setDetail(member)} className="rounded-lg px-3 py-2 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 dark:hover:bg-white/5">Chi tiết</button><button onClick={() => setDetail(member)} className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5">Sửa</button>{canManage && <button onClick={() => { setRemoving(member); setWarning(""); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button>}</div></Card>)}</div>
+
+  return <><div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-semibold">Thành viên</h2><p className="mt-1 text-sm text-slate-400">Family Hub / Thành viên</p></div>{canManage && <button onClick={() => { setInitialEdit(true); setDetail("new"); }} className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700">+ Thêm thành viên</button>}</div>
+    <Card className="p-4"><div className="grid max-w-[680px] gap-3 md:grid-cols-[minmax(0,440px)_220px]"><input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên hoặc số điện thoại" /><select className={filterClass} value={accountFilter} onChange={event => setAccountFilter(event.target.value as typeof accountFilter)}><option value="all">Tất cả</option><option value="with_account">Có tài khoản</option><option value="without_account">Chưa có tài khoản</option></select></div></Card>
+    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{members.map(member => <Card key={member.id} className="p-4 md:p-5 relative flex flex-col justify-between"><div className="flex items-start gap-3"><Avatar member={member} size="size-12" /><div className="min-w-0 flex-1 pr-6"><h3 className="font-semibold">{member.nickname || member.name}</h3>{member.nickname && <p className="text-xs text-slate-400">{member.name}</p>}{ageAtToday(member.birthday) !== null && <p className="mt-2 text-xs text-slate-400">{ageAtToday(member.birthday)} tuổi</p>}{member.birthday && <p className="mt-1 text-xs text-slate-400">{formatBirthday(member.birthday)}</p>}{member.phone && <p className="mt-1 text-xs text-slate-400">{member.phone}</p>}</div><div className="absolute right-3 top-3"><button onClick={() => setActiveMenuMemberId(activeMenuMemberId === member.id ? null : member.id)} className="grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5" aria-label="Menu thành viên">⋮</button>{activeMenuMemberId === member.id && <><div className="fixed inset-0 z-10" onClick={() => setActiveMenuMemberId(null)} /><div className="absolute right-0 top-9 z-20 w-32 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl"><button onClick={() => { setInitialEdit(false); setDetail(member); setActiveMenuMemberId(null); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Xem chi tiết</button><button onClick={() => { setInitialEdit(true); setDetail(member); setActiveMenuMemberId(null); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Sửa</button>{canManage && <button onClick={() => { setRemoving(member); setWarning(""); setActiveMenuMemberId(null); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button>}</div></>}</div></div></Card>)}</div>
     {!members.length && <div className="mt-6"><EmptyState /></div>}
     {removing && <ConfirmMemberDelete member={removing} warning={warning} close={() => { setRemoving(null); setWarning(""); }} remove={() => void remove(removing)} />}
   </>;
 }
 type MemberProfileTab = "profile" | "account" | "bank" | "bankRaw" | "security" | "tasks" | "events" | "notes";
-function MemberProfile({ member, data, user, close, saved, remove, personal = false, openChangePassword, logout, savedUser = () => undefined }: { member: Member | "new"; data: AppData; user: AuthUser; close: () => void; saved: (member: Member) => void; remove: (member: Member) => void; personal?: boolean; openChangePassword?: () => void; logout?: () => void; savedUser?: (user: AuthUser) => void }) {
+function MemberProfile({ member, data, user, close, saved, remove, personal = false, openChangePassword, logout, savedUser = () => undefined, initialEdit = false }: { member: Member | "new"; data: AppData; user: AuthUser; close: () => void; saved: (member: Member) => void; remove: (member: Member) => void; personal?: boolean; openChangePassword?: () => void; logout?: () => void; savedUser?: (user: AuthUser) => void; initialEdit?: boolean }) {
   const existing = member === "new" ? null : member;
   const [tab, setTab] = useState<MemberProfileTab>("profile");
-  const [editing, setEditing] = useState(!existing);
+  const [editing, setEditing] = useState(!existing || initialEdit);
   const [error, setError] = useState("");
   const [linkedUsers, setLinkedUsers] = useState<ManagedUser[]>([]);
   const [form, setForm] = useState<Member>(() => existing ?? { id: crypto.randomUUID(), name: "", nickname: "", birthday: "", gender: "", role: "Khác" as unknown as FamilyRole, phone: "", avatar: "", notes: "", color: "#cbd5e1" });
