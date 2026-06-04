@@ -6,7 +6,8 @@ import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
-import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, FamilyRole, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, Language, Member, Note, Task, Theme, Transaction } from "@/types";
+import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, FamilyRole, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, Language, Member, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
+import * as XLSX from "xlsx";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
 type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
@@ -1378,6 +1379,8 @@ type IncomeApiData = {
   sourceTemplates?: string[];
   records?: IncomeRecord[];
   allRecords: IncomeRecord[];
+  yearlySummaries?: IncomeYearlySummaryRow[];
+  yearlyComparison?: { year: number; total: number }[];
   stats?: { byCategory?: Record<string, number> };
 };
 const incomeCategories: IncomeCategory[] = ["Lương", "Thưởng", "Khác"];
@@ -1393,10 +1396,13 @@ function IncomeSheetManagement() {
   const [statusFilter, setStatusFilter] = useState<IncomeStatus | "all">("all");
   const [query, setQuery] = useState("");
   const [incomeData, setIncomeData] = useState<IncomeApiData | null>(null);
-  const [view, setView] = useState<"list" | "new" | "edit">("list");
+  const [view, setView] = useState<"list" | "new" | "edit" | "yearly-new" | "yearly-edit">("list");
   const [editing, setEditing] = useState<IncomeRecord | null>(null);
+  const [editingYearly, setEditingYearly] = useState<IncomeYearlySummaryRow | null>(null);
+  const [activeTab, setActiveTab] = useState<"monthly" | "yearly">("monthly");
   const [loading, setLoading] = useState(true);
   const [activeIncomeMenuId, setActiveIncomeMenuId] = useState<string | null>(null);
+  
   const load = useCallback(async () => {
     setLoading(true);
     const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
@@ -1405,7 +1411,9 @@ function IncomeSheetManagement() {
     else alert(result?.error || "Không thể tải dữ liệu thu nhập.");
     setLoading(false);
   }, [year]);
+  
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  
   const allRecords = incomeData?.allRecords || [];
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const records = allRecords.filter(record => (monthFilter === "all" || record.month === Number(monthFilter)) && (categoryFilter === "all" || record.category === categoryFilter) && (statusFilter === "all" || record.status === statusFilter) && (!normalizedQuery || `${record.name} ${record.note} ${record.memberName || ""}`.toLocaleLowerCase().includes(normalizedQuery)));
@@ -1415,13 +1423,26 @@ function IncomeSheetManagement() {
     if (dateA !== dateB) return dateA - dateB;
     return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
   });
+  
   const receivedStatus = incomeStatuses[0];
   const monthlyTotals = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, total: allRecords.filter(record => record.month === index + 1 && record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0) }));
   const visibleMonthTotal = records.filter(record => record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
-  const totalYear = monthlyTotals.reduce((sum, item) => sum + item.total, 0);
-  const categoryTotals = incomeCategories.map(category => ({ category, total: allRecords.filter(record => record.category === category && record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0) }));
+  
+  // Tổng năm = tổng records + tổng yearlySummaries
+  const currentYearSummaries = (incomeData?.yearlySummaries || []).filter(s => String(s.year) === year);
+  const yearlySummariesTotal = currentYearSummaries.reduce((sum, s) => sum + s.amount, 0);
+  const totalYear = monthlyTotals.reduce((sum, item) => sum + item.total, 0) + yearlySummariesTotal;
+  
+  // Category totals bao gồm cả yearlySummaries
+  const categoryTotals = incomeCategories.map(category => {
+    const recordTotal = allRecords.filter(record => record.category === category && record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
+    const summaryTotal = currentYearSummaries.filter(s => s.category === category).reduce((sum, s) => sum + s.amount, 0);
+    return { category, total: recordTotal + summaryTotal };
+  });
+  
   const maxMonth = Math.max(1, ...monthlyTotals.map(item => item.total));
   const renderedMonths = Array.from(new Set(records.map(record => record.month))).sort((left, right) => left - right);
+  
   async function remove(record: IncomeRecord) {
     if (!confirm(`Xóa dòng thu "${record.name}"?`)) return;
     const response = await fetch(`/api/incomes?id=${encodeURIComponent(record.id)}`, { method: "DELETE" });
@@ -1429,33 +1450,238 @@ function IncomeSheetManagement() {
     setActiveIncomeMenuId(null);
     void load();
   }
+  
+  async function removeYearly(summary: IncomeYearlySummaryRow) {
+    if (!confirm(`Xóa dòng thu nhập tổng năm "${summary.name}"?`)) return;
+    const response = await fetch(`/api/incomes-yearly?id=${encodeURIComponent(summary.id)}`, { method: "DELETE" });
+    if (!response.ok) alert("Không thể xóa dòng thu nhập tổng năm.");
+    setActiveIncomeMenuId(null);
+    void load();
+  }
+  
   function edit(record: IncomeRecord) {
     setEditing(record);
     setView("edit");
     setActiveIncomeMenuId(null);
   }
+  
+  function editYearly(summary: IncomeYearlySummaryRow) {
+    setEditingYearly(summary);
+    setView("yearly-edit");
+    setActiveIncomeMenuId(null);
+  }
+  
   function exportExcel() {
-    const rows = [`<tr><th colspan="7">Thu nhập năm ${year}</th></tr>`, `<tr><th>Ngày nhận</th><th>Tháng</th><th>Năm</th><th>Loại khoản thu</th><th>Nội dung</th><th>Số tiền</th><th>Ghi chú</th></tr>`];
+    if (!XLSX) { alert("Không tải được thư viện Excel."); return; }
+    
+    // Sheet 1: Thu nhập chi tiết
+    const detailedData = [["Ngày nhận", "Tháng", "Năm", "Loại khoản thu", "Nội dung", "Số tiền", "Ghi chú"]];
     renderedMonths.forEach(month => {
       const items = records.filter(record => record.month === month);
-      if (!items.length) return;
-      items.forEach(record => rows.push(`<tr><td>${formatDateVN(record.incomeDate)}</td><td>${record.month}</td><td>${record.year}</td><td>${record.category}</td><td>${record.name}</td><td>${record.amount}</td><td>${record.note || ""}</td></tr>`));
-      rows.push(`<tr><td colspan="5"><b>Tổng tháng ${month}</b></td><td><b>${items.filter(record => record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0)}</b></td><td colspan="2"></td></tr>`);
+      items.forEach(record => {
+        detailedData.push([formatDateVN(record.incomeDate), String(record.month), String(record.year), record.category, record.name, String(record.amount), record.note]);
+      });
+      const subtotal = items.filter(record => record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
+      detailedData.push([`Tổng tháng ${month}`, "", "", "", "", String(subtotal), ""]);
     });
-    rows.push(`<tr><td colspan="5"><b>Tổng năm</b></td><td><b>${totalYear}</b></td><td colspan="2"></td></tr>`);
-    categoryTotals.forEach(item => rows.push(`<tr><td colspan="5">Tổng ${item.category}</td><td>${item.total}</td><td colspan="2"></td></tr>`));
-    const blob = new Blob([`<html><meta charset="utf-8"><table>${rows.join("")}</table></html>`], { type: "application/vnd.ms-excel;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url; link.download = `thu-nhap-${year}.xls`; link.click();
-    URL.revokeObjectURL(url);
+    
+    // Sheet 2: Tổng năm cũ
+    const summaryData = [["Năm", "Loại khoản thu", "Nội dung", "Số tiền", "Ghi chú"]];
+    (incomeData?.yearlySummaries || []).forEach(s => {
+      summaryData.push([String(s.year), s.category, s.name, String(s.amount), s.note]);
+    });
+    
+    // Sheet 3: Thống kê
+    const statsData = [["Thống kê", "Giá trị"]];
+    statsData.push(["Tổng thu nhập năm " + year, String(totalYear)]);
+    categoryTotals.forEach(item => {
+      statsData.push([`Tổng ${item.category}`, String(item.total)]);
+    });
+    
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.aoa_to_sheet(detailedData);
+    const ws2 = XLSX.utils.aoa_to_sheet(summaryData);
+    const ws3 = XLSX.utils.aoa_to_sheet(statsData);
+    
+    XLSX.utils.book_append_sheet(wb, ws1, "Thu nhập chi tiết");
+    XLSX.utils.book_append_sheet(wb, ws2, "Tổng năm cũ");
+    XLSX.utils.book_append_sheet(wb, ws3, "Thống kê năm");
+    
+    XLSX.writeFile(wb, `thu-nhap-${year}.xlsx`);
   }
-  if (view !== "list") return <IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
+  
+  if (view === "new" || view === "edit") return <IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
+  if (view === "yearly-new" || view === "yearly-edit") return <YearlyIncomeForm record={editingYearly} back={() => { setView("list"); setEditingYearly(null); }} saved={() => { setView("list"); setEditingYearly(null); void load(); }} />;
+  
+  const yearlyChartData = incomeData?.yearlyComparison || [];
+  const maxYearTotal = Math.max(1, ...yearlyChartData.map(d => d.total));
+  
   return <div className="space-y-5">
-    <div className="grid gap-3 md:grid-cols-[110px_140px_180px_160px_1fr_auto_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select><select className={filterClass} value={categoryFilter} onChange={event => setCategoryFilter(event.target.value as IncomeCategory | "all")}><option value="all">Tất cả loại khoản thu</option>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select><select className={filterClass} value={statusFilter} onChange={event => setStatusFilter(event.target.value as IncomeStatus | "all")}><option value="all">Tất cả trạng thái</option>{incomeStatuses.map(status => <option key={status} value={status}>{status}</option>)}</select><input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm khoản thu..." /><button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button><button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button></div>
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Tổng thu nhập năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card><Card><p className="text-xs text-slate-400">Tổng thu tháng</p><b>{money(visibleMonthTotal)}</b></Card><Card><p className="text-xs text-slate-400">Thu theo loại</p><b>{money(categoryTotals.find(item => item.category === categoryFilter)?.total || visibleMonthTotal)}</b></Card><Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b>{money(totalYear / 12)}</b></Card></div>
-    <Card><div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div><div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">{monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2"><div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div><span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span></div>)}</div></Card>
-    <Card className="overflow-hidden p-0"><div className="border-b border-[var(--app-border)] p-4"><b>Bảng thu nhập theo tháng</b></div><div className="hidden overflow-x-auto md:block"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5"><tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Loại khoản thu</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr></thead><tbody>{renderedMonths.map(month => { const items = records.filter(record => record.month === month); const subtotal = items.filter(record => record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0); return <Fragment key={`m-${month}`}>{items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]"><td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td><td className="px-4 py-3">{record.month}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3">{record.name}</td><td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3 text-slate-500">{record.note}</td><td className="px-4 py-3 text-right"><IncomeRecordActionMenu record={record} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={edit} remove={remove} /></td></tr>)}<tr className="bg-emerald-50/70 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10"><td className="px-4 py-2" colSpan={4}>Tổng tháng {month}</td><td className="px-4 py-2 text-right">{money(subtotal)}</td><td className="px-4 py-2" colSpan={2}></td></tr></Fragment>; })}</tbody></table>{!records.length && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu thu nhập.</div>}</div><div className="space-y-3 p-3 md:hidden">{records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.name}</b><p className="text-xs text-slate-400">{formatDateVN(record.incomeDate)} · {record.category}</p></div><div className="flex items-start gap-2"><b className="text-emerald-500">{money(record.amount)}</b><IncomeRecordActionMenu record={record} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={edit} remove={remove} /></div></div><p className="mt-1 text-xs text-slate-400">{record.note}</p></div>)}{!records.length && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu thu nhập.</div>}</div></Card>
+    <div className="grid gap-3 md:grid-cols-[110px_140px_180px_160px_1fr_auto_auto_auto]">
+      <select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select>
+      <select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select>
+      <select className={filterClass} value={categoryFilter} onChange={event => setCategoryFilter(event.target.value as IncomeCategory | "all")}><option value="all">Tất cả loại khoản thu</option>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select>
+      <select className={filterClass} value={statusFilter} onChange={event => setStatusFilter(event.target.value as IncomeStatus | "all")}><option value="all">Tất cả trạng thái</option>{incomeStatuses.map(status => <option key={status} value={status}>{status}</option>)}</select>
+      <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm khoản thu..." />
+      <button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button>
+      <button onClick={() => { setEditingYearly(null); setView("yearly-new"); }} className="rounded-xl bg-indigo-500 px-4 py-3 text-sm font-bold text-white">Nhập tổng năm cũ</button>
+      <button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button>
+    </div>
+    
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <Card><p className="text-xs text-slate-400">Tổng thu nhập năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card>
+      <Card><p className="text-xs text-slate-400">Tổng thu tháng</p><b>{money(visibleMonthTotal)}</b></Card>
+      <Card><p className="text-xs text-slate-400">Thu theo loại</p><b>{money(categoryTotals.find(item => item.category === categoryFilter)?.total || visibleMonthTotal)}</b></Card>
+      <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b>{money(totalYear / 12)}</b></Card>
+    </div>
+    
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <Card>
+        <div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div>
+        <div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">
+          {monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2">
+            <div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div>
+            <span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span>
+          </div>)}
+        </div>
+      </Card>
+      <Card>
+        <div className="mb-4 flex items-center justify-between"><b>So sánh thu nhập theo năm</b></div>
+        <div className="flex h-56 items-end gap-4 overflow-x-auto pb-2">
+          {yearlyChartData.map(item => <div key={item.year} className="flex min-w-16 flex-1 flex-col items-center gap-2">
+            <div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-indigo-500" style={{ height: `${Math.max(4, item.total / maxYearTotal * 100)}%` }} /></div>
+            <span className="text-xs font-bold text-slate-400">{item.year}</span>
+          </div>)}
+        </div>
+      </Card>
+    </div>
+    
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center gap-4 border-b border-[var(--app-border)] px-4 pt-4">
+        <button onClick={() => setActiveTab("monthly")} className={`border-b-2 px-2 pb-3 text-sm font-bold ${activeTab === "monthly" ? "border-emerald-500 text-emerald-500" : "border-transparent text-slate-400"}`}>Chi tiết tháng</button>
+        <button onClick={() => setActiveTab("yearly")} className={`border-b-2 px-2 pb-3 text-sm font-bold ${activeTab === "yearly" ? "border-emerald-500 text-emerald-500" : "border-transparent text-slate-400"}`}>Tổng năm cũ</button>
+      </div>
+      
+      {activeTab === "monthly" && (
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5">
+              <tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Loại khoản thu</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr>
+            </thead>
+            <tbody>
+              {renderedMonths.map(month => {
+                const items = records.filter(record => record.month === month);
+                const subtotal = items.filter(record => record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
+                return <Fragment key={`m-${month}`}>
+                  {items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]">
+                    <td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td><td className="px-4 py-3">{record.month}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3">{record.name}</td>
+                    <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3 text-slate-500">{record.note}</td>
+                    <td className="px-4 py-3 text-right">
+                      <IncomeRecordActionMenu record={record} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => edit(record)} remove={() => remove(record)} />
+                    </td>
+                  </tr>)}
+                  <tr className="bg-emerald-50/70 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10">
+                    <td className="px-4 py-2" colSpan={4}>Tổng tháng {month}</td><td className="px-4 py-2 text-right">{money(subtotal)}</td><td className="px-4 py-2" colSpan={2}></td>
+                  </tr>
+                </Fragment>;
+              })}
+            </tbody>
+          </table>
+          {!records.length && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu thu nhập.</div>}
+        </div>
+      )}
+      
+      {activeTab === "yearly" && (
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5">
+              <tr><th className="px-4 py-3">Năm</th><th className="px-4 py-3">Loại khoản thu</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr>
+            </thead>
+            <tbody>
+              {(incomeData?.yearlySummaries || []).map(summary => (
+                <tr key={summary.id} className="border-t border-[var(--app-border)]">
+                  <td className="px-4 py-3">{summary.year}</td>
+                  <td className="px-4 py-3">{summary.category}</td>
+                  <td className="px-4 py-3">{summary.name}</td>
+                  <td className="px-4 py-3 text-right font-bold text-indigo-500">{money(summary.amount)}</td>
+                  <td className="px-4 py-3 text-slate-500">{summary.note}</td>
+                  <td className="px-4 py-3 text-right">
+                    <IncomeRecordActionMenu record={{ id: summary.id } as unknown as IncomeRecord} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => editYearly(summary)} remove={() => removeYearly(summary)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!(incomeData?.yearlySummaries || []).length && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu tổng năm.</div>}
+        </div>
+      )}
+      
+      {/* Mobile view logic */}
+      <div className="space-y-3 p-3 md:hidden">
+        {activeTab === "monthly" && records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.name}</b><p className="text-xs text-slate-400">{formatDateVN(record.incomeDate)} · {record.category}</p></div><div className="flex items-start gap-2"><b className="text-emerald-500">{money(record.amount)}</b><IncomeRecordActionMenu record={record} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => edit(record)} remove={() => remove(record)} /></div></div><p className="mt-1 text-xs text-slate-400">{record.note}</p></div>)}
+        {activeTab === "yearly" && (incomeData?.yearlySummaries || []).map(summary => <div key={summary.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{summary.name}</b><p className="text-xs text-slate-400">Năm {summary.year} · {summary.category}</p></div><div className="flex items-start gap-2"><b className="text-indigo-500">{money(summary.amount)}</b><IncomeRecordActionMenu record={{ id: summary.id } as unknown as IncomeRecord} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => editYearly(summary)} remove={() => removeYearly(summary)} /></div></div><p className="mt-1 text-xs text-slate-400">{summary.note}</p></div>)}
+        {(activeTab === "monthly" && !records.length || activeTab === "yearly" && !(incomeData?.yearlySummaries || []).length) && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu.</div>}
+      </div>
+    </Card>
+  </div>;
+}
+
+function YearlyIncomeForm({ record, back, saved }: { record: IncomeYearlySummaryRow | null; back: () => void; saved: () => void }) {
+  const currentYear = new Date().getFullYear();
+  type YearlyDraft = { id?: string; year: number; category: IncomeCategory; name: string; amount: string; note: string };
+  const emptyRow = (): YearlyDraft => ({ year: currentYear - 1, category: "Lương", name: "Tổng lương năm", amount: "", note: "" });
+  const [draft, setDraft] = useState<YearlyDraft>(() => record ? { id: record.id, year: record.year, category: record.category, name: record.name, amount: String(record.amount), note: record.note } : emptyRow());
+  
+  function patch(value: Partial<YearlyDraft>) { setDraft(current => ({ ...current, ...value })); }
+  
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const rawAmount = String(draft.amount).replace(/\D/g, "");
+    if (!rawAmount) { alert("Vui lòng nhập số tiền hợp lệ."); return; }
+    const payload = { ...draft, amount: Number(rawAmount) };
+    const response = await fetch(record ? `/api/incomes-yearly?id=${encodeURIComponent(record.id)}` : "/api/incomes-yearly", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record ? payload : { rows: [payload] }) });
+    const result = await readJsonSafe<{ error?: string }>(response);
+    if (!response.ok) { alert(result?.error || "Không thể lưu thu nhập."); return; }
+    saved();
+  }
+  
+  const rawAmountStr = String(draft.amount).replace(/\D/g, "");
+  const formattedAmount = rawAmountStr ? rawAmountStr.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + " đ" : "";
+  
+  return <div className="space-y-5">
+    <button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button>
+    <div><h2 className="text-2xl font-bold">{record ? "Sửa tổng thu năm cũ" : "Nhập tổng thu năm cũ"}</h2><p className="mt-1 text-sm text-slate-400">Khoản thu sẽ được cộng gộp vào thống kê của năm tương ứng, bỏ qua chi tiết từng tháng.</p></div>
+    <form onSubmit={submit} className="space-y-4">
+      <Card>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Năm">
+            <select required className={inputClass} value={draft.year} onChange={event => patch({ year: Number(event.target.value) })}>
+              {Array.from({ length: 15 }, (_, index) => currentYear + 2 - index).map(value => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </Field>
+          <Field label="Loại khoản thu">
+            <select required className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>
+              {incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}
+            </select>
+          </Field>
+          <Field label="Nội dung">
+            <input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder="VD: Lương năm 2024..." />
+          </Field>
+          <Field label="Tổng tiền năm">
+            <input required type="text" className={inputClass} value={formattedAmount} onChange={event => patch({ amount: event.target.value.replace(/\D/g, "") })} placeholder="0 đ" />
+          </Field>
+          <div className="md:col-span-4">
+            <Field label="Ghi chú">
+              <input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} />
+            </Field>
+          </div>
+        </div>
+      </Card>
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button>
+        <button className="rounded-xl bg-indigo-500 px-6 py-3 text-sm font-bold text-white">Lưu dữ liệu</button>
+      </div>
+    </form>
   </div>;
 }
 

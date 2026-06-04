@@ -2,6 +2,18 @@ export type Language = "vi" | "en" | "ja";
 export type Theme = "light" | "dark" | "system";
 export type TaskStatus = "todo" | "doing" | "done";
 export type TransactionType = "income" | "expense";
+export type IncomeYearlySummaryRow = {
+  id: string;
+  memberId: string;
+  year: number;
+  category: IncomeCategory;
+  name: string;
+  amount: number;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type IncomeSourceType = "fixed" | "variable";
 export type IncomeFrequency = "monthly" | "weekly" | "yearly" | "one_time" | "custom";
 export type IncomeCategory = "Lương" | "Thưởng" | "Khác";
