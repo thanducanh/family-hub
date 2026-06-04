@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, type UserRole } from "@/lib/auth";
 import { pool } from "@/lib/db";
@@ -25,21 +26,21 @@ export async function GET() {
     const actor = await getSessionUser();
     if (!actor) return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });
     if (actor.role === "full_access") {
-      const result = await pool.query(`SELECT id, username, email, display_name, avatar, role, active, must_change_password, is_system, member_id, password_hash, created_at, updated_at FROM users ORDER BY is_system DESC, created_at`);
+      const result = await pool.query(`SELECT id, username, email, display_name, avatar, role, active, must_change_password, is_system, member_id, password_plain, created_at, updated_at FROM users ORDER BY is_system DESC, created_at`);
       return NextResponse.json({
         ok: true,
         users: result.rows.map(row => ({
           ...toPublicUser(row),
-          password: String(row.password_hash)
+          passwordPlain: row.password_plain ? String(row.password_plain) : null
         }))
       });
     } else {
-      const result = await pool.query(`SELECT id, username, email, display_name, avatar, role, active, must_change_password, is_system, member_id, password_hash, created_at, updated_at FROM users WHERE id = $1`, [actor.id]);
+      const result = await pool.query(`SELECT id, username, email, display_name, avatar, role, active, must_change_password, is_system, member_id, password_plain, created_at, updated_at FROM users WHERE id = $1`, [actor.id]);
       return NextResponse.json({
         ok: true,
         users: result.rows.map(row => ({
           ...toPublicUser(row),
-          password: String(row.password_hash)
+          passwordPlain: row.password_plain ? String(row.password_plain) : null
         }))
       });
     }
@@ -57,7 +58,9 @@ export async function POST(request: NextRequest) {
     if (!body.username || !body.displayName || !body.password || !canManage(actor, role)) return NextResponse.json({ ok: false, error: "Dữ liệu hoặc quyền không hợp lệ." }, { status: 400 });
     const assignmentError = await memberAssignmentError(body.memberId);
     if (assignmentError) return NextResponse.json({ ok: false, error: assignmentError }, { status: 409 });
-    const result = await pool.query(`INSERT INTO users (username, email, display_name, avatar, role, password_hash, active, must_change_password, is_system, member_id) VALUES ($1,$2,$3,$4,$5,$6,TRUE,TRUE,FALSE,$7) RETURNING ${select}`, [body.username.trim(), body.email?.trim() || null, body.displayName.trim(), body.avatar || "", role, body.password, body.memberId || null]);
+    
+    const hash = await bcrypt.hash(body.password, 12);
+    const result = await pool.query(`INSERT INTO users (username, email, display_name, avatar, role, password_hash, password_plain, active, must_change_password, is_system, member_id) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,TRUE,FALSE,$8) RETURNING ${select}`, [body.username.trim(), body.email?.trim() || null, body.displayName.trim(), body.avatar || "", role, hash, body.password, body.memberId || null]);
     const user = toPublicUser(result.rows[0]);
     return NextResponse.json({ ok: true, data: user, user }, { status: 201 });
   } catch (error) {
@@ -84,9 +87,16 @@ export async function PUT(request: NextRequest) {
     const assignmentError = await memberAssignmentError(body.memberId, body.id);
     if (assignmentError) return NextResponse.json({ ok: false, error: assignmentError }, { status: 409 });
     if (body.password && body.password.length < 6) return NextResponse.json({ ok: false, error: "Mật khẩu mới cần ít nhất 6 ký tự." }, { status: 400 });
-    const passwordSql = body.password ? ", password_hash=$9, must_change_password=TRUE" : "";
-    const values = body.password ? [body.id, body.username.trim(), body.email?.trim() || null, body.displayName, body.avatar || "", body.role, body.active, body.memberId || null, body.password] : [body.id, body.username.trim(), body.email?.trim() || null, body.displayName, body.avatar || "", body.role, body.active, body.memberId || null];
-    const result = await pool.query(`UPDATE users SET username=$2, email=$3, display_name=$4, avatar=$5, role=$6, active=$7, member_id=$8${passwordSql}, updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING ${select}`, values);
+    
+    let result;
+    if (body.password) {
+      const hash = await bcrypt.hash(body.password, 12);
+      const values = [body.id, body.username.trim(), body.email?.trim() || null, body.displayName, body.avatar || "", body.role, body.active, body.memberId || null, hash, body.password];
+      result = await pool.query(`UPDATE users SET username=$2, email=$3, display_name=$4, avatar=$5, role=$6, active=$7, member_id=$8, password_hash=$9, password_plain=$10, must_change_password=TRUE, updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING ${select}`, values);
+    } else {
+      const values = [body.id, body.username.trim(), body.email?.trim() || null, body.displayName, body.avatar || "", body.role, body.active, body.memberId || null];
+      result = await pool.query(`UPDATE users SET username=$2, email=$3, display_name=$4, avatar=$5, role=$6, active=$7, member_id=$8, updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING ${select}`, values);
+    }
     const user = toPublicUser(result.rows[0]);
     return NextResponse.json({ ok: true, data: user, user });
   } catch (error) {

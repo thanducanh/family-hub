@@ -8,7 +8,8 @@ async function main() {
   const sqlPath = join(__dirname, "migrations", "consolidated_schema.sql");
   const sqlContent = await readFile(sqlPath, "utf8");
 
-  const codeContent = `import { pool } from "@/lib/db";
+  const codeContent = `import bcrypt from "bcryptjs";
+import { pool } from "@/lib/db";
 
 const globalForInit = globalThis as unknown as { familyDbInitPromise?: Promise<void> };
 
@@ -46,10 +47,10 @@ async function seedAdminUser() {
   if (Number(result.rows[0]?.count || 0) > 0) return;
 
   const password = process.env.DEFAULT_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || "admin123";
-  const hash = password;
+  const hash = await bcrypt.hash(password, 12);
   await pool.query(
-    "INSERT INTO users (username, email, display_name, avatar, password_hash, role, active, must_change_password, is_system) VALUES ($1,$2,$3,$4,$5,$6,TRUE,TRUE,TRUE)",
-    ["admin", process.env.DEFAULT_ADMIN_EMAIL || null, "Quản trị viên", "", hash, "full_access"],
+    "INSERT INTO users (username, email, display_name, avatar, password_hash, password_plain, role, active, must_change_password, is_system) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,TRUE,TRUE)",
+    ["admin", process.env.DEFAULT_ADMIN_EMAIL || null, "Quản trị viên", "", hash, password, "full_access"],
   );
   console.log("Default admin user seeded.");
 }

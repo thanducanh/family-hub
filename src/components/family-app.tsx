@@ -13,7 +13,7 @@ type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
 type EntityItem = Member | Task | Transaction | EventItem | Note;
 type Editor = { kind: EntityKind; item?: EntityItem } | null;
 type UserRole = "full_access" | "self_only";
-export interface AuthUser { id: string; username: string; displayName: string; avatar: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; password?: string; }
+export interface AuthUser { id: string; username: string; displayName: string; avatar: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; passwordPlain?: string | null; }
 type ManagedUser = AuthUser & { email: string; active: boolean; isSystem: boolean; createdAt: string; updatedAt: string };
 type ProfileUser = ManagedUser & { member?: Member };
 type PasswordResetRequest = { id: string; userId: string; usernameOrEmail: string; status: string; requestedAt: string; username: string; displayName: string; role: UserRole };
@@ -570,7 +570,7 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
   const isAdmin = actor.role === "full_access";
   const showMenuButton = editType === 'none' && (account ? (canManage || isCurrent) : canManage);
   const canSeePassword = canManage || isCurrent;
-  const displayPassword = account?.password && !account.password.startsWith("$2") ? account.password : "********";
+  const displayPassword = account?.passwordPlain ? account.passwordPlain : "Không có dữ liệu mật khẩu gốc";
 
   return (
     <Card>

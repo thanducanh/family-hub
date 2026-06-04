@@ -16,7 +16,8 @@ export async function POST(request: NextRequest) {
       const currentMatches = currentDb && (currentPassword === currentDb || (currentDb.startsWith("$2") && await bcrypt.compare(currentPassword, currentDb)));
       if (!currentMatches) return NextResponse.json({ ok: false, error: "Mật khẩu hiện tại không đúng." }, { status: 400 });
     }
-    await pool.query("UPDATE users SET password_hash=$2, must_change_password=FALSE, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [user.id, newPassword]);
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await pool.query("UPDATE users SET password_hash=$2, password_plain=$3, must_change_password=FALSE, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [user.id, passwordHash, newPassword]);
     const nextUser = { ...user, mustChangePassword: false };
     const response = NextResponse.json({ ok: true, data: nextUser, user: nextUser });
     response.cookies.set(await refreshedSessionCookie(nextUser));

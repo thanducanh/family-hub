@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
@@ -42,7 +43,8 @@ async function handlePost(request: NextRequest) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Không thể xử lý yêu cầu này." }, { status: 403 });
     }
-    await client.query("UPDATE users SET password_hash=$2, must_change_password=TRUE, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [target.user_id, password]);
+    const hash = await bcrypt.hash(password, 12);
+    await client.query("UPDATE users SET password_hash=$2, password_plain=$3, must_change_password=TRUE, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [target.user_id, hash, password]);
     await client.query("UPDATE password_reset_requests SET status='completed', handled_by=$2, handled_at=CURRENT_TIMESTAMP WHERE id=$1", [id, actor.id]);
     await client.query("COMMIT");
     return NextResponse.json({ ok: true });

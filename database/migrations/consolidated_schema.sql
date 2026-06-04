@@ -451,3 +451,9 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
 
 
+-- ==========================================
+-- MIGRATION: 021_add_password_plain.sql
+-- ==========================================
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_plain TEXT;
+
