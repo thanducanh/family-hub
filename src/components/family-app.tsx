@@ -13,7 +13,7 @@ type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
 type EntityItem = Member | Task | Transaction | EventItem | Note;
 type Editor = { kind: EntityKind; item?: EntityItem } | null;
 type UserRole = "full_access" | "self_only";
-export interface AuthUser { id: string; username: string; displayName: string; avatar: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; }
+export interface AuthUser { id: string; username: string; displayName: string; avatar: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; password?: string; }
 type ManagedUser = AuthUser & { email: string; active: boolean; isSystem: boolean; createdAt: string; updatedAt: string };
 type ProfileUser = ManagedUser & { member?: Member };
 type PasswordResetRequest = { id: string; userId: string; usernameOrEmail: string; status: string; requestedAt: string; username: string; displayName: string; role: UserRole };
@@ -468,6 +468,7 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
   const [success, setSuccess] = useState("");
   const [editType, setEditType] = useState<'none' | 'account' | 'password'>('none');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   const [form, setForm] = useState({
     username: account?.username || "",
@@ -568,6 +569,8 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
 
   const isAdmin = actor.role === "full_access";
   const showMenuButton = editType === 'none' && (account ? (canManage || isCurrent) : canManage);
+  const canSeePassword = canManage || isCurrent;
+  const displayPassword = account?.password && !account.password.startsWith("$2") ? account.password : "********";
 
   return (
     <Card>
@@ -742,7 +745,19 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
               </div>
               <div>
                 <p className="text-xs text-slate-400">Mật khẩu hiện tại</p>
-                <p className="mt-1 font-medium">********</p>
+                <div className="mt-1 flex items-center justify-between font-medium">
+                  <span>{passwordVisible && canSeePassword ? displayPassword : "********"}</span>
+                  {canSeePassword && (
+                    <button 
+                      type="button" 
+                      onClick={() => setPasswordVisible(!passwordVisible)} 
+                      className="text-slate-400 hover:text-rose-500"
+                      aria-label={passwordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                    >
+                      <PasswordEyeIcon visible={passwordVisible} />
+                    </button>
+                  )}
+                </div>
               </div>
               {isAdmin && (
                 <div>

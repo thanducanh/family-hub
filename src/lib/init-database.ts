@@ -1,4 +1,3 @@
-import bcrypt from "bcryptjs";
 import { pool } from "@/lib/db";
 
 const globalForInit = globalThis as unknown as { familyDbInitPromise?: Promise<void> };
@@ -37,7 +36,7 @@ async function seedAdminUser() {
   if (Number(result.rows[0]?.count || 0) > 0) return;
 
   const password = process.env.DEFAULT_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || "admin123";
-  const hash = await bcrypt.hash(password, 12);
+  const hash = password;
   await pool.query(
     "INSERT INTO users (username, email, display_name, avatar, password_hash, role, active, must_change_password, is_system) VALUES ($1,$2,$3,$4,$5,$6,TRUE,TRUE,TRUE)",
     ["admin", process.env.DEFAULT_ADMIN_EMAIL || null, "Quản trị viên", "", hash, "full_access"],

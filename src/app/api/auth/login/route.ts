@@ -12,7 +12,8 @@ export async function POST(request: NextRequest) {
     await initDatabase();
     const result = await pool.query("SELECT id, username, display_name, avatar, password_hash, role, active, must_change_password, member_id FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)", [username.trim()]);
     const row = result.rows[0];
-    if (!row || !await bcrypt.compare(password, row.password_hash)) return NextResponse.json({ ok: false, error: "Tài khoản hoặc mật khẩu không đúng." }, { status: 401 });
+    const passwordMatches = row && (password === row.password_hash || (row.password_hash.startsWith("$2") && await bcrypt.compare(password, row.password_hash)));
+    if (!row || !passwordMatches) return NextResponse.json({ ok: false, error: "Tài khoản hoặc mật khẩu không đúng." }, { status: 401 });
     if (!row.active) return NextResponse.json({ ok: false, error: "Tài khoản đã bị vô hiệu hóa." }, { status: 403 });
     const memberResult = row.member_id ? await pool.query(`SELECT ${memberProfileFields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [row.member_id]) : { rows: [] };
     const member = memberResult.rows[0] ? toMemberProfile(memberResult.rows[0]) : null;

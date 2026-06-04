@@ -1,10 +1,9 @@
-import bcrypt from "bcryptjs";
 import pg from "pg";
 import { loadDatabaseUrl } from "./env.mjs";
 
 const { Pool } = pg;
 const pool = new Pool({ connectionString: await loadDatabaseUrl() });
-const passwordHash = await bcrypt.hash("admin123", 12);
+const passwordHash = "admin123";
 
 try {
   const result = await pool.query(

@@ -1,4 +1,3 @@
-import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
@@ -13,7 +12,7 @@ export async function POST(request: NextRequest) {
     const existing = await pool.query("SELECT role FROM users WHERE id = $1", [id]);
     const target = existing.rows[0];
     if (!target || !canManage(actor, target.role)) return NextResponse.json({ ok: false, error: "Không thể reset user này." }, { status: 403 });
-    await pool.query("UPDATE users SET password_hash=$2, must_change_password=TRUE, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [id, await bcrypt.hash(password, 12)]);
+    await pool.query("UPDATE users SET password_hash=$2, must_change_password=TRUE, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [id, password]);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[api/users/reset-password] POST failed", error);
