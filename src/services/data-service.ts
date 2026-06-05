@@ -1,5 +1,5 @@
 import { mockData } from "@/data/mock-data";
-import type { AppData, EventItem, FamilyRole, Member, Note, Preferences, Task, Transaction } from "@/types";
+import type { AppData, EventItem, Member, Note, Preferences, Task, Transaction } from "@/types";
 
 export interface DataService {
   load(): Promise<AppData>;
@@ -196,8 +196,8 @@ function normalizeData(data: AppData): AppData {
   };
 }
 
-function normalizeMember(member: Partial<Member> & Pick<Member, "id" | "name" | "role" | "color">): Member {
-  return { nickname: "", gender: "", phone: "", avatar: "", notes: "", ...member, birthday: normalizeBirthday(member.birthday), role: normalizeRole(member.role) };
+function normalizeMember(member: Partial<Member> & Pick<Member, "id" | "name" | "color">): Member {
+  return { nickname: "", gender: "", phone: "", avatar: "", notes: "", ...member, birthday: normalizeBirthday(member.birthday) };
 }
 function normalizeBirthday(value: unknown) {
   if (!value) return "";
@@ -206,12 +206,6 @@ function normalizeBirthday(value: unknown) {
   const date = new Date(text);
   if (Number.isNaN(date.getTime())) return "";
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-const familyRoles: FamilyRole[] = ["Tôi", "Bố", "Mẹ", "Con", "Ông nội", "Bà nội", "Ông ngoại", "Bà ngoại", "Anh", "Chị", "Em", "Khác"];
-function normalizeRole(role: string): FamilyRole {
-  if (role === "Ba") return "Bố";
-  return familyRoles.includes(role as FamilyRole) ? role as FamilyRole : "Khác";
 }
 
 function normalizeTransaction(transaction: Partial<Transaction> & Omit<Transaction, "category">): Transaction {

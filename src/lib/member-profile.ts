@@ -8,11 +8,10 @@ export interface MemberProfile {
   birthday: string;
   gender: string;
   notes: string;
-  role: string;
   color: string;
 }
 
-export const memberProfileFields = "id, name, nickname, avatar, phone, birthday, gender, notes, role, color";
+export const memberProfileFields = "id, name, nickname, avatar, phone, birthday, gender, notes, color";
 
 function validDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -41,7 +40,6 @@ export function toMemberProfile(row: Record<string, unknown>): MemberProfile {
     birthday: normalizeBirthday(row.birthday),
     gender: String(row.gender ?? ""),
     notes: String(row.notes ?? ""),
-    role: String(row.role ?? ""),
     color: String(row.color ?? ""),
   };
 }

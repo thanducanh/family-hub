@@ -7,7 +7,7 @@ import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
-import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, FamilyRole, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, Language, Member, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
+import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, Language, Member, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
 import * as XLSX from "xlsx";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
@@ -24,7 +24,6 @@ const vnDateFormatter = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month
 const vnMoneyFormatter = new Intl.NumberFormat("vi-VN");
 const money = (value: number) => `${vnMoneyFormatter.format(Number.isFinite(value) ? value : 0)} đ`;
 const titleKey: Record<Screen, Parameters<ReturnType<typeof translator>>[0]> = { dashboard: "dashboard", members: "members", tasks: "tasks", finance: "finance", chat: "chat", calendar: "calendar", notes: "notes", settings: "settings", notifications: "notifications" };
-const familyRoles = ["Tôi","Bố","Mẹ","Con","Ông nội","Bà nội","Ông ngoại","Bà ngoại","Anh","Chị","Em","Khác"] as unknown as FamilyRole[];
 const accessLabel = (role: UserRole) => role === "full_access" ? "Toàn quyền" : "Chỉ xem chính mình";
 const bankCardsByMemberCache = new Map<string, BankAccount[]>();
 async function readJsonSafe<T>(response: Response): Promise<T | null> {
@@ -1175,7 +1174,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
   const [subTab, setSubTab] = useState<ProfileSubTab>("basic");
   const [error, setError] = useState("");
   const [linkedUsers, setLinkedUsers] = useState<ManagedUser[]>([]);
-  const [form, setForm] = useState<Member>(() => existing ?? { id: crypto.randomUUID(), name: "", nickname: "", birthday: "", gender: "", role: "Khác" as unknown as FamilyRole, phone: "", avatar: "", notes: "", color: "#cbd5e1" });
+  const [form, setForm] = useState<Member>(() => existing ?? { id: crypto.randomUUID(), name: "", nickname: "", birthday: "", gender: "", phone: "", avatar: "", notes: "", color: "#cbd5e1" });
   const [detailsLoaded, setDetailsLoaded] = useState(!existing);
   const canManage = user.role === "full_access";
   const tasks = data.tasks.filter(task => task.memberId === form.id);
@@ -1241,7 +1240,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
                           <div className="w-full rounded-t-3xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onClick={e => e.stopPropagation()}>
                             <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-slate-300" />
                             <div className="space-y-1.5">
-                              <button type="button" onClick={() => { setEditing(false); setProfileMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Xem hồ sơ</button>
+                              {editing && <button type="button" onClick={() => { setEditing(false); setProfileMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Xem hồ sơ</button>}
                               <button type="button" onClick={() => { setEditing(true); setProfileMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Chỉnh sửa</button>
                               {canManage && (
                                 <button type="button" onClick={() => { remove(existing); setProfileMenuOpen(false); }} className="block w-full rounded-xl py-3 px-4 text-left text-sm font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa thành viên</button>
@@ -1256,7 +1255,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
                         <div className="hidden sm:block">
                           <div className="fixed inset-0 z-10" onClick={() => setProfileMenuOpen(false)} />
                           <div className="absolute right-0 top-10 z-20 w-36 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl">
-                            <button type="button" onClick={() => { setEditing(false); setProfileMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Xem hồ sơ</button>
+                            {editing && <button type="button" onClick={() => { setEditing(false); setProfileMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Xem hồ sơ</button>}
                             <button type="button" onClick={() => { setEditing(true); setProfileMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Chỉnh sửa</button>
                             {canManage && (
                               <button type="button" onClick={() => { remove(existing); setProfileMenuOpen(false); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa thành viên</button>
@@ -1475,7 +1474,6 @@ const incomeStatuses: IncomeStatus[] = ["Đã nhận", "Chưa nhận"];
 const incomeTemplates = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền tồn tháng trước", "Khác"];
 const incomeTypeLabel: Record<IncomeSourceType, string> = { fixed: "Cố định", variable: "Không cố định" };
 const frequencyLabel: Record<IncomeFrequency, string> = { monthly: "Hàng tháng", weekly: "Hàng tuần", yearly: "Hàng năm", one_time: "Một lần", custom: "Tùy chỉnh" };
-const workSourceOptions = ["Công việc chính", "Job 2", "Freelance", "Thu nhập thêm", "Khác"];
 type IncomeDraft = { id?: string; incomeDate: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string; };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MonthlyTooltip({ active, payload }: any) {
@@ -2521,7 +2519,7 @@ export function parseFees(note: string, productName: string): CardFees {
     try {
       const parsed = JSON.parse(note.substring("FEES_JSON:".length));
       return { ...defaultFees, ...parsed };
-    } catch (e) {
+    } catch {
       // ignore
     }
   }
@@ -3291,7 +3289,7 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
   function submit(event: React.FormEvent) {
     event.preventDefault();
     const id = existing?.id ?? crypto.randomUUID();
-    const item = editor.kind === "members" ? { id, name: form.name, nickname: form.nickname, birthday: form.birthday, gender: form.gender as Member["gender"], role: form.role as FamilyRole, phone: form.phone, avatar: form.avatar, notes: form.notes, color: form.color } :
+    const item = editor.kind === "members" ? { id, name: form.name, nickname: form.nickname, birthday: form.birthday, gender: form.gender as Member["gender"], phone: form.phone, avatar: form.avatar, notes: form.notes, color: form.color } :
       editor.kind === "tasks" ? { id, title: form.title, memberId: form.memberId, assignee: memberName(members, form.memberId), due: form.dueDate, dueDate: form.dueDate, priority: form.priority as Task["priority"], status: form.status as Task["status"] } :
       editor.kind === "transactions" ? { id, title: form.title, memberId: form.memberId, amount: Number(form.amount), type: form.type as Transaction["type"], category: form.category, date: form.date } :
       editor.kind === "events" ? { id, title: form.title, memberId: form.memberId, type: form.type as EventItem["type"], date: form.date, time: form.time, color: form.color } :
@@ -3302,7 +3300,7 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
     <form onSubmit={submit} onMouseDown={event => event.stopPropagation()} className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-lg md:rounded-3xl">
       <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-slate-300 md:hidden" /><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">{existing ? "Sửa" : "Thêm"} {formLabels[editor.kind]}</h2><button type="button" onClick={close} className="rounded-full px-3 py-1 text-xl text-slate-400">×</button></div>
       <div className="space-y-4">
-        {editor.kind === "members" && <><Field label="Họ tên"><input required disabled={actor.role === "self_only"} className={inputClass} value={form.name} onChange={e => set("name", e.target.value)} /></Field><Field label="Biệt danh / nickname"><input className={inputClass} value={form.nickname} onChange={e => set("nickname", e.target.value)} /></Field><Field label="Vai vế gia đình"><select required disabled={actor.role === "self_only"} className={inputClass} value={form.role} onChange={e => set("role", e.target.value)}>{familyRoles.map(role => <option key={role}>{role}</option>)}</select></Field><BirthdaySelect disabled={actor.role === "self_only"} value={form.birthday} onChange={value => set("birthday", value)} /><Field label="Giới tính"><select disabled={actor.role === "self_only"} className={inputClass} value={form.gender} onChange={e => set("gender", e.target.value)}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Số điện thoại"><input type="tel" className={inputClass} value={form.phone} onChange={e => set("phone", e.target.value)} /></Field><Field label="Avatar (URL ảnh)"><input className={inputClass} value={form.avatar} onChange={e => set("avatar", e.target.value)} placeholder="https://... hoặc data:image/..." /></Field><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.notes} onChange={e => set("notes", e.target.value)} /></Field></>}
+        {editor.kind === "members" && <><Field label="Họ tên"><input required disabled={actor.role === "self_only"} className={inputClass} value={form.name} onChange={e => set("name", e.target.value)} /></Field><Field label="Biệt danh / nickname"><input className={inputClass} value={form.nickname} onChange={e => set("nickname", e.target.value)} /></Field><BirthdaySelect disabled={actor.role === "self_only"} value={form.birthday} onChange={value => set("birthday", value)} /><Field label="Giới tính"><select disabled={actor.role === "self_only"} className={inputClass} value={form.gender} onChange={e => set("gender", e.target.value)}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Số điện thoại"><input type="tel" className={inputClass} value={form.phone} onChange={e => set("phone", e.target.value)} /></Field><Field label="Avatar (URL ảnh)"><input className={inputClass} value={form.avatar} onChange={e => set("avatar", e.target.value)} placeholder="https://... hoặc data:image/..." /></Field><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.notes} onChange={e => set("notes", e.target.value)} /></Field></>}
         {editor.kind === "tasks" && <><Field label="Tên công việc"><input required className={inputClass} value={form.title} onChange={e => set("title", e.target.value)} /></Field><MemberSelect members={members} value={form.memberId} set={value => set("memberId", value)} required /><Field label="Hạn chót"><DateVNInput required value={form.dueDate} onChange={value => set("dueDate", value)} /></Field><Field label="Mức ưu tiên"><select className={inputClass} value={form.priority} onChange={e => set("priority", e.target.value)}><option value="low">Thấp</option><option value="normal">Bình thường</option><option value="high">Cao</option></select></Field><Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={e => set("status", e.target.value)}><option value="todo">Chờ làm</option><option value="doing">Đang làm</option><option value="done">Hoàn thành</option></select></Field></>}
         {editor.kind === "transactions" && <><Field label="Nội dung"><input required className={inputClass} value={form.title} onChange={e => set("title", e.target.value)} /></Field><Field label="Số tiền"><input required min="0" type="number" className={inputClass} value={form.amount} onChange={e => set("amount", e.target.value)} /></Field><Field label="Loại"><select className={inputClass} value={form.type} onChange={e => set("type", e.target.value)}><option value="expense">Chi</option><option value="income">Thu</option></select></Field><Field label="Danh mục"><select className={inputClass} value={form.category} onChange={e => set("category", e.target.value)}>{["Ăn uống","Điện nước","Học tập","Y tế","Mua sắm","Di chuyển","Khác"].map(category => <option key={category}>{category}</option>)}</select></Field><MemberSelect members={members} value={form.memberId} set={value => set("memberId", value)} /><Field label="Ngày chi"><DateVNInput required value={form.date} onChange={value => set("date", value)} /></Field></>}
         {editor.kind === "events" && <><Field label="Tên sự kiện"><input required className={inputClass} value={form.title} onChange={e => set("title", e.target.value)} /></Field><Field label="Loại sự kiện"><select className={inputClass} value={form.type} onChange={e => set("type", e.target.value)}><option value="family">Gia đình</option><option value="birthday">Sinh nhật</option><option value="medical">Khám bệnh</option><option value="school">Học tập / họp phụ huynh</option></select></Field><MemberSelect members={members} value={form.memberId} set={value => set("memberId", value)} /><Field label="Ngày"><DateVNInput required value={form.date} onChange={value => set("date", value)} /></Field><Field label="Giờ"><input required type="time" className={inputClass} value={form.time} onChange={e => set("time", e.target.value)} /></Field><Field label="Màu"><input type="color" className={`${inputClass} h-12`} value={form.color} onChange={e => set("color", e.target.value)} /></Field></>}

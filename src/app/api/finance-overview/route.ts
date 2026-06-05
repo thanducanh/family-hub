@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   if (!await requireSession()) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
 
   try {

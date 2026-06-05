@@ -24,9 +24,8 @@ export type EventType = "family" | "birthday" | "medical" | "school";
 export type NoteKind = "general" | "member";
 
 export type Gender = "male" | "female" | "other" | "";
-export type FamilyRole = "Tôi" | "Bố" | "Mẹ" | "Con" | "Ông nội" | "Bà nội" | "Ông ngoại" | "Bà ngoại" | "Anh" | "Chị" | "Em" | "Khác";
 export interface LinkedAccount { id: string; username: string; email: string; displayName: string; role: "full_access" | "self_only"; active: boolean; isSystem: boolean; memberId: string; createdAt: string; updatedAt: string; }
-export interface Member { id: string; name: string; nickname: string; birthday: string; gender: Gender; role: FamilyRole; phone: string; avatar: string; avatarPreview?: string; notes: string; color: string; user?: LinkedAccount | null; }
+export interface Member { id: string; name: string; nickname: string; birthday: string; gender: Gender; phone: string; avatar: string; avatarPreview?: string; notes: string; color: string; user?: LinkedAccount | null; }
 export interface Task { id: string; title: string; memberId: string; assignee: string; due: string; dueDate: string; priority: TaskPriority; status: TaskStatus; }
 export interface Transaction { id: string; title: string; memberId: string; amount: number; type: TransactionType; category: string; date: string; bankAccountId?: string; estimatedCashback?: number; actualCashback?: number; }
 export interface IncomeSource { id: string; memberId: string; name: string; type: IncomeSourceType; amount: number; frequency: IncomeFrequency; receivedDate: string; startDate: string; note: string; active: boolean; createdAt?: string; updatedAt?: string; memberName?: string; }

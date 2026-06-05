@@ -2,9 +2,9 @@ import type { AppData } from "@/types";
 
 export const mockData: AppData = {
   members: [
-    { id: "00000000-0000-4000-8000-000000000001", name: "Minh", nickname: "", birthday: "1988-08-18", gender: "male", role: "Bố", phone: "090 123 4567", avatar: "", notes: "", color: "#fb7185" },
-    { id: "00000000-0000-4000-8000-000000000002", name: "Hana", nickname: "", birthday: "1990-11-04", gender: "female", role: "Mẹ", phone: "090 765 4321", avatar: "", notes: "", color: "#60a5fa" },
-    { id: "00000000-0000-4000-8000-000000000003", name: "An", nickname: "", birthday: "2018-06-12", gender: "other", role: "Con", phone: "", avatar: "", notes: "Thích vẽ và đọc truyện.", color: "#fbbf24" },
+    { id: "00000000-0000-4000-8000-000000000001", name: "Minh", nickname: "", birthday: "1988-08-18", gender: "male", phone: "090 123 4567", avatar: "", notes: "", color: "#fb7185" },
+    { id: "00000000-0000-4000-8000-000000000002", name: "Hana", nickname: "", birthday: "1990-11-04", gender: "female", phone: "090 765 4321", avatar: "", notes: "", color: "#60a5fa" },
+    { id: "00000000-0000-4000-8000-000000000003", name: "An", nickname: "", birthday: "2018-06-12", gender: "other", phone: "", avatar: "", notes: "Thích vẽ và đọc truyện.", color: "#fbbf24" },
   ],
   tasks: [
     { id: "00000000-0000-4000-8000-000000000011", title: "Mua đồ ăn cho tuần mới", memberId: "00000000-0000-4000-8000-000000000001", assignee: "Minh", due: "Hôm nay", dueDate: "2026-06-02", priority: "normal", status: "todo" },
