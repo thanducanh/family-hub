@@ -574,3 +574,4 @@ pm.cmd run build.
 - Rút gọn detail thẻ: thông tin thẻ, phí thường niên + tiến độ, hoàn tiền/điểm thưởng ghi nhận, nội dung gốc liên quan và giao dịch liên quan placeholder.
 
 - Lần 28.10 - Fix chi tiết thẻ ngân hàng bị mất sidebar layout
+
