@@ -34,6 +34,7 @@ function normalizeRecordPayload(item: Record<string, unknown>) {
     status,
     note: text(item.note),
     workSource: text(item.workSource),
+    workId: text(item.workId || item.work_id),
   };
 }
 
@@ -58,12 +59,13 @@ export async function POST(request: NextRequest) {
     for (const payload of payloadList) {
       const row = normalizeRecordPayload(payload);
       const result = await client.query(
-        `INSERT INTO income_records (id, source_id, member_id, income_date, year, month, category, name, amount, status, note, work_source, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW()) RETURNING *`,
+        `INSERT INTO income_records (id, source_id, member_id, work_id, income_date, year, month, category, name, amount, status, note, work_source, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()) RETURNING *`,
         [
           row.id,
           text(payload.sourceId) || null,
           text(payload.memberId || actor.memberId) || null,
+          row.workId || null,
           row.incomeDate,
           row.year,
           row.month,
@@ -97,10 +99,11 @@ export async function PUT(request: NextRequest) {
   if (!row.id || !row.name) return NextResponse.json({ ok: false, error: "Thiếu id hoặc tên khoản thu." }, { status: 400 });
   const result = await pool.query(
     `UPDATE income_records
-     SET member_id = $1, income_date = $2, year = $3, month = $4, category = $5, name = $6, amount = $7, status = $8, note = $9, work_source = $10, updated_at = NOW()
-     WHERE id = $11 RETURNING *`,
+     SET member_id = $1, work_id = $2, income_date = $3, year = $4, month = $5, category = $6, name = $7, amount = $8, status = $9, note = $10, work_source = $11, updated_at = NOW()
+     WHERE id = $12 RETURNING *`,
     [
       text(payload.memberId || actor.memberId) || null,
+      row.workId || null,
       row.incomeDate,
       row.year,
       row.month,

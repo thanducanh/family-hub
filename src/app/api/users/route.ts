@@ -59,8 +59,9 @@ export async function POST(request: NextRequest) {
     const assignmentError = await memberAssignmentError(body.memberId);
     if (assignmentError) return NextResponse.json({ ok: false, error: assignmentError }, { status: 409 });
     
+    const username = body.username.trim();
     const hash = await bcrypt.hash(body.password, 12);
-    const result = await pool.query(`INSERT INTO users (username, email, display_name, avatar, role, password_hash, password_plain, active, must_change_password, is_system, member_id) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,TRUE,FALSE,$8) RETURNING ${select}`, [body.username.trim(), body.email?.trim() || null, body.displayName.trim(), body.avatar || "", role, hash, body.password, body.memberId || null]);
+    const result = await pool.query(`INSERT INTO users (username, email, display_name, avatar, role, password_hash, password_plain, active, must_change_password, is_system, member_id) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,TRUE,FALSE,$8) RETURNING ${select}`, [username, body.email?.trim() || null, body.memberId ? username : body.displayName.trim(), body.memberId ? "" : body.avatar || "", role, hash, body.password, body.memberId || null]);
     const user = toPublicUser(result.rows[0]);
     return NextResponse.json({ ok: true, data: user, user }, { status: 201 });
   } catch (error) {
@@ -91,10 +92,12 @@ export async function PUT(request: NextRequest) {
     let result;
     if (body.password) {
       const hash = await bcrypt.hash(body.password, 12);
-      const values = [body.id, body.username.trim(), body.email?.trim() || null, body.displayName, body.avatar || "", body.role, body.active, body.memberId || null, hash, body.password];
+      const username = body.username.trim();
+      const values = [body.id, username, body.email?.trim() || null, body.memberId ? username : body.displayName, body.memberId ? "" : body.avatar || "", body.role, body.active, body.memberId || null, hash, body.password];
       result = await pool.query(`UPDATE users SET username=$2, email=$3, display_name=$4, avatar=$5, role=$6, active=$7, member_id=$8, password_hash=$9, password_plain=$10, must_change_password=TRUE, updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING ${select}`, values);
     } else {
-      const values = [body.id, body.username.trim(), body.email?.trim() || null, body.displayName, body.avatar || "", body.role, body.active, body.memberId || null];
+      const username = body.username.trim();
+      const values = [body.id, username, body.email?.trim() || null, body.memberId ? username : body.displayName, body.memberId ? "" : body.avatar || "", body.role, body.active, body.memberId || null];
       result = await pool.query(`UPDATE users SET username=$2, email=$3, display_name=$4, avatar=$5, role=$6, active=$7, member_id=$8, updated_at=CURRENT_TIMESTAMP WHERE id=$1 RETURNING ${select}`, values);
     }
     const user = toPublicUser(result.rows[0]);

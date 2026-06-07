@@ -16,7 +16,7 @@ async function loadProfile(userId: string): Promise<ProfileUser | null> {
   const memberResult = await pool.query(`SELECT ${memberProfileFields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [profile.memberId]);
   if (!memberResult.rows[0]) return profile;
   const member = toMemberProfile(memberResult.rows[0]);
-  return { ...profile, displayName: member.nickname || member.name || profile.displayName, avatar: member.avatar || profile.avatar, member };
+  return { ...profile, displayName: member.name || profile.displayName, avatar: member.avatar || profile.avatar, member };
 }
 
 async function assignOwnMember(session: SessionUser, memberId: string) {
@@ -52,13 +52,9 @@ export async function PUT(request: NextRequest) {
     const body = await request.json() as ProfileBody;
     if (!session.memberId && body.memberId) await assignOwnMember(session, body.memberId);
     if (session.memberId) {
-      if (session.role === "full_access") {
-        if (!body.name?.trim()) return NextResponse.json({ ok: false, error: "Họ tên không được để trống." }, { status: 400 });
-        await pool.query("UPDATE members SET name=$2,nickname=$3,phone=$4,birthday=$5,gender=$6,avatar=$7,notes=$8 WHERE id=$1 AND deleted_at IS NULL", [session.memberId, body.name.trim(), body.nickname?.trim() || "", body.phone?.trim() || "", body.birthday || null, body.gender?.trim() || "", body.avatar?.trim() || "", body.notes?.trim() || ""]);
-      } else {
-        await pool.query("UPDATE members SET nickname=$2,phone=$3,avatar=$4,notes=$5 WHERE id=$1 AND deleted_at IS NULL", [session.memberId, body.nickname?.trim() || "", body.phone?.trim() || "", body.avatar?.trim() || "", body.notes?.trim() || ""]);
-      }
-      if (session.role === "full_access") await pool.query("UPDATE users SET email=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.email?.trim() || null]);
+      if (!body.name?.trim()) return NextResponse.json({ ok: false, error: "Họ tên không được để trống." }, { status: 400 });
+      await pool.query("UPDATE members SET name=$2,nickname=$3,phone=$4,birthday=$5,gender=$6,avatar=$7,notes=$8 WHERE id=$1 AND deleted_at IS NULL", [session.memberId, body.name.trim(), body.nickname?.trim() || "", body.phone?.trim() || "", body.birthday || null, body.gender?.trim() || "", body.avatar?.trim() || "", body.notes?.trim() || ""]);
+      await pool.query("UPDATE users SET email=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.email?.trim() || null]);
     } else {
       if (!body.displayName?.trim()) return NextResponse.json({ ok: false, error: "Tên hiển thị không được để trống." }, { status: 400 });
       await pool.query("UPDATE users SET display_name=$2,email=$3,avatar=$4,updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.displayName.trim(), body.email?.trim() || null, body.avatar?.trim() || ""]);

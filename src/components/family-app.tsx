@@ -7,7 +7,7 @@ import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
-import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, Language, Member, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
+import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, Language, Member, MemberJob, MemberJobStatus, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
 import * as XLSX from "xlsx";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
@@ -15,7 +15,7 @@ type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
 type EntityItem = Member | Task | Transaction | EventItem | Note;
 type Editor = { kind: EntityKind; item?: EntityItem } | null;
 type UserRole = "full_access" | "self_only";
-export interface AuthUser { id: string; username: string; displayName: string; avatar: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; passwordPlain?: string | null; }
+export interface AuthUser { id: string; username: string; displayName: string; avatar: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; email?: string; passwordPlain?: string | null; }
 type ManagedUser = AuthUser & { email: string; active: boolean; isSystem: boolean; createdAt: string; updatedAt: string };
 type ProfileUser = ManagedUser & { member?: Member };
 type PasswordResetRequest = { id: string; userId: string; usernameOrEmail: string; status: string; requestedAt: string; username: string; displayName: string; role: UserRole };
@@ -61,6 +61,9 @@ function isoDateFromVN(value: string) {
 }
 function formatBirthday(value: string) {
   return formatDateVN(value, "Chưa cập nhật");
+}
+function genderLabel(value: string) {
+  return value === "male" ? "Nam" : value === "female" ? "Nữ" : value === "other" ? "Khác" : "Chưa cập nhật";
 }
 function birthdayParts(value: string) {
   const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
@@ -240,12 +243,22 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     setUser(null);
     setData(null);
   }
+  async function refreshCurrentUser() {
+    const response = await fetch("/api/auth/me", { cache: "no-store" });
+    const result = await readJsonSafe<{ user?: AuthUser; member?: Member }>(response);
+    if (!response.ok || !result?.user) return null;
+    const nextUser = { ...result.user, member: result.member || result.user.member };
+    setUser(nextUser);
+    if (result.member) setData(current => current ? { ...current, members: current.members.map(member => member.id === result.member!.id ? result.member! : member) } : current);
+    return nextUser;
+  }
   if (user === undefined) return <LoadingSkeleton />;
   if (!user) return <LoginScreen onLogin={setUser} />;
   if (!data) return <LoadingSkeleton />;
 
   const currentMember = data.members.find(member => member.id === user.memberId) || user.member;
-  const content = children ? <>{children}</> : profilePageOpen ? <ProfilePage user={user} member={currentMember} data={data} update={update} openChangePassword={() => setChangePasswordOpen(true)} logout={logout} savedUser={setUser} /> :
+  const headerUser = currentMember ? { ...user, displayName: currentMember.name || user.displayName, avatar: currentMember.avatar || user.avatar, member: currentMember } : user;
+  const content = children ? <>{children}</> : profilePageOpen ? <ProfilePage user={headerUser} member={currentMember} data={data} update={update} openChangePassword={() => setChangePasswordOpen(true)} logout={logout} savedUser={setUser} refreshCurrentUser={refreshCurrentUser} /> :
     screen === "dashboard" ? <Dashboard data={data} go={go} notifications={notifications} user={user} /> :
     screen === "members" ? <Members data={data} user={user} update={update} /> :
     screen === "tasks" ? <Tasks data={data} update={update} open={setEditor} t={t} /> :
@@ -266,16 +279,16 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
           <button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="grid size-11 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5"><ThemeIcon dark={theme === "dark"} /></button>
           <button aria-label="Thông báo" onClick={() => go("notifications")} className="relative grid size-11 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5"><BellIcon />{notifications.some(item => isCalendarNotificationUnread(item, user)) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => isCalendarNotificationUnread(item, user)).length}</span>}</button>
           <button aria-label="Mở menu tài khoản" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(open => !open)} className="flex items-center gap-2 rounded-lg p-1 text-left hover:bg-slate-50 dark:hover:bg-white/5">
-            <span className="grid size-10 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm"><AccountAvatar user={user} /></span><span className="hidden max-w-32 truncate text-sm font-semibold sm:block">{user.displayName}</span><ChevronDownIcon />
+            <span className="grid size-10 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm"><AccountAvatar user={headerUser} /></span><span className="hidden max-w-32 truncate text-sm font-semibold sm:block">{headerUser.displayName}</span><ChevronDownIcon />
           </button>
-          {accountMenuOpen && <AccountMenu user={user} openProfile={() => { setAccountMenuOpen(false); setProfilePageOpen(true); }} openSettings={() => { setAccountMenuOpen(false); setProfilePageOpen(false); setScreen("settings"); }} openChangePassword={() => { setAccountMenuOpen(false); setChangePasswordOpen(true); }} logout={logout} />}
+          {accountMenuOpen && <AccountMenu user={headerUser} openProfile={() => { setAccountMenuOpen(false); setProfilePageOpen(true); }} openSettings={() => { setAccountMenuOpen(false); setProfilePageOpen(false); setScreen("settings"); }} logout={logout} />}
         </div>
       </div>
     </header>
     <section className={`mx-auto px-5 py-5 md:pb-8 ${screen === "calendar" ? "max-w-none md:px-4" : "max-w-7xl md:px-8"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className="mb-5 hidden md:block"><h1 className="text-2xl font-bold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     <Nav screen={screen} go={go} t={t} />
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
-    {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={setUser} />}
+    {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
 }
 function visibleDataFor(user: AuthUser, data: AppData) {
@@ -283,36 +296,83 @@ function visibleDataFor(user: AuthUser, data: AppData) {
 }
 
 function AccountAvatar({ user, size = "size-10" }: { user: { avatar?: string; displayName: string; member?: Member }; size?: string }) {
-  if (user.avatar) return <Image unoptimized width={96} height={96} src={user.avatar} className={`${size} shrink-0 rounded-full object-cover`} alt={user.displayName} />;
-  return <span className={`grid ${size} shrink-0 place-items-center rounded-full bg-slate-200 text-sm font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-200`}>{user.displayName[0]?.toUpperCase() || "?"}</span>;
+  const displayName = user.member?.name || user.displayName;
+  const avatar = user.member?.avatar || user.avatar;
+  if (avatar) return <Image unoptimized width={96} height={96} src={avatar} className={`${size} shrink-0 rounded-full object-cover`} alt={displayName} />;
+  return <span className={`grid ${size} shrink-0 place-items-center rounded-full bg-slate-200 text-sm font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-200`}>{displayName[0]?.toUpperCase() || "?"}</span>;
 }
 
-function AccountMenu({ user, openProfile, openSettings, openChangePassword, logout }: { user: AuthUser; openProfile: () => void; openSettings: () => void; openChangePassword: () => void; logout: () => void }) {
+function AccountMenu({ user, openProfile, openSettings, logout }: { user: AuthUser; openProfile: () => void; openSettings: () => void; logout: () => void }) {
   const menuClass = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5";
   return <div className="absolute right-0 top-14 z-40 w-72 rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-3 shadow-xl">
     <div className="flex items-center gap-3 border-b border-[var(--app-border)] px-2 pb-3"><AccountAvatar user={user} /><div className="min-w-0"><b className="block truncate text-sm">{user.displayName}</b><p className="mt-1 truncate text-xs text-slate-400">{user.username} · {accessLabel(user.role)}</p></div></div>
     <div className="space-y-1 border-b border-[var(--app-border)] py-3">
       <button onClick={openProfile} className={menuClass}><UserIcon /> Hồ sơ cá nhân</button>
       <button onClick={openSettings} className={menuClass}><SettingsIcon /> Cài đặt tài khoản</button>
-      <button onClick={openChangePassword} className={menuClass}><LockIcon /> Đổi mật khẩu</button>
     </div>
     <button onClick={logout} className={`${menuClass} mt-3 text-rose-500`}><LogoutIcon /> Đăng xuất</button>
   </div>;
 }
 
-function ProfilePage({ user, member, data, update, openChangePassword, logout, savedUser }: { user: AuthUser; member?: Member; data: AppData; update: (data: AppData) => void; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void }) {
-  if (!member && user.role === "full_access") return <SystemAdminProfile user={user} openChangePassword={openChangePassword} logout={logout} savedUser={savedUser} />;
+function ProfilePage({ user, member, data, update, openChangePassword, logout, savedUser, refreshCurrentUser }: { user: AuthUser; member?: Member; data: AppData; update: (data: AppData) => void; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void; refreshCurrentUser: () => Promise<AuthUser | null> }) {
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
+  if (!member && user.role === "full_access") return <SystemAdminProfile user={user} openChangePassword={openChangePassword} logout={logout} savedUser={savedUser} refreshCurrentUser={refreshCurrentUser} />;
   if (!member) return <Card className="p-6 text-sm text-slate-500">Tài khoản chưa được liên kết với hồ sơ thành viên. Quản trị viên có thể gán thành viên trong phần quản lý tài khoản.</Card>;
-  return <MemberProfile member={member} data={data} user={user} personal close={() => undefined} saved={next => {
-    update({ ...data, members: data.members.map(item => item.id === next.id ? next : item) });
-    savedUser({ ...user, displayName: next.nickname || next.name, avatar: next.avatar, member: next });
-  }} remove={() => undefined} openChangePassword={openChangePassword} logout={logout} savedUser={savedUser} />;
+  const activeMember = member || user.member;
+  const displayName = activeMember?.name || user.displayName || user.username;
+  const displayAvatar = activeMember?.avatar || user.avatar;
+  const profileUser = { ...user, displayName, avatar: displayAvatar, member: activeMember };
+  const details = [
+    ["Họ tên", activeMember?.name || "Chưa cập nhật"],
+    ["Ngày sinh", formatBirthday(activeMember?.birthday || "")],
+    ["Giới tính", genderLabel(activeMember?.gender || "")],
+    ["Điện thoại", activeMember?.phone || "Chưa cập nhật"],
+    ["Email", (user as ManagedUser).email || "Chưa cập nhật"],
+    ["Vai trò", accessLabel(user.role)],
+    ["Trạng thái", "Đang hoạt động"],
+  ];
+  const actionClass = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5";
+  const syncProfile = (nextUser: AuthUser, nextMember?: Member | null) => {
+    const syncedMember = nextMember || nextUser.member;
+    savedUser({ ...nextUser, member: syncedMember || nextUser.member });
+    if (syncedMember) update({ ...data, members: data.members.map(item => item.id === syncedMember.id ? syncedMember : item) });
+  };
+  return <div className="max-w-3xl space-y-5">
+    <Card className="overflow-visible p-0">
+      <div className="flex flex-col gap-5 border-b border-[var(--app-border)] p-6 sm:flex-row sm:items-start">
+        <AccountAvatar user={profileUser} size="size-24" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Hồ sơ cá nhân</p>
+          <h2 className="mt-2 truncate text-2xl font-semibold">{displayName}</h2>
+          <p className="mt-1 text-sm text-slate-400">{user.username} · {accessLabel(user.role)}</p>
+        </div>
+        <div className="relative self-start">
+          <button type="button" onClick={() => setMoreOpen(open => !open)} className="grid size-10 place-items-center rounded-lg border border-[var(--app-border)] text-xl text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5" aria-label="Thao tác hồ sơ" aria-expanded={moreOpen}>⋮</button>
+          {moreOpen && <div className="absolute right-0 top-12 z-20 w-56 rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-2 shadow-xl">
+            <button type="button" onClick={() => { setMoreOpen(false); setProfileEditorOpen(true); }} className={actionClass}><UserIcon /> Chỉnh sửa hồ sơ</button>
+            <button type="button" onClick={() => { setMoreOpen(false); openChangePassword(); }} className={actionClass}><LockIcon /> Đổi mật khẩu</button>
+            <button type="button" onClick={() => { setMoreOpen(false); setActivityOpen(true); }} className={actionClass}><NotesIcon /> Nhật ký hoạt động</button>
+            <button type="button" onClick={logout} className={`${actionClass} text-rose-500`}><LogoutIcon /> Đăng xuất</button>
+          </div>}
+        </div>
+      </div>
+      <div className="grid gap-0 sm:grid-cols-2">
+        {details.map(([label, value]) => <div key={label} className="border-b border-[var(--app-border)] px-6 py-4 last:border-b-0 sm:odd:border-r"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}
+      </div>
+    </Card>
+    {profileEditorOpen && <ProfileSheet user={profileUser} close={() => setProfileEditorOpen(false)} saved={syncProfile} refreshCurrentUser={refreshCurrentUser} profileSaved={(profile, nextMember) => syncProfile(profile, nextMember)} />}
+    {activityOpen && <Sheet close={() => setActivityOpen(false)}><h2 className="text-lg font-bold">Nhật ký hoạt động</h2><div className="mt-5 space-y-3 text-sm text-slate-500"><div className="rounded-xl border border-[var(--app-border)] p-4"><b className="text-[var(--app-foreground)]">Hồ sơ đang hoạt động</b><p className="mt-1">Phiên hiện tại đã được đồng bộ với hồ sơ thành viên liên kết.</p></div><div className="rounded-xl border border-[var(--app-border)] p-4"><b className="text-[var(--app-foreground)]">Tài khoản đăng nhập</b><p className="mt-1">{user.username} · {accessLabel(user.role)}</p></div></div></Sheet>}
+  </div>;
 }
 
-function SystemAdminProfile({ user, openChangePassword, logout, savedUser }: { user: AuthUser; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void }) {
+function SystemAdminProfile({ user, openChangePassword, logout, savedUser, refreshCurrentUser }: { user: AuthUser; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void; refreshCurrentUser: () => Promise<AuthUser | null> }) {
   const [form, setForm] = useState({ displayName: user.displayName || "Quản trị viên", email: "", avatar: user.avatar || "" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(true);
   useEffect(() => {
     void fetch("/api/auth/profile").then(async response => {
       const result = await readJsonSafe<{ user?: ProfileUser }>(response);
@@ -324,9 +384,10 @@ function SystemAdminProfile({ user, openChangePassword, logout, savedUser }: { u
     const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
     const result = await readJsonSafe<{ error?: string; user?: AuthUser }>(response);
     if (!response.ok || !result?.user) return setError(result?.error || "Không thể lưu hồ sơ tài khoản.");
-    savedUser(result.user); setMessage("Đã lưu hồ sơ tài khoản hệ thống.");
+    savedUser(result.user); await refreshCurrentUser(); setMessage("Đã lưu hồ sơ tài khoản hệ thống.");
   }
-  return <div className="max-w-2xl space-y-5"><Card className="p-6"><div className="flex items-center gap-4"><AccountAvatar user={{ avatar: form.avatar, displayName: form.displayName || "Quản trị viên" }} size="size-16" /><div><h2 className="text-xl font-bold">{form.displayName || "Quản trị viên"}</h2><p className="mt-1 text-sm text-slate-400">Tài khoản hệ thống</p></div></div><div className="mt-5 grid gap-4 text-sm sm:grid-cols-2"><AccountDetail label="Username" value={user.username || "admin"} /><AccountDetail label="Quyền" value="Toàn quyền" /><AccountDetail label="Trạng thái" value="Đang hoạt động" /><AccountDetail label="Loại tài khoản" value="Tài khoản hệ thống" /></div></Card><Card className="p-6"><h3 className="font-semibold">Hồ sơ tài khoản</h3><form onSubmit={submit} className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Tên hiển thị"><input required className={inputClass} value={form.displayName} onChange={event => setForm(current => ({ ...current, displayName: event.target.value }))} /></Field><Field label="Email"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field><Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field>{error && <p className="text-sm text-rose-500 md:col-span-2">{error}</p>}{message && <p className="text-sm text-emerald-500 md:col-span-2">{message}</p>}<div className="flex flex-wrap gap-2 md:col-span-2"><button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Lưu hồ sơ</button><button type="button" onClick={openChangePassword} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Đổi mật khẩu</button><button type="button" onClick={logout} className="rounded-lg border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-500">Đăng xuất</button></div></form></Card></div>;
+  const actionClass = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5";
+  return <div className="max-w-2xl space-y-5"><Card className="overflow-visible p-6"><div className="flex items-start gap-4"><AccountAvatar user={{ avatar: form.avatar, displayName: form.displayName || "Quản trị viên" }} size="size-16" /><div className="min-w-0 flex-1"><h2 className="truncate text-xl font-bold">{form.displayName || "Quản trị viên"}</h2><p className="mt-1 text-sm text-slate-400">Tài khoản hệ thống</p></div><div className="relative"><button type="button" onClick={() => setMoreOpen(open => !open)} className="grid size-10 place-items-center rounded-lg border border-[var(--app-border)] text-xl text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5" aria-label="Thao tác hồ sơ" aria-expanded={moreOpen}>⋮</button>{moreOpen && <div className="absolute right-0 top-12 z-20 w-56 rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-2 shadow-xl"><button type="button" onClick={() => { setMoreOpen(false); setEditOpen(true); }} className={actionClass}><UserIcon /> Chỉnh sửa hồ sơ</button><button type="button" onClick={() => { setMoreOpen(false); openChangePassword(); }} className={actionClass}><LockIcon /> Đổi mật khẩu</button><button type="button" onClick={logout} className={`${actionClass} text-rose-500`}><LogoutIcon /> Đăng xuất</button></div>}</div></div><div className="mt-5 grid gap-4 text-sm sm:grid-cols-2"><AccountDetail label="Username" value={user.username || "admin"} /><AccountDetail label="Quyền" value="Toàn quyền" /><AccountDetail label="Trạng thái" value="Đang hoạt động" /><AccountDetail label="Loại tài khoản" value="Tài khoản hệ thống" /></div></Card>{editOpen && <Card className="p-6"><h3 className="font-semibold">Hồ sơ tài khoản</h3><form onSubmit={submit} className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Tên hiển thị"><input required className={inputClass} value={form.displayName} onChange={event => setForm(current => ({ ...current, displayName: event.target.value }))} /></Field><Field label="Email"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field><Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field>{error && <p className="text-sm text-rose-500 md:col-span-2">{error}</p>}{message && <p className="text-sm text-emerald-500 md:col-span-2">{message}</p>}<div className="flex flex-wrap gap-2 md:col-span-2"><button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Lưu hồ sơ</button><button type="button" onClick={logout} className="rounded-lg border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-500">Đăng xuất</button></div></form></Card>}</div>;
 }
 function AccountDetail({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-semibold">{value}</p></div>; }
 
@@ -416,7 +477,7 @@ function ChangePasswordSheet({ close, saved }: { close: () => void; saved: (user
   return <Sheet close={close}><form onSubmit={submit}><h2 className="text-lg font-bold">Đổi mật khẩu</h2><p className="mt-1 text-sm text-slate-400">Mật khẩu mới cần ít nhất 6 ký tự.</p><div className="mt-5 space-y-4"><PasswordField label="Mật khẩu hiện tại" value={currentPassword} setValue={setCurrentPassword} autoComplete="current-password" /><PasswordField label="Mật khẩu mới" value={newPassword} setValue={setNewPassword} autoComplete="new-password" /><PasswordField label="Nhập lại mật khẩu mới" value={confirmPassword} setValue={setConfirmPassword} autoComplete="new-password" /></div>{error && <p className="mt-3 text-sm text-red-500">{error}</p>}{success && <p className="mt-3 text-sm font-bold text-emerald-500">{success}</p>}<div className="mt-6 flex gap-3"><button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Đóng</button><button disabled={loading} className="flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{loading ? "Đang lưu..." : "Đổi mật khẩu"}</button></div></form></Sheet>;
 }
 
-export function ProfileSheet({ user, close, saved }: { user: AuthUser; close: () => void; saved: (user: AuthUser) => void }) {
+export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentUser }: { user: AuthUser; close: () => void; saved: (user: AuthUser) => void; profileSaved?: (user: AuthUser, member?: Member | null) => void; refreshCurrentUser?: () => Promise<AuthUser | null> }) {
   const [profile, setProfile] = useState<ProfileUser | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [form, setForm] = useState({ displayName: user.displayName, email: "", avatar: user.avatar, memberId: user.memberId || "", name: "", nickname: "", phone: "", birthday: "", gender: "", notes: "" });
@@ -444,7 +505,13 @@ export function ProfileSheet({ user, close, saved }: { user: AuthUser; close: ()
       const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
       const result = await readJsonSafe<{ error?: string; profile?: ProfileUser; user?: AuthUser }>(response);
       if (!response.ok || !result?.profile || !result.user) throw new Error(result?.error || "Không thể cập nhật hồ sơ.");
-      setProfile(result.profile); saved(result.user); setSuccess("Đã cập nhật hồ sơ cá nhân.");
+      const refreshedUser = await refreshCurrentUser?.();
+      const nextMember = ((refreshedUser?.member || result.profile.member || null) as Member | null);
+      const nextUser = refreshedUser || { ...result.user, displayName: result.profile.displayName, avatar: result.profile.avatar, email: result.profile.email, member: nextMember || undefined };
+      setProfile(result.profile);
+      if (profileSaved) profileSaved(nextUser, nextMember);
+      else saved(nextUser);
+      setSuccess("Đã cập nhật hồ sơ cá nhân.");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể cập nhật hồ sơ."); }
     finally { setLoading(false); }
   }
@@ -1164,7 +1231,7 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
     {removing && <ConfirmMemberDelete member={removing} warning={warning} close={() => { setRemoving(null); setWarning(""); }} remove={() => void remove(removing)} />}
   </>;
 }
-type MemberProfileTab = "profile" | "account" | "bank" | "bankRaw" | "security" | "tasks" | "events" | "notes";
+type MemberProfileTab = "profile" | "account" | "work" | "bank" | "bankRaw" | "security" | "tasks" | "events" | "notes";
 type ProfileSubTab = "basic" | "education" | "skills" | "experience" | "documents";
 function MemberProfile({ member, data, user, close, saved, remove, personal = false, openChangePassword, logout, savedUser = () => undefined, initialEdit = false }: { member: Member | "new"; data: AppData; user: AuthUser; close: () => void; saved: (member: Member) => void; remove: (member: Member) => void; personal?: boolean; openChangePassword?: () => void; logout?: () => void; savedUser?: (user: AuthUser) => void; initialEdit?: boolean }) {
   const existing = member === "new" ? null : member;
@@ -1209,7 +1276,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
     if (!canManage) return;
     void fetch("/api/users").then(async response => { const result = await readJsonSafe<{ users?: ManagedUser[] }>(response); if (response.ok && result?.users) setLinkedUsers(result.users.filter(account => account.memberId === form.id)); });
   };
-  const menu: [MemberProfileTab, string][] = [["profile", "Thông tin cá nhân"], ["account", "Tài khoản đăng nhập"], ["bank", "Thẻ ngân hàng"], ["bankRaw", "Nội dung gốc ngân hàng"], ["security", "Bảo mật"], ["tasks", "Công việc liên quan"], ["events", "Sự kiện liên quan"], ["notes", "Ghi chú"]];
+  const menu: [MemberProfileTab, string][] = [["profile", "Thông tin cá nhân"], ["account", "Tài khoản đăng nhập"], ["work", "Công việc"], ["bank", "Thẻ ngân hàng"], ["bankRaw", "Nội dung gốc ngân hàng"], ["security", "Bảo mật"], ["tasks", "Việc nhà liên quan"], ["events", "Sự kiện liên quan"], ["notes", "Ghi chú"]];
   return <div><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div>{!personal && <button onClick={close} className="text-sm font-semibold text-indigo-600">← Danh sách thành viên</button>}<h2 className={personal ? "text-2xl font-semibold" : "mt-3 text-2xl font-semibold"}>{personal ? "Hồ sơ cá nhân" : existing ? "Hồ sơ thành viên" : "Thêm thành viên"}</h2><p className="mt-1 text-sm text-slate-400">Family Hub / {personal ? "Hồ sơ cá nhân" : `Thành viên / ${existing ? form.nickname || form.name : "Thêm mới"}`}</p></div></div>
     <div className="grid gap-5 lg:grid-cols-[240px_1fr]"><Card className="h-fit p-3"><nav className="space-y-1">{menu.map(([value, label]) => <button key={value} onClick={() => setTab(value)} className={`w-full rounded-lg px-3 py-3 text-left text-sm font-semibold ${tab === value ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-400/15" : "text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5"}`}>{label}</button>)}</nav></Card>
       <div>{!detailsLoaded && ["account", "bank", "bankRaw", "notes"].includes(tab) ? (
@@ -1346,7 +1413,8 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
               {error && <p className="mt-4 text-sm text-rose-500">{error}</p>}
             </Card>
           </form>}
-          {tab === "tasks" && <Card><h3 className="mb-4 font-semibold">Công việc liên quan</h3>{tasks.length ? tasks.map(task => <TaskRow key={task.id} task={task} />) : <EmptyState />}</Card>}
+          {tab === "work" && <MemberWorkHistory member={form} user={user} />}
+          {tab === "tasks" && <Card><h3 className="mb-4 font-semibold">Việc nhà liên quan</h3>{tasks.length ? tasks.map(task => <TaskRow key={task.id} task={task} />) : <EmptyState />}</Card>}
           {tab === "events" && <Card><h3 className="mb-4 font-semibold">Sự kiện liên quan</h3>{events.length ? events.map(event => <EventRow key={event.id} event={event} />) : <EmptyState />}</Card>}
           {tab === "notes" && <Card><h3 className="mb-4 font-semibold">Ghi chú</h3>{notes.length ? notes.map(note => <div key={note.id} className="border-b border-[var(--app-border)] py-3 last:border-0"><b>{note.title}</b><p className="mt-1 text-sm text-slate-500">{note.content}</p></div>) : <EmptyState />}</Card>}
           {tab === "account" && <LoginAccountTab key={`${linkedAccount?.id || "new"}:${linkedAccount?.username || ""}:${linkedAccount?.role || ""}:${String(linkedAccount?.active ?? "")}:${linkedAccount?.memberId || form.id}`} account={linkedAccount} member={form} actor={user} canManage={canManage} isCurrent={linkedAccount?.id === user.id} savedUser={savedUser} refreshed={refreshLinkedAccount} />}
@@ -1355,6 +1423,86 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
           {tab === "security" && <Card><h3 className="mb-4 font-semibold">Bảo mật</h3>{linkedAccount ? <div className="space-y-3"><div className="rounded-lg border border-[var(--app-border)] px-4 py-3 text-sm"><b>Ghi nhớ đăng nhập</b><p className="mt-1 text-xs text-slate-400">Thiết lập khi đăng nhập trên thiết bị này.</p></div>{personal && <button onClick={openChangePassword} className="w-full rounded-lg border border-[var(--app-border)] px-4 py-3 text-left text-sm font-semibold">Đổi mật khẩu</button>}{personal && <button onClick={logout} className="w-full rounded-lg border border-rose-200 px-4 py-3 text-left text-sm font-semibold text-rose-500">Đăng xuất khỏi thiết bị</button>}</div> : <p className="text-sm text-slate-400">Chưa có tài khoản đăng nhập.</p>}</Card>}
         </>
       )}</div></div></div>;
+}
+const jobStatuses: { value: MemberJobStatus; label: string }[] = [{ value: "active", label: "Đang làm" }, { value: "ended", label: "Đã nghỉ" }];
+function monthKey(year: string, month: number) { return `${year}-${String(month).padStart(2, "0")}`; }
+function isJobActiveInMonth(job: MemberJob, year: string, month: number) {
+  const start = parseDate(job.startDate);
+  const end = parseDate(job.endDate);
+  const monthStart = new Date(Number(year), month - 1, 1);
+  const monthEnd = new Date(Number(year), month, 0);
+  return Boolean(start && start <= monthEnd && (!end || end >= monthStart));
+}
+function jobSalaryForMonth(job: MemberJob, year: string, month: number) {
+  const keyed = job.salaryByMonth?.[monthKey(year, month)];
+  if (keyed !== undefined) return Number(keyed || 0);
+  return isJobActiveInMonth(job, year, month) ? Number(job.monthlySalary || 0) : 0;
+}
+function jobYearTotal(job: MemberJob, year: string) {
+  return Array.from({ length: 12 }, (_, index) => jobSalaryForMonth(job, year, index + 1)).reduce((sum, amount) => sum + amount, 0);
+}
+function MemberWorkHistory({ member, user }: { member: Member; user: AuthUser }) {
+  const canEdit = user.role === "full_access" || user.memberId === member.id;
+  const [jobs, setJobs] = useState<MemberJob[]>([]);
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState<MemberJob | "new" | null>(null);
+  const [viewing, setViewing] = useState<MemberJob | null>(null);
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    const response = await fetch(`/api/member-jobs?memberId=${encodeURIComponent(member.id)}`, { cache: "no-store" });
+    const result = await readJsonSafe<{ ok?: boolean; data?: MemberJob[]; error?: string }>(response);
+    setLoading(false);
+    if (!response.ok || !result?.ok) return setError(result?.error || "Không thể tải lịch sử công việc.");
+    setJobs(result.data || []);
+  }, [member.id]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  async function remove(job: MemberJob) {
+    if (!confirm(`Xóa công việc ${job.title}?`)) return;
+    const response = await fetch(`/api/member-jobs?id=${encodeURIComponent(job.id)}`, { method: "DELETE" });
+    const result = await readJsonSafe<{ error?: string }>(response);
+    if (!response.ok) return alert(result?.error || "Không thể xóa công việc.");
+    setJobs(current => current.filter(item => item.id !== job.id));
+    if (viewing?.id === job.id) setViewing(null);
+  }
+  const yearOptions = Array.from({ length: 9 }, (_, index) => String(new Date().getFullYear() - 4 + index));
+  const totalYear = jobs.reduce((sum, job) => sum + jobYearTotal(job, year), 0);
+  return <div className="space-y-5">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><h3 className="font-semibold">Công việc</h3><p className="mt-1 text-sm text-slate-400">{member.nickname || member.name}</p></div>
+      <div className="flex flex-wrap items-center gap-2"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{yearOptions.map(value => <option key={value}>{value}</option>)}</select>{canEdit && <button onClick={() => setEditing("new")} className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm công việc</button>}</div>
+    </div>
+    <div className="grid gap-3 sm:grid-cols-3"><Card><p className="text-xs text-slate-400">Tổng lương năm {year}</p><b className="text-emerald-500">{money(totalYear)}</b></Card><Card><p className="text-xs text-slate-400">Số công việc</p><b>{jobs.length}</b></Card><Card><p className="text-xs text-slate-400">Đang làm</p><b>{jobs.filter(job => job.status === "active").length}</b></Card></div>
+    {error && <p className="text-sm text-rose-500">{error}</p>}
+    {loading ? <Card className="p-6 text-center text-sm text-slate-400">Đang tải công việc...</Card> : jobs.length ? <div className="overflow-visible rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] shadow-sm"><div className="hidden grid-cols-[1.3fr_1fr_1fr_.9fr_.9fr_.9fr_48px] gap-4 border-b border-[var(--app-border)] bg-slate-50/70 px-5 py-3 text-xs font-bold uppercase text-slate-400 dark:bg-white/5 xl:grid"><span>Công việc</span><span>Công ty</span><span>Chức vụ</span><span>Bắt đầu</span><span>Kết thúc</span><span>Lương năm</span><span /></div>{jobs.map(job => <div key={job.id} className="grid gap-4 border-b border-[var(--app-border)] px-5 py-4 text-sm last:border-0 xl:grid-cols-[1.3fr_1fr_1fr_.9fr_.9fr_.9fr_48px] xl:items-center"><div><b>{job.title}</b><p className={`mt-1 w-fit rounded-full px-2 py-1 text-xs font-bold ${job.status === "active" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/15" : "bg-slate-100 text-slate-500 dark:bg-white/10"}`}>{job.status === "active" ? "Đang làm" : "Đã nghỉ"}</p></div><span>{job.company}</span><span>{job.position}</span><span>{formatDateVN(job.startDate)}</span><span>{job.endDate ? formatDateVN(job.endDate) : "Hiện tại"}</span><b className="text-emerald-500">{money(jobYearTotal(job, year))}</b><JobActionMenu job={job} view={() => setViewing(job)} edit={() => setEditing(job)} remove={() => void remove(job)} canEdit={canEdit} /></div>)}</div> : <Card className="p-8 text-center text-sm text-slate-400">Chưa có lịch sử công việc.</Card>}
+    {viewing && <MemberJobDetail job={viewing} year={year} close={() => setViewing(null)} edit={() => { setEditing(viewing); setViewing(null); }} />}
+    {editing && <MemberJobSheet job={editing} memberId={member.id} year={year} close={() => setEditing(null)} saved={job => { setJobs(current => current.some(item => item.id === job.id) ? current.map(item => item.id === job.id ? job : item) : [job, ...current]); setEditing(null); }} />}
+  </div>;
+}
+function JobActionMenu({ job, view, edit, remove, canEdit }: { job: MemberJob; view: () => void; edit: () => void; remove: () => void; canEdit: boolean }) {
+  const [open, setOpen] = useState(false);
+  const itemClass = "block w-full rounded-lg px-3 py-2 text-left text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5";
+  return <div className="relative flex justify-end"><button type="button" onClick={() => setOpen(current => !current)} className="grid size-10 place-items-center rounded-xl border border-[var(--app-border)] text-xl font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5" aria-label={`Thao tác ${job.title}`}>⋯</button>{open && <div className="absolute right-0 top-11 z-30 w-40 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl"><button className={itemClass} onClick={() => { setOpen(false); view(); }}>Xem chi tiết</button>{canEdit && <button className={itemClass} onClick={() => { setOpen(false); edit(); }}>Sửa</button>}{canEdit && <button className={`${itemClass} text-rose-500`} onClick={() => { setOpen(false); remove(); }}>Xóa</button>}</div>}</div>;
+}
+function MemberJobDetail({ job, year, close, edit }: { job: MemberJob; year: string; close: () => void; edit: () => void }) {
+  const months = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, amount: jobSalaryForMonth(job, year, index + 1) }));
+  return <Sheet close={close}><div><div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-bold">{job.title}</h2><p className="mt-1 text-sm text-slate-400">{job.company} · {job.position}</p></div><button onClick={edit} className="rounded-xl border border-[var(--app-border)] px-3 py-2 text-xs font-bold">Sửa</button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><AccountDetail label="Ngày bắt đầu" value={formatDateVN(job.startDate)} /><AccountDetail label="Ngày kết thúc" value={job.endDate ? formatDateVN(job.endDate) : "Hiện tại"} /><AccountDetail label="Trạng thái" value={job.status === "active" ? "Đang làm" : "Đã nghỉ"} /><AccountDetail label={`Tổng năm ${year}`} value={money(jobYearTotal(job, year))} /></div><div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">{months.map(item => <div key={item.month} className="rounded-xl border border-[var(--app-border)] p-3"><p className="text-xs text-slate-400">Tháng {item.month}</p><b className="text-sm text-emerald-500">{money(item.amount)}</b></div>)}</div>{job.note && <p className="mt-5 rounded-xl border border-[var(--app-border)] p-4 text-sm text-slate-500">{job.note}</p>}</div></Sheet>;
+}
+function MemberJobSheet({ job, memberId, year, close, saved }: { job: MemberJob | "new"; memberId: string; year: string; close: () => void; saved: (job: MemberJob) => void }) {
+  const existing = job === "new" ? null : job;
+  const [form, setForm] = useState<MemberJob>(() => existing || { id: "", memberId, title: "", company: "", position: "", startDate: "", endDate: "", status: "active", monthlySalary: 0, salaryByMonth: {}, note: "" });
+  const [error, setError] = useState("");
+  const set = <K extends keyof MemberJob>(key: K, value: MemberJob[K]) => setForm(current => ({ ...current, [key]: value }));
+  const setMonthSalary = (month: number, value: string) => setForm(current => ({ ...current, salaryByMonth: { ...current.salaryByMonth, [monthKey(year, month)]: Number(value || 0) } }));
+  async function submit(event: React.FormEvent) {
+    event.preventDefault(); setError("");
+    const response = await fetch(form.id ? `/api/member-jobs?id=${encodeURIComponent(form.id)}` : "/api/member-jobs", { method: form.id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    const result = await readJsonSafe<{ ok?: boolean; data?: MemberJob; error?: string }>(response);
+    if (!response.ok || !result?.data) return setError(result?.error || "Không thể lưu công việc.");
+    saved(result.data);
+  }
+  return <Sheet close={close}><form onSubmit={submit}><h2 className="text-lg font-bold">{existing ? "Sửa công việc" : "Thêm công việc"}</h2><div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Tên công việc"><input required className={inputClass} value={form.title} onChange={event => set("title", event.target.value)} /></Field><Field label="Công ty / nơi làm"><input required className={inputClass} value={form.company} onChange={event => set("company", event.target.value)} /></Field><Field label="Chức vụ"><input required className={inputClass} value={form.position} onChange={event => set("position", event.target.value)} /></Field><Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={event => set("status", event.target.value as MemberJobStatus)}>{jobStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}</select></Field><Field label="Ngày bắt đầu"><DateVNInput required value={form.startDate} onChange={value => set("startDate", value)} /></Field><Field label="Ngày kết thúc"><DateVNInput value={form.endDate} onChange={value => set("endDate", value)} /></Field><Field label="Lương mặc định / tháng"><input min="0" type="number" className={inputClass} value={form.monthlySalary} onChange={event => set("monthlySalary", Number(event.target.value || 0))} /></Field><div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field></div></div><div className="mt-6"><h3 className="text-sm font-bold text-indigo-600">Lương từng tháng năm {year}</h3><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{Array.from({ length: 12 }, (_, index) => index + 1).map(month => <Field key={month} label={`Tháng ${month}`}><input min="0" type="number" className={inputClass} value={form.salaryByMonth?.[monthKey(year, month)] ?? (isJobActiveInMonth(form, year, month) ? form.monthlySalary : 0)} onChange={event => setMonthSalary(month, event.target.value)} /></Field>)}</div></div>{error && <p className="mt-4 text-sm text-rose-500">{error}</p>}<div className="mt-6 flex justify-end gap-3"><button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white">Lưu công việc</button></div></form></Sheet>;
 }
 function ConfirmMemberDelete({ member, warning, close, remove }: { member: Member; warning: string; close: () => void; remove: () => void }) {
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-5" onMouseDown={close}><div className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-6 shadow-2xl" onMouseDown={event => event.stopPropagation()}><h2 className="text-lg font-semibold">Ẩn thành viên?</h2><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Thành viên <b>{member.nickname || member.name}</b> sẽ được ẩn khỏi danh sách. Dữ liệu lịch sử không bị xóa.</p>{warning && <p className="mt-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-600 dark:bg-orange-400/10">{warning}</p>}<div className="mt-6 flex justify-end gap-3"><button onClick={close} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button onClick={remove} className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Xác nhận ẩn</button></div></div></div>;
@@ -1462,6 +1610,7 @@ function Finance({ data, open, t }: ListProps) {
 type IncomeApiData = {
   members: { id: string; name: string }[];
   sources: IncomeSource[];
+  jobs?: MemberJob[];
   sourceTemplates?: string[];
   records?: IncomeRecord[];
   allRecords: IncomeRecord[];
@@ -1474,7 +1623,7 @@ const incomeStatuses: IncomeStatus[] = ["Đã nhận", "Chưa nhận"];
 const incomeTemplates = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền tồn tháng trước", "Khác"];
 const incomeTypeLabel: Record<IncomeSourceType, string> = { fixed: "Cố định", variable: "Không cố định" };
 const frequencyLabel: Record<IncomeFrequency, string> = { monthly: "Hàng tháng", weekly: "Hàng tuần", yearly: "Hàng năm", one_time: "Một lần", custom: "Tùy chỉnh" };
-type IncomeDraft = { id?: string; incomeDate: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string; };
+type IncomeDraft = { id?: string; memberId: string; workId: string; incomeDate: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string; };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MonthlyTooltip({ active, payload }: any) {
   if (active && payload && payload.length) {
@@ -1683,7 +1832,7 @@ function IncomeSheetManagement() {
     XLSX.writeFile(wb, `thu-nhap-${year}.xlsx`);
   }
   
-  if (view === "new" || view === "edit") return <IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
+  if (view === "new" || view === "edit") return <IncomeRecordForm record={editing} members={incomeData?.members || []} jobs={incomeData?.jobs || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
   if (view === "yearly-new" || view === "yearly-edit") return <YearlyIncomeForm record={editingYearly} back={() => { setView("list"); setEditingYearly(null); }} saved={() => { setView("list"); setEditingYearly(null); void load(); }} />;
   
   return <div className="space-y-5">
@@ -1936,19 +2085,25 @@ function LegacyIncomeSheetManagement() {
     link.href = url; link.download = `thu-nhap-${year}.xls`; link.click();
     URL.revokeObjectURL(url);
   }
-  if (view !== "list") return <IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
+  if (view !== "list") return <IncomeRecordForm record={editing} members={incomeData?.members || []} jobs={incomeData?.jobs || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
   return <div className="space-y-5"><div className="grid gap-3 md:grid-cols-[120px_140px_1fr_auto_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select><select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Tất cả thành viên</option>{incomeData?.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select><button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button><button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Tổng cả năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card>{categoryTotals.slice(0, 3).map(item => <Card key={item.category}><p className="text-xs text-slate-400">{item.category}</p><b>{money(item.total)}</b></Card>)}</div><Card><div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div><div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">{monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2"><div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div><span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span></div>)}</div></Card><Card className="overflow-hidden p-0"><div className="border-b border-[var(--app-border)] p-4"><b>Bảng thu nhập theo tháng</b></div><div className="hidden overflow-x-auto md:block"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5"><tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Thành viên</th><th className="px-4 py-3">Nhóm thu</th><th className="px-4 py-3">Tên khoản thu</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr></thead><tbody>{Array.from({ length: 12 }, (_, index) => index + 1).filter(month => monthFilter === "all" || month === Number(monthFilter)).map(month => { const items = records.filter(record => record.month === month); const subtotal = items.filter(record => record.status === "Đã nhận").reduce((sum, record) => sum + record.amount, 0); return <><tr key={`m-${month}`} className="bg-emerald-50/70 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10"><td className="px-4 py-2" colSpan={5}>Tháng {month}</td><td className="px-4 py-2 text-right">{money(subtotal)}</td><td className="px-4 py-2" colSpan={3}>Tổng tháng</td></tr>{items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]"><td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td><td className="px-4 py-3">{record.month}</td><td className="px-4 py-3">{record.memberName}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3">{record.name}</td><td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3">{record.status}</td><td className="px-4 py-3 text-slate-500">{record.note}</td><td className="px-4 py-3 text-right"><button onClick={() => { setEditing(record); setView("edit"); }} className="rounded-lg px-2 py-1 text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="rounded-lg px-2 py-1 text-xs font-bold text-rose-500">Xóa</button></td></tr>)}</>; })}</tbody></table></div><div className="space-y-3 p-3 md:hidden">{records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.name}</b><p className="text-xs text-slate-400">{formatDateVN(record.incomeDate)} · {record.memberName} · {record.category}</p></div><b className="text-emerald-500">{money(record.amount)}</b></div><p className="mt-1 text-xs text-slate-400">{record.status} · {record.note}</p><div className="mt-2 flex gap-2"><button onClick={() => { setEditing(record); setView("edit"); }} className="text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="text-xs font-bold text-rose-500">Xóa</button></div></div>)}</div></Card></div>;
 }
 function IncomeRecordActionMenu({ record, activeId, setActiveId, edit, remove }: { record: IncomeRecord; activeId: string | null; setActiveId: (id: string | null) => void; edit: (record: IncomeRecord) => void; remove: (record: IncomeRecord) => void }) {
   const open = activeId === record.id;
   return <div className="relative inline-flex justify-end"><button type="button" aria-label="Mở menu hành động" aria-expanded={open} onClick={() => setActiveId(open ? null : record.id)} className="grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5">⋮</button>{open && <><div className="fixed inset-0 z-10" onClick={() => setActiveId(null)} /><div className="absolute right-0 top-9 z-20 w-28 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 text-left shadow-xl"><button type="button" onClick={() => edit(record)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Sửa</button><button type="button" onClick={() => void remove(record)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button></div></>}</div>;
 }
-function IncomeRecordForm({ record, templates, back, saved }: { record: IncomeRecord | null; members: { id: string; name: string }[]; templates: string[]; back: () => void; saved: () => void }) {
+function IncomeRecordForm({ record, members, jobs, templates, back, saved }: { record: IncomeRecord | null; members: { id: string; name: string }[]; jobs: MemberJob[]; templates: string[]; back: () => void; saved: () => void }) {
   const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-  const emptyRow = (): IncomeDraft => ({ incomeDate: today, category: "Lương", name: "Lương CB", amount: "", status: "Đã nhận", note: "" });
-  const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, incomeDate: record.incomeDate, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
+  const emptyRow = (): IncomeDraft => ({ memberId: members[0]?.id || "", workId: "", incomeDate: today, category: "Lương", name: "Lương CB", amount: "", status: "Đã nhận", note: "" });
+  const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || members[0]?.id || "", workId: record.workId || "", incomeDate: record.incomeDate, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
+  const memberJobs = jobs.filter(job => !draft.memberId || job.memberId === draft.memberId);
   
   function patch(value: Partial<IncomeDraft>) { setDraft(current => ({ ...current, ...value })); }
+  function selectMember(memberId: string) { setDraft(current => ({ ...current, memberId, workId: jobs.some(job => job.id === current.workId && job.memberId === memberId) ? current.workId : "" })); }
+  function selectJob(workId: string) {
+    const job = jobs.find(item => item.id === workId);
+    setDraft(current => ({ ...current, workId, memberId: job?.memberId || current.memberId, name: workId && job ? (current.name || job.title) : current.name }));
+  }
   
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -1967,7 +2122,7 @@ function IncomeRecordForm({ record, templates, back, saved }: { record: IncomeRe
     patch({ amount: e.target.value.replace(/\D/g, "") });
   }
 
-  return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button><div><h2 className="text-2xl font-bold">{record ? "Sửa khoản thu" : "Thêm thu nhập"}</h2><p className="mt-1 text-sm text-slate-400">Khoản thu sẽ được ghi nhận vào bảng thu nhập.</p></div><form onSubmit={submit} className="space-y-4"><Card><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Field label="Ngày nhận"><DateVNInput required value={draft.incomeDate} onChange={value => patch({ incomeDate: value })} /></Field><Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field><Field label="Nội dung / Ghi chú ngắn"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder="VD: Lương CB..." /></Field><Field label="Số tiền"><input required type="text" className={inputClass} value={formattedAmount} onChange={handleAmountChange} placeholder="0 đ" /></Field><div className="md:col-span-4"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
+  return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button><div><h2 className="text-2xl font-bold">{record ? "Sửa khoản thu" : "Thêm thu nhập"}</h2><p className="mt-1 text-sm text-slate-400">Khoản thu sẽ được ghi nhận vào bảng thu nhập.</p></div><form onSubmit={submit} className="space-y-4"><Card><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Field label="Thành viên"><select required className={inputClass} value={draft.memberId} onChange={event => selectMember(event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Công việc liên quan"><select className={inputClass} value={draft.workId} onChange={event => selectJob(event.target.value)}><option value="">Không gắn công việc</option>{memberJobs.map(job => <option key={job.id} value={job.id}>{job.title} · {job.company}</option>)}</select></Field><Field label="Ngày nhận"><DateVNInput required value={draft.incomeDate} onChange={value => patch({ incomeDate: value })} /></Field><Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field><Field label="Nội dung / Ghi chú ngắn"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder="VD: Lương CB..." /></Field><Field label="Số tiền"><input required type="text" className={inputClass} value={formattedAmount} onChange={handleAmountChange} placeholder="0 đ" /></Field><div className="md:col-span-2"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
 }
 function IncomeManagement() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
