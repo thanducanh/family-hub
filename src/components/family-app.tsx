@@ -257,7 +257,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   if (!data) return <LoadingSkeleton />;
 
   const currentMember = data.members.find(member => member.id === user.memberId) || user.member;
-  const headerUser = currentMember ? { ...user, displayName: currentMember.name || user.displayName, avatar: currentMember.avatar || user.avatar, member: currentMember } : user;
+  const headerUser = user.member ? user : currentMember ? { ...user, member: currentMember } : user;
   const content = children ? <>{children}</> : profilePageOpen ? <ProfilePage user={headerUser} member={currentMember} data={data} update={update} openChangePassword={() => setChangePasswordOpen(true)} logout={logout} savedUser={setUser} refreshCurrentUser={refreshCurrentUser} /> :
     screen === "dashboard" ? <Dashboard data={data} go={go} notifications={notifications} user={user} /> :
     screen === "members" ? <Members data={data} user={user} update={update} /> :
@@ -1469,11 +1469,10 @@ function MemberWorkHistory({ member, user }: { member: Member; user: AuthUser })
   const yearOptions = Array.from({ length: 9 }, (_, index) => String(new Date().getFullYear() - 4 + index));
   const totalYear = jobs.reduce((sum, job) => sum + jobYearTotal(job, year), 0);
   return <div className="space-y-5">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h3 className="font-semibold">Công việc</h3><p className="mt-1 text-sm text-slate-400">{member.nickname || member.name}</p></div>
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div><h3 className="font-semibold">Công việc</h3><p className="mt-1 text-sm text-slate-400">Tổng lương năm {year}: <b className="text-emerald-500">{money(totalYear)}</b> · {jobs.length} công việc · {jobs.filter(job => job.status === "active").length} đang làm</p></div>
       <div className="flex flex-wrap items-center gap-2"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{yearOptions.map(value => <option key={value}>{value}</option>)}</select>{canEdit && <button onClick={() => setEditing("new")} className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm công việc</button>}</div>
     </div>
-    <div className="grid gap-3 sm:grid-cols-3"><Card><p className="text-xs text-slate-400">Tổng lương năm {year}</p><b className="text-emerald-500">{money(totalYear)}</b></Card><Card><p className="text-xs text-slate-400">Số công việc</p><b>{jobs.length}</b></Card><Card><p className="text-xs text-slate-400">Đang làm</p><b>{jobs.filter(job => job.status === "active").length}</b></Card></div>
     {error && <p className="text-sm text-rose-500">{error}</p>}
     {loading ? <Card className="p-6 text-center text-sm text-slate-400">Đang tải công việc...</Card> : jobs.length ? <div className="overflow-visible rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] shadow-sm"><div className="hidden grid-cols-[1.3fr_1fr_1fr_.9fr_.9fr_.9fr_48px] gap-4 border-b border-[var(--app-border)] bg-slate-50/70 px-5 py-3 text-xs font-bold uppercase text-slate-400 dark:bg-white/5 xl:grid"><span>Công việc</span><span>Công ty</span><span>Chức vụ</span><span>Bắt đầu</span><span>Kết thúc</span><span>Lương năm</span><span /></div>{jobs.map(job => <div key={job.id} className="grid gap-4 border-b border-[var(--app-border)] px-5 py-4 text-sm last:border-0 xl:grid-cols-[1.3fr_1fr_1fr_.9fr_.9fr_.9fr_48px] xl:items-center"><div><b>{job.title}</b><p className={`mt-1 w-fit rounded-full px-2 py-1 text-xs font-bold ${job.status === "active" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/15" : "bg-slate-100 text-slate-500 dark:bg-white/10"}`}>{job.status === "active" ? "Đang làm" : "Đã nghỉ"}</p></div><span>{job.company}</span><span>{job.position}</span><span>{formatDateVN(job.startDate)}</span><span>{job.endDate ? formatDateVN(job.endDate) : "Hiện tại"}</span><b className="text-emerald-500">{money(jobYearTotal(job, year))}</b><JobActionMenu job={job} view={() => setViewing(job)} edit={() => setEditing(job)} remove={() => void remove(job)} canEdit={canEdit} /></div>)}</div> : <Card className="p-8 text-center text-sm text-slate-400">Chưa có lịch sử công việc.</Card>}
     {viewing && <MemberJobDetail job={viewing} year={year} close={() => setViewing(null)} edit={() => { setEditing(viewing); setViewing(null); }} />}
@@ -1502,7 +1501,39 @@ function MemberJobSheet({ job, memberId, year, close, saved }: { job: MemberJob 
     if (!response.ok || !result?.data) return setError(result?.error || "Không thể lưu công việc.");
     saved(result.data);
   }
-  return <Sheet close={close}><form onSubmit={submit}><h2 className="text-lg font-bold">{existing ? "Sửa công việc" : "Thêm công việc"}</h2><div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Tên công việc"><input required className={inputClass} value={form.title} onChange={event => set("title", event.target.value)} /></Field><Field label="Công ty / nơi làm"><input required className={inputClass} value={form.company} onChange={event => set("company", event.target.value)} /></Field><Field label="Chức vụ"><input required className={inputClass} value={form.position} onChange={event => set("position", event.target.value)} /></Field><Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={event => set("status", event.target.value as MemberJobStatus)}>{jobStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}</select></Field><Field label="Ngày bắt đầu"><DateVNInput required value={form.startDate} onChange={value => set("startDate", value)} /></Field><Field label="Ngày kết thúc"><DateVNInput value={form.endDate} onChange={value => set("endDate", value)} /></Field><Field label="Lương mặc định / tháng"><input min="0" type="number" className={inputClass} value={form.monthlySalary} onChange={event => set("monthlySalary", Number(event.target.value || 0))} /></Field><div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field></div></div><div className="mt-6"><h3 className="text-sm font-bold text-indigo-600">Lương từng tháng năm {year}</h3><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{Array.from({ length: 12 }, (_, index) => index + 1).map(month => <Field key={month} label={`Tháng ${month}`}><input min="0" type="number" className={inputClass} value={form.salaryByMonth?.[monthKey(year, month)] ?? (isJobActiveInMonth(form, year, month) ? form.monthlySalary : 0)} onChange={event => setMonthSalary(month, event.target.value)} /></Field>)}</div></div>{error && <p className="mt-4 text-sm text-rose-500">{error}</p>}<div className="mt-6 flex justify-end gap-3"><button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white">Lưu công việc</button></div></form></Sheet>;
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 md:items-center md:p-6" onMouseDown={close}>
+    <form onSubmit={submit} onMouseDown={event => event.stopPropagation()} className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-t-3xl bg-[var(--app-card)] shadow-2xl md:max-w-3xl md:rounded-3xl">
+      <div className="shrink-0 border-b border-[var(--app-border)] px-5 py-4">
+        <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-slate-300 md:hidden" />
+        <h2 className="text-lg font-bold">{existing ? "Sửa công việc" : "Thêm công việc"}</h2>
+        <p className="mt-1 text-sm text-slate-400">Thông tin công việc và lương theo tháng trong năm {year}.</p>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        <section>
+          <h3 className="text-sm font-bold text-indigo-600">Thông tin công việc</h3>
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <Field label="Tên công việc"><input required className={inputClass} value={form.title} onChange={event => set("title", event.target.value)} /></Field>
+            <Field label="Công ty / nơi làm"><input required className={inputClass} value={form.company} onChange={event => set("company", event.target.value)} /></Field>
+            <Field label="Chức vụ"><input required className={inputClass} value={form.position} onChange={event => set("position", event.target.value)} /></Field>
+            <Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={event => set("status", event.target.value as MemberJobStatus)}>{jobStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}</select></Field>
+            <Field label="Ngày bắt đầu"><DateVNInput required value={form.startDate} onChange={value => set("startDate", value)} /></Field>
+            <Field label="Ngày kết thúc"><DateVNInput value={form.endDate} onChange={value => set("endDate", value)} /></Field>
+            <Field label="Lương mặc định / tháng"><input min="0" type="number" className={inputClass} value={form.monthlySalary} onChange={event => set("monthlySalary", Number(event.target.value || 0))} /></Field>
+            <Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field>
+          </div>
+        </section>
+        <section className="mt-6">
+          <h3 className="text-sm font-bold text-indigo-600">Lương từng tháng</h3>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">{Array.from({ length: 12 }, (_, index) => index + 1).map(month => <Field key={month} label={`Tháng ${month}`}><input min="0" type="number" className={inputClass} value={form.salaryByMonth?.[monthKey(year, month)] ?? (isJobActiveInMonth(form, year, month) ? form.monthlySalary : 0)} onChange={event => setMonthSalary(month, event.target.value)} /></Field>)}</div>
+        </section>
+        {error && <p className="mt-4 text-sm text-rose-500">{error}</p>}
+      </div>
+      <div className="sticky bottom-0 flex shrink-0 justify-end gap-3 border-t border-[var(--app-border)] bg-[var(--app-card)] px-5 py-4 shadow-[0_-8px_20px_rgba(15,23,42,.06)]">
+        <button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold">Hủy</button>
+        <button className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white">Lưu công việc</button>
+      </div>
+    </form>
+  </div>;
 }
 function ConfirmMemberDelete({ member, warning, close, remove }: { member: Member; warning: string; close: () => void; remove: () => void }) {
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-5" onMouseDown={close}><div className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-6 shadow-2xl" onMouseDown={event => event.stopPropagation()}><h2 className="text-lg font-semibold">Ẩn thành viên?</h2><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Thành viên <b>{member.nickname || member.name}</b> sẽ được ẩn khỏi danh sách. Dữ liệu lịch sử không bị xóa.</p>{warning && <p className="mt-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-600 dark:bg-orange-400/10">{warning}</p>}<div className="mt-6 flex justify-end gap-3"><button onClick={close} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button onClick={remove} className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Xác nhận ẩn</button></div></div></div>;
