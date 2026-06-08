@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from "recharts";
 import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
@@ -85,6 +86,7 @@ function BirthdaySelect({ value, onChange, disabled = false }: { value: string; 
     setDay(safeDay); setMonth(nextMonth); setYear(nextYear);
     onChange(safeDay && nextMonth && nextYear ? `${nextYear}-${nextMonth.padStart(2, "0")}-${safeDay.padStart(2, "0")}` : "");
   };
+  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   const selectClass = `${inputClass} min-h-12`;
   return <Field label="Ngày sinh"><div className="grid grid-cols-3 gap-2"><select disabled={disabled} className={selectClass} value={day && Number(day) <= maxDay ? String(Number(day)) : ""} onChange={event => select(event.target.value, month, year)}><option value="">Ngày</option>{Array.from({ length: maxDay }, (_, index) => String(index + 1)).map(value => <option key={value}>{value}</option>)}</select><select disabled={disabled} className={selectClass} value={month ? String(Number(month)) : ""} onChange={event => select(day, event.target.value, year)}><option value="">Tháng</option>{Array.from({ length: 12 }, (_, index) => String(index + 1)).map(value => <option key={value}>{value}</option>)}</select><select disabled={disabled} className={selectClass} value={year} onChange={event => select(day, month, event.target.value)}><option value="">Năm</option>{Array.from({ length: new Date().getFullYear() - 1899 }, (_, index) => String(new Date().getFullYear() - index)).map(value => <option key={value}>{value}</option>)}</select></div></Field>;
 }
@@ -373,6 +375,7 @@ function SystemAdminProfile({ user, openChangePassword, logout, savedUser, refre
   const [error, setError] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(true);
+  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   useEffect(() => {
     void fetch("/api/auth/profile").then(async response => {
       const result = await readJsonSafe<{ user?: ProfileUser }>(response);
@@ -449,6 +452,7 @@ function PasswordEyeIcon({ visible }: { visible: boolean }) {
 
 function PasswordField({ label, value, setValue, autoComplete, required = true }: { label: string; value: string; setValue: (value: string) => void; autoComplete: string; required?: boolean }) {
   const [visible, setVisible] = useState(false);
+  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   return <Field label={label}><div className="relative"><input required={required} type={visible ? "text" : "password"} autoComplete={autoComplete} className={`${inputClass} pr-12`} value={value} onChange={event => setValue(event.target.value)} /><button type="button" aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onClick={() => setVisible(current => !current)} className="absolute inset-y-0 right-0 grid w-12 place-items-center text-slate-400 hover:text-rose-500"><PasswordEyeIcon visible={visible} /></button></div></Field>;
 }
 
@@ -484,6 +488,7 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   useEffect(() => { 
     void fetch("/api/auth/profile").then(async response => { 
       const result = await readJsonSafe<{ error?: string; user?: ProfileUser }>(response); 
@@ -529,6 +534,7 @@ function UserEditor({ user, close, saved, presetMemberId = "" }: { user: Managed
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ username: existing?.username ?? "", email: existing?.email ?? "", displayName: existing?.displayName ?? "", avatar: existing?.avatar ?? "", role: existing?.role ?? "self_only" as UserRole, memberId: existing?.memberId ?? presetMemberId, active: existing?.active ?? true, password: "" });
+  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   useEffect(() => { void fetch("/api/members").then(async response => { const json = await response.json(); const members = Array.isArray(json) ? json : (json.data ?? []); if (response.ok) setMembers(members); }); }, []);
   const set = (key: string, value: string | boolean) => setForm(current => ({ ...current, [key]: value }));
   async function submit(event: React.FormEvent) {
@@ -555,6 +561,7 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
   const [editType, setEditType] = useState<'none' | 'account' | 'password'>('none');
   const [menuOpen, setMenuOpen] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
+  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
 
   const [form, setForm] = useState({
     username: account?.username || "",
@@ -953,7 +960,20 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
     const matches = (item: Transaction) => { const parsed = parseDate(item.date, now); return parsed?.getMonth() === date.getMonth() && parsed.getFullYear() === date.getFullYear(); };
     return { label: `${date.getMonth() + 1}/${String(date.getFullYear()).slice(-2)}`, income: sumTransactions(data.transactions.filter(item => item.type === "income" && matches(item))), expense: sumTransactions(data.transactions.filter(item => item.type === "expense" && matches(item))) };
   });
-  const categoryTotals = Object.entries(data.transactions.filter(item => item.type === "expense").reduce<Record<string, number>>((result, item) => ({ ...result, [item.category || "Khác"]: (result[item.category || "Khác"] ?? 0) + (Number.isFinite(item.amount) ? item.amount : 0) }), {})).sort((left, right) => right[1] - left[1]);
+  const categoryTotals = Object.entries(
+    data.transactions
+      .filter((item) => item.type === "expense")
+      .reduce<Record<string, number>>((result, item) => {
+        const category = item.category || "Khác";
+
+        return {
+          ...result,
+          [category]:
+            (result[category] ?? 0) +
+            (Number.isFinite(item.amount) ? item.amount : 0),
+        };
+      }, {})
+  ).sort((left, right) => right[1] - left[1]);
   const doneCount = data.tasks.filter(item => item.status === "done").length;
   const completion = data.tasks.length ? Math.round(doneCount / data.tasks.length * 100) : 0;
 
@@ -1007,24 +1027,19 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
         </Card>
       </div>
     </div>
-    <div className="col-span-12 xl:col-span-5"><CategoryChart data={categoryTotals} /></div><QuickList title="Việc hôm nay" action={() => go("tasks")} className="col-span-12 xl:col-span-7">{todayTasks.length ? todayTasks.slice(0, 4).map(task => <TaskRow key={task.id} task={task} />) : <EmptyState />}</QuickList>
-    <QuickList title="Việc quá hạn" action={() => go("tasks")} className="col-span-12 xl:col-span-6">{overdueTasks.length ? overdueTasks.slice(0, 4).map(task => <TaskRow key={task.id} task={task} />) : <EmptyState />}</QuickList>
-    <QuickList title="Sự kiện sắp tới" action={() => go("calendar")} className="col-span-12 xl:col-span-6">{upcomingEvents.length ? upcomingEvents.slice(0, 4).map(event => <EventRow key={event.id} event={event} />) : <EmptyState />}</QuickList>
-    <QuickList title="Sinh nhật sắp tới" action={() => go("members")} className="col-span-12">{upcomingBirthdays.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{upcomingBirthdays.slice(0, 3).map(({ member, date }) => <div key={member.id} className="flex items-center gap-3 rounded-xl border border-[var(--app-border)] p-3"><Avatar member={member} /><div><b>{member.nickname || member.name}</b><p className="text-xs text-slate-400">{vnDateFormatter.format(date!)}{ageAtToday(member.birthday) !== null ? ` ? ${ageAtToday(member.birthday)} tu?i` : ""}</p></div></div>)}</div> : <EmptyState />}</QuickList>
+    <div className="col-span-12 xl:col-span-5"><CategoryChart data={categoryTotals} /></div>
   </div>;
 }
 function MetricCard({ label, value, color, hint }: { label: string; value: string; color: string; hint: string }) { return <Card className="p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p><p className={`mt-3 text-2xl font-bold ${color}`}>{value}</p></div><span className="grid size-10 place-items-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-400/10">●</span></div><p className="mt-4 text-xs text-slate-400">{hint}</p></Card>; }
-function QuickList({ title, action, className, children }: { title: string; action: () => void; className: string; children: React.ReactNode }) { return <Card className={`${className} p-5`}><div className="mb-4 flex items-center justify-between gap-3"><h2 className="font-semibold">{title}</h2><button onClick={action} className="text-xs font-semibold text-indigo-600">Xem tất cả</button></div>{children}</Card>; }
-function EmptyState() { return <div className="grid min-h-24 place-items-center rounded-xl border border-dashed border-[var(--app-border)] px-4 text-center text-sm text-slate-400">Chưa có dữ liệu</div>; }
 function MonthlyChart({ data }: { data: { label: string; income: number; expense: number }[] }) {
   const max = Math.max(...data.flatMap(item => [item.income, item.expense]), 1);
   const hasData = data.some(item => item.income || item.expense);
-  return <Card className="p-5"><div className="flex items-center justify-between"><b>Thu chi theo tháng</b><p className="text-xs"><span className="text-emerald-500">■ Thu</span> <span className="ml-2 text-rose-500">■ Chi</span></p></div>{hasData ? <div className="mt-5 grid h-52 grid-cols-6 gap-2">{data.map(item => <div key={item.label} className="flex min-w-0 flex-col items-center justify-end"><div className="flex h-44 items-end gap-1"><span title={money(item.income)} className="w-3 rounded-t bg-emerald-400" style={{ height: `${item.income ? Math.max(item.income / max * 100, 3) : 0}%` }} /><span title={money(item.expense)} className="w-3 rounded-t bg-rose-400" style={{ height: `${item.expense ? Math.max(item.expense / max * 100, 3) : 0}%` }} /></div><span className="mt-2 text-[10px] text-slate-400">{item.label}</span></div>)}</div> : <div className="mt-5"><EmptyState /></div>}</Card>;
+  return <Card className="p-5"><div className="flex items-center justify-between"><b>Thu chi theo tháng</b><p className="text-xs"><span className="text-emerald-500">■ Thu</span> <span className="ml-2 text-rose-500">■ Chi</span></p></div>{hasData ? <div className="mt-5 grid h-52 grid-cols-6 gap-2">{data.map(item => <div key={item.label} className="flex min-w-0 flex-col items-center justify-end"><div className="flex h-44 items-end gap-1"><span title={money(item.income)} className="w-3 rounded-t bg-emerald-400" style={{ height: `${item.income ? Math.max(item.income / max * 100, 3) : 0}%` }} /><span title={money(item.expense)} className="w-3 rounded-t bg-rose-400" style={{ height: `${item.expense ? Math.max(item.expense / max * 100, 3) : 0}%` }} /></div><span className="mt-2 text-[10px] text-slate-400">{item.label}</span></div>)}</div> : <div className="mt-5">Chưa có dữ liệu</div>}</Card>;
 }
 function CategoryChart({ data }: { data: [string, number][] }) {
   const total = data.reduce((sum, item) => sum + item[1], 0);
   const colors = ["bg-rose-400", "bg-orange-400", "bg-violet-400", "bg-sky-400", "bg-emerald-400"];
-  return <Card className="p-5"><b>Chi tiêu theo danh mục</b>{total ? <><div className="mt-4 flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">{data.map(([label, value], index) => <span key={label} className={`h-full ${colors[index % colors.length]}`} style={{ width: `${value / total * 100}%` }} />)}</div><div className="mt-4 space-y-3">{data.slice(0, 5).map(([label, value], index) => <div key={label} className="flex justify-between text-xs"><span><i className={`mr-2 inline-block size-2 rounded-full ${colors[index % colors.length]}`} />{label}</span><b>{money(value)}</b></div>)}</div></> : <div className="mt-5"><EmptyState /></div>}</Card>; }
+  return <Card className="p-5"><b>Chi tiêu theo danh mục</b>{total ? <><div className="mt-4 flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">{data.map(([label, value], index) => <span key={label} className={`h-full ${colors[index % colors.length]}`} style={{ width: `${value / total * 100}%` }} />)}</div><div className="mt-4 space-y-3">{data.slice(0, 5).map(([label, value], index) => <div key={label} className="flex justify-between text-xs"><span><i className={`mr-2 inline-block size-2 rounded-full ${colors[index % colors.length]}`} />{label}</span><b>{money(value)}</b></div>)}</div></> : <div className="mt-5">Chưa có dữ liệu</div>}</Card>; }
 function CompletionChart({ value, done, total }: { value: number; done: number; total: number }) { return <Card className="p-5"><div className="flex items-center justify-between"><b>Tỷ lệ hoàn thành công việc</b><b className="text-emerald-500">{value}%</b></div><div className="mt-8 grid place-items-center"><div className="grid size-36 place-items-center rounded-full bg-emerald-50 text-3xl font-bold text-emerald-500 ring-8 ring-emerald-100 dark:bg-emerald-400/10 dark:ring-emerald-400/20">{value}%</div></div><p className="mt-8 text-center text-xs text-slate-400">{total ? `${done}/${total} công việc đã hoàn thành` : "Chưa có dữ liệu công việc"}</p></Card>; }
 function NotificationsView({ user, notifications, setNotifications }: { user: AuthUser; notifications: CalendarNotification[]; setNotifications: React.Dispatch<React.SetStateAction<CalendarNotification[]>> }) {
   const [selected, setSelected] = useState<CalendarNotification | null>(null);
@@ -1227,14 +1242,14 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
   return <><div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-semibold">Thành viên</h2><p className="mt-1 text-sm text-slate-400">Family Hub / Thành viên</p></div>{canManage && <button onClick={() => { setInitialEdit(true); setDetail("new"); }} className="rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700">+ Thêm thành viên</button>}</div>
     <Card className="p-4"><div className="grid max-w-[680px] gap-3 md:grid-cols-[minmax(0,440px)_220px]"><input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm tên hoặc số điện thoại" /><select className={filterClass} value={accountFilter} onChange={event => setAccountFilter(event.target.value as typeof accountFilter)}><option value="all">Tất cả</option><option value="with_account">Có tài khoản</option><option value="without_account">Chưa có tài khoản</option></select></div></Card>
     <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{members.map(member => <Card key={member.id} className="p-4 md:p-5 relative flex flex-col justify-between"><div className="flex items-start gap-3"><Avatar member={member} size="size-12" /><div className="min-w-0 flex-1 pr-6"><h3 className="font-semibold">{member.nickname || member.name}</h3>{member.nickname && <p className="text-xs text-slate-400">{member.name}</p>}{ageAtToday(member.birthday) !== null && <p className="mt-2 text-xs text-slate-400">{ageAtToday(member.birthday)} tuổi</p>}{member.birthday && <p className="mt-1 text-xs text-slate-400">{formatBirthday(member.birthday)}</p>}{member.phone && <p className="mt-1 text-xs text-slate-400">{member.phone}</p>}</div><div className="absolute right-3 top-3"><button onClick={() => setActiveMenuMemberId(activeMenuMemberId === member.id ? null : member.id)} className="grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5" aria-label="Menu thành viên">⋮</button>{activeMenuMemberId === member.id && <><div className="fixed inset-0 z-10" onClick={() => setActiveMenuMemberId(null)} /><div className="absolute right-0 top-9 z-20 w-32 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl"><button onClick={() => { setInitialEdit(false); setDetail(member); setActiveMenuMemberId(null); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Xem chi tiết</button><button onClick={() => { setInitialEdit(true); setDetail(member); setActiveMenuMemberId(null); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Sửa</button>{canManage && <button onClick={() => { setRemoving(member); setWarning(""); setActiveMenuMemberId(null); }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button>}</div></>}</div></div></Card>)}</div>
-    {!members.length && <div className="mt-6"><EmptyState /></div>}
-    {removing && <ConfirmMemberDelete member={removing} warning={warning} close={() => { setRemoving(null); setWarning(""); }} remove={() => void remove(removing)} />}
+    {!members.length && <div className="mt-6">Chưa có dữ liệu</div>}
   </>;
 }
 type MemberProfileTab = "profile" | "account" | "work" | "bank" | "bankRaw" | "security" | "tasks" | "events" | "notes";
 type ProfileSubTab = "basic" | "education" | "skills" | "experience" | "documents";
 function MemberProfile({ member, data, user, close, saved, remove, personal = false, openChangePassword, logout, savedUser = () => undefined, initialEdit = false }: { member: Member | "new"; data: AppData; user: AuthUser; close: () => void; saved: (member: Member) => void; remove: (member: Member) => void; personal?: boolean; openChangePassword?: () => void; logout?: () => void; savedUser?: (user: AuthUser) => void; initialEdit?: boolean }) {
   const existing = member === "new" ? null : member;
+  const pathname = usePathname();
   const [tab, setTab] = useState<MemberProfileTab>("profile");
   const [editing, setEditing] = useState(!existing || initialEdit);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -1244,6 +1259,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
   const [form, setForm] = useState<Member>(() => existing ?? { id: crypto.randomUUID(), name: "", nickname: "", birthday: "", gender: "", phone: "", avatar: "", notes: "", color: "#cbd5e1" });
   const [detailsLoaded, setDetailsLoaded] = useState(!existing);
   const canManage = user.role === "full_access";
+  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   const tasks = data.tasks.filter(task => task.memberId === form.id);
   const events = data.events.filter(event => event.memberId === form.id);
   const notes = data.notes.filter(note => note.memberId === form.id);
@@ -1425,38 +1441,38 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
       )}</div></div></div>;
 }
 const jobStatuses: { value: MemberJobStatus; label: string }[] = [{ value: "active", label: "Đang làm" }, { value: "ended", label: "Đã nghỉ" }];
-function monthKey(year: string, month: number) { return `${year}-${String(month).padStart(2, "0")}`; }
-function isJobActiveInMonth(job: MemberJob, year: string, month: number) {
-  const start = parseDate(job.startDate);
-  const end = parseDate(job.endDate);
-  const monthStart = new Date(Number(year), month - 1, 1);
-  const monthEnd = new Date(Number(year), month, 0);
-  return Boolean(start && start <= monthEnd && (!end || end >= monthStart));
+const receivedStatus: IncomeStatus = "Đã nhận";
+function incomeJobId(record: IncomeRecord) { return record.jobId || record.workId || ""; }
+function jobIncomeForMonth(job: MemberJob, records: IncomeRecord[], month: number) {
+  return records.filter(record => incomeJobId(record) === job.id && record.month === month && record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
 }
-function jobSalaryForMonth(job: MemberJob, year: string, month: number) {
-  const keyed = job.salaryByMonth?.[monthKey(year, month)];
-  if (keyed !== undefined) return Number(keyed || 0);
-  return isJobActiveInMonth(job, year, month) ? Number(job.monthlySalary || 0) : 0;
+function jobYearTotal(job: MemberJob, records: IncomeRecord[]) {
+  return records.filter(record => incomeJobId(record) === job.id && record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
 }
-function jobYearTotal(job: MemberJob, year: string) {
-  return Array.from({ length: 12 }, (_, index) => jobSalaryForMonth(job, year, index + 1)).reduce((sum, amount) => sum + amount, 0);
+function jobYearRange(job: MemberJob) {
+  return `${job.startYear || "?"} - ${job.status === "active" ? "Nay" : job.endYear || "?"}`;
 }
 function MemberWorkHistory({ member, user }: { member: Member; user: AuthUser }) {
   const canEdit = user.role === "full_access" || user.memberId === member.id;
   const [jobs, setJobs] = useState<MemberJob[]>([]);
+  const [records, setRecords] = useState<IncomeRecord[]>([]);
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [editing, setEditing] = useState<MemberJob | "new" | null>(null);
   const [viewing, setViewing] = useState<MemberJob | null>(null);
   const load = useCallback(async () => {
     setLoading(true); setError("");
-    const response = await fetch(`/api/member-jobs?memberId=${encodeURIComponent(member.id)}`, { cache: "no-store" });
+    const [response, incomeResponse] = await Promise.all([
+      fetch(`/api/member-jobs?memberId=${encodeURIComponent(member.id)}`, { cache: "no-store" }),
+      fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" }),
+    ]);
     const result = await readJsonSafe<{ ok?: boolean; data?: MemberJob[]; error?: string }>(response);
+    const incomeResult = await readJsonSafe<{ ok?: boolean; data?: { allRecords?: IncomeRecord[] }; error?: string }>(incomeResponse);
     setLoading(false);
     if (!response.ok || !result?.ok) return setError(result?.error || "Không thể tải lịch sử công việc.");
     setJobs(result.data || []);
-  }, [member.id]);
+    if (incomeResponse.ok && incomeResult?.data) setRecords((incomeResult.data.allRecords || []).filter(record => record.memberId === member.id));
+  }, [member.id, year]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   async function remove(job: MemberJob) {
     if (!confirm(`Xóa công việc ${job.title}?`)) return;
@@ -1467,16 +1483,15 @@ function MemberWorkHistory({ member, user }: { member: Member; user: AuthUser })
     if (viewing?.id === job.id) setViewing(null);
   }
   const yearOptions = Array.from({ length: 9 }, (_, index) => String(new Date().getFullYear() - 4 + index));
-  const totalYear = jobs.reduce((sum, job) => sum + jobYearTotal(job, year), 0);
+  const totalYear = jobs.reduce((sum, job) => sum + jobYearTotal(job, records), 0);
   return <div className="space-y-5">
     <div className="flex flex-wrap items-end justify-between gap-3">
-      <div><h3 className="font-semibold">Công việc</h3><p className="mt-1 text-sm text-slate-400">Tổng lương năm {year}: <b className="text-emerald-500">{money(totalYear)}</b> · {jobs.length} công việc · {jobs.filter(job => job.status === "active").length} đang làm</p></div>
-      <div className="flex flex-wrap items-center gap-2"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{yearOptions.map(value => <option key={value}>{value}</option>)}</select>{canEdit && <button onClick={() => setEditing("new")} className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm công việc</button>}</div>
+      <div><h3 className="font-semibold">Công việc</h3><p className="mt-1 text-sm text-slate-400">Tổng thu nhập năm {year}: <b className="text-emerald-500">{money(totalYear)}</b> · {jobs.length} công việc · {jobs.filter(job => job.status === "active").length} đang làm</p></div>
+      <div className="flex flex-wrap items-center gap-2"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{yearOptions.map(value => <option key={value}>{value}</option>)}</select>{canEdit && <button onClick={() => { window.location.href = `/members/${member.id}/jobs/new`; }} className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm công việc</button>}</div>
     </div>
     {error && <p className="text-sm text-rose-500">{error}</p>}
-    {loading ? <Card className="p-6 text-center text-sm text-slate-400">Đang tải công việc...</Card> : jobs.length ? <div className="overflow-visible rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] shadow-sm"><div className="hidden grid-cols-[1.3fr_1fr_1fr_.9fr_.9fr_.9fr_48px] gap-4 border-b border-[var(--app-border)] bg-slate-50/70 px-5 py-3 text-xs font-bold uppercase text-slate-400 dark:bg-white/5 xl:grid"><span>Công việc</span><span>Công ty</span><span>Chức vụ</span><span>Bắt đầu</span><span>Kết thúc</span><span>Lương năm</span><span /></div>{jobs.map(job => <div key={job.id} className="grid gap-4 border-b border-[var(--app-border)] px-5 py-4 text-sm last:border-0 xl:grid-cols-[1.3fr_1fr_1fr_.9fr_.9fr_.9fr_48px] xl:items-center"><div><b>{job.title}</b><p className={`mt-1 w-fit rounded-full px-2 py-1 text-xs font-bold ${job.status === "active" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/15" : "bg-slate-100 text-slate-500 dark:bg-white/10"}`}>{job.status === "active" ? "Đang làm" : "Đã nghỉ"}</p></div><span>{job.company}</span><span>{job.position}</span><span>{formatDateVN(job.startDate)}</span><span>{job.endDate ? formatDateVN(job.endDate) : "Hiện tại"}</span><b className="text-emerald-500">{money(jobYearTotal(job, year))}</b><JobActionMenu job={job} view={() => setViewing(job)} edit={() => setEditing(job)} remove={() => void remove(job)} canEdit={canEdit} /></div>)}</div> : <Card className="p-8 text-center text-sm text-slate-400">Chưa có lịch sử công việc.</Card>}
-    {viewing && <MemberJobDetail job={viewing} year={year} close={() => setViewing(null)} edit={() => { setEditing(viewing); setViewing(null); }} />}
-    {editing && <MemberJobSheet job={editing} memberId={member.id} year={year} close={() => setEditing(null)} saved={job => { setJobs(current => current.some(item => item.id === job.id) ? current.map(item => item.id === job.id ? job : item) : [job, ...current]); setEditing(null); }} />}
+    {loading ? <Card className="p-6 text-center text-sm text-slate-400">Đang tải công việc...</Card> : jobs.length ? <div className="space-y-3">{jobs.map(job => <div key={job.id} className="relative rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-5 shadow-sm"><div className="absolute bottom-5 left-8 top-5 w-px bg-slate-200 dark:bg-white/10" /><div className="relative flex gap-4"><span className="mt-1 size-3 shrink-0 rounded-full bg-indigo-500 ring-4 ring-indigo-100 dark:ring-indigo-500/20" /><div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase text-slate-400">{jobYearRange(job)}</p><h3 className="mt-1 text-base font-bold">{job.title}</h3><p className="mt-1 text-sm text-slate-500">{job.company}</p><div className="mt-3 flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-xs font-bold ${job.status === "active" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/15" : "bg-slate-100 text-slate-500 dark:bg-white/10"}`}>{job.status === "active" ? "Đang làm" : "Đã nghỉ"}</span><b className="text-sm text-emerald-500">{money(jobYearTotal(job, records))}</b></div></div><JobActionMenu job={job} view={() => setViewing(job)} edit={() => { window.location.href = `/members/${member.id}/jobs/${job.id}/edit`; }} remove={() => void remove(job)} canEdit={canEdit} /></div></div>)}</div> : <Card className="p-8 text-center text-sm text-slate-400">Chưa có lịch sử công việc.</Card>}
+    {viewing && <MemberJobDetail job={viewing} records={records} year={year} close={() => setViewing(null)} edit={() => { window.location.href = `/members/${member.id}/jobs/${viewing.id}/edit`; }} />}
   </div>;
 }
 function JobActionMenu({ job, view, edit, remove, canEdit }: { job: MemberJob; view: () => void; edit: () => void; remove: () => void; canEdit: boolean }) {
@@ -1484,16 +1499,15 @@ function JobActionMenu({ job, view, edit, remove, canEdit }: { job: MemberJob; v
   const itemClass = "block w-full rounded-lg px-3 py-2 text-left text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5";
   return <div className="relative flex justify-end"><button type="button" onClick={() => setOpen(current => !current)} className="grid size-10 place-items-center rounded-xl border border-[var(--app-border)] text-xl font-bold text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5" aria-label={`Thao tác ${job.title}`}>⋯</button>{open && <div className="absolute right-0 top-11 z-30 w-40 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl"><button className={itemClass} onClick={() => { setOpen(false); view(); }}>Xem chi tiết</button>{canEdit && <button className={itemClass} onClick={() => { setOpen(false); edit(); }}>Sửa</button>}{canEdit && <button className={`${itemClass} text-rose-500`} onClick={() => { setOpen(false); remove(); }}>Xóa</button>}</div>}</div>;
 }
-function MemberJobDetail({ job, year, close, edit }: { job: MemberJob; year: string; close: () => void; edit: () => void }) {
-  const months = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, amount: jobSalaryForMonth(job, year, index + 1) }));
-  return <Sheet close={close}><div><div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-bold">{job.title}</h2><p className="mt-1 text-sm text-slate-400">{job.company} · {job.position}</p></div><button onClick={edit} className="rounded-xl border border-[var(--app-border)] px-3 py-2 text-xs font-bold">Sửa</button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><AccountDetail label="Ngày bắt đầu" value={formatDateVN(job.startDate)} /><AccountDetail label="Ngày kết thúc" value={job.endDate ? formatDateVN(job.endDate) : "Hiện tại"} /><AccountDetail label="Trạng thái" value={job.status === "active" ? "Đang làm" : "Đã nghỉ"} /><AccountDetail label={`Tổng năm ${year}`} value={money(jobYearTotal(job, year))} /></div><div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">{months.map(item => <div key={item.month} className="rounded-xl border border-[var(--app-border)] p-3"><p className="text-xs text-slate-400">Tháng {item.month}</p><b className="text-sm text-emerald-500">{money(item.amount)}</b></div>)}</div>{job.note && <p className="mt-5 rounded-xl border border-[var(--app-border)] p-4 text-sm text-slate-500">{job.note}</p>}</div></Sheet>;
+function MemberJobDetail({ job, records, year, close, edit }: { job: MemberJob; records: IncomeRecord[]; year: string; close: () => void; edit: () => void }) {
+  const months = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, amount: jobIncomeForMonth(job, records, index + 1) }));
+  return <Sheet close={close}><div><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase text-slate-400">{jobYearRange(job)}</p><h2 className="mt-1 text-lg font-bold">{job.title}</h2><p className="mt-1 text-sm text-slate-400">{job.company}</p></div><button onClick={edit} className="rounded-xl border border-[var(--app-border)] px-3 py-2 text-xs font-bold">Sửa</button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><AccountDetail label="Thời gian" value={jobYearRange(job)} /><AccountDetail label="Trạng thái" value={job.status === "active" ? "Đang làm" : "Đã nghỉ"} /><AccountDetail label={`Tổng thu nhập ${year}`} value={money(jobYearTotal(job, records))} /></div><div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">{months.map(item => <div key={item.month} className="rounded-xl border border-[var(--app-border)] p-3"><p className="text-xs text-slate-400">Tháng {item.month}</p><b className="text-sm text-emerald-500">{money(item.amount)}</b></div>)}</div>{job.note && <p className="mt-5 rounded-xl border border-[var(--app-border)] p-4 text-sm text-slate-500">{job.note}</p>}</div></Sheet>;
 }
 function MemberJobSheet({ job, memberId, year, close, saved }: { job: MemberJob | "new"; memberId: string; year: string; close: () => void; saved: (job: MemberJob) => void }) {
   const existing = job === "new" ? null : job;
-  const [form, setForm] = useState<MemberJob>(() => existing || { id: "", memberId, title: "", company: "", position: "", startDate: "", endDate: "", status: "active", monthlySalary: 0, salaryByMonth: {}, note: "" });
+  const [form, setForm] = useState<MemberJob>(() => existing || { id: "", memberId, title: "", company: "", startYear: new Date().getFullYear(), endYear: null, status: "active", note: "" });
   const [error, setError] = useState("");
   const set = <K extends keyof MemberJob>(key: K, value: MemberJob[K]) => setForm(current => ({ ...current, [key]: value }));
-  const setMonthSalary = (month: number, value: string) => setForm(current => ({ ...current, salaryByMonth: { ...current.salaryByMonth, [monthKey(year, month)]: Number(value || 0) } }));
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setError("");
     const response = await fetch(form.id ? `/api/member-jobs?id=${encodeURIComponent(form.id)}` : "/api/member-jobs", { method: form.id ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
@@ -1514,17 +1528,11 @@ function MemberJobSheet({ job, memberId, year, close, saved }: { job: MemberJob 
           <div className="mt-3 grid gap-4 md:grid-cols-2">
             <Field label="Tên công việc"><input required className={inputClass} value={form.title} onChange={event => set("title", event.target.value)} /></Field>
             <Field label="Công ty / nơi làm"><input required className={inputClass} value={form.company} onChange={event => set("company", event.target.value)} /></Field>
-            <Field label="Chức vụ"><input required className={inputClass} value={form.position} onChange={event => set("position", event.target.value)} /></Field>
             <Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={event => set("status", event.target.value as MemberJobStatus)}>{jobStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}</select></Field>
-            <Field label="Ngày bắt đầu"><DateVNInput required value={form.startDate} onChange={value => set("startDate", value)} /></Field>
-            <Field label="Ngày kết thúc"><DateVNInput value={form.endDate} onChange={value => set("endDate", value)} /></Field>
-            <Field label="Lương mặc định / tháng"><input min="0" type="number" className={inputClass} value={form.monthlySalary} onChange={event => set("monthlySalary", Number(event.target.value || 0))} /></Field>
+            <Field label="Năm bắt đầu"><input required min="1900" max="2200" type="number" className={inputClass} value={form.startYear || ""} onChange={event => set("startYear", Number(event.target.value) || null)} /></Field>
+            <Field label="Năm kết thúc"><input disabled={form.status === "active"} min="1900" max="2200" type="number" className={inputClass} value={form.status === "active" ? "" : form.endYear || ""} onChange={event => set("endYear", Number(event.target.value) || null)} /></Field>
             <Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field>
           </div>
-        </section>
-        <section className="mt-6">
-          <h3 className="text-sm font-bold text-indigo-600">Lương từng tháng</h3>
-          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">{Array.from({ length: 12 }, (_, index) => index + 1).map(month => <Field key={month} label={`Tháng ${month}`}><input min="0" type="number" className={inputClass} value={form.salaryByMonth?.[monthKey(year, month)] ?? (isJobActiveInMonth(form, year, month) ? form.monthlySalary : 0)} onChange={event => setMonthSalary(month, event.target.value)} /></Field>)}</div>
         </section>
         {error && <p className="mt-4 text-sm text-rose-500">{error}</p>}
       </div>
@@ -1535,6 +1543,7 @@ function MemberJobSheet({ job, memberId, year, close, saved }: { job: MemberJob 
     </form>
   </div>;
 }
+void MemberJobSheet;
 function ConfirmMemberDelete({ member, warning, close, remove }: { member: Member; warning: string; close: () => void; remove: () => void }) {
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-5" onMouseDown={close}><div className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-6 shadow-2xl" onMouseDown={event => event.stopPropagation()}><h2 className="text-lg font-semibold">Ẩn thành viên?</h2><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Thành viên <b>{member.nickname || member.name}</b> sẽ được ẩn khỏi danh sách. Dữ liệu lịch sử không bị xóa.</p>{warning && <p className="mt-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-600 dark:bg-orange-400/10">{warning}</p>}<div className="mt-6 flex justify-end gap-3"><button onClick={close} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button onClick={remove} className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Xác nhận ẩn</button></div></div></div>;
 }
@@ -1654,7 +1663,7 @@ const incomeStatuses: IncomeStatus[] = ["Đã nhận", "Chưa nhận"];
 const incomeTemplates = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền tồn tháng trước", "Khác"];
 const incomeTypeLabel: Record<IncomeSourceType, string> = { fixed: "Cố định", variable: "Không cố định" };
 const frequencyLabel: Record<IncomeFrequency, string> = { monthly: "Hàng tháng", weekly: "Hàng tuần", yearly: "Hàng năm", one_time: "Một lần", custom: "Tùy chỉnh" };
-type IncomeDraft = { id?: string; memberId: string; workId: string; incomeDate: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string; };
+type IncomeDraft = { id?: string; memberId: string; jobId: string; incomeDate: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string; };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MonthlyTooltip({ active, payload }: any) {
   if (active && payload && payload.length) {
@@ -2125,15 +2134,15 @@ function IncomeRecordActionMenu({ record, activeId, setActiveId, edit, remove }:
 }
 function IncomeRecordForm({ record, members, jobs, templates, back, saved }: { record: IncomeRecord | null; members: { id: string; name: string }[]; jobs: MemberJob[]; templates: string[]; back: () => void; saved: () => void }) {
   const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-  const emptyRow = (): IncomeDraft => ({ memberId: members[0]?.id || "", workId: "", incomeDate: today, category: "Lương", name: "Lương CB", amount: "", status: "Đã nhận", note: "" });
-  const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || members[0]?.id || "", workId: record.workId || "", incomeDate: record.incomeDate, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
+  const emptyRow = (): IncomeDraft => ({ memberId: members[0]?.id || "", jobId: "", incomeDate: today, category: "Lương", name: "Lương CB", amount: "", status: "Đã nhận", note: "" });
+  const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || members[0]?.id || "", jobId: record.jobId || record.workId || "", incomeDate: record.incomeDate, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
   const memberJobs = jobs.filter(job => !draft.memberId || job.memberId === draft.memberId);
   
   function patch(value: Partial<IncomeDraft>) { setDraft(current => ({ ...current, ...value })); }
-  function selectMember(memberId: string) { setDraft(current => ({ ...current, memberId, workId: jobs.some(job => job.id === current.workId && job.memberId === memberId) ? current.workId : "" })); }
-  function selectJob(workId: string) {
-    const job = jobs.find(item => item.id === workId);
-    setDraft(current => ({ ...current, workId, memberId: job?.memberId || current.memberId, name: workId && job ? (current.name || job.title) : current.name }));
+  function selectMember(memberId: string) { setDraft(current => ({ ...current, memberId, jobId: jobs.some(job => job.id === current.jobId && job.memberId === memberId) ? current.jobId : "" })); }
+  function selectJob(jobId: string) {
+    const job = jobs.find(item => item.id === jobId);
+    setDraft(current => ({ ...current, jobId, memberId: job?.memberId || current.memberId, name: jobId && job ? (current.name || job.title) : current.name }));
   }
   
   async function submit(event: React.FormEvent) {
@@ -2153,7 +2162,7 @@ function IncomeRecordForm({ record, members, jobs, templates, back, saved }: { r
     patch({ amount: e.target.value.replace(/\D/g, "") });
   }
 
-  return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button><div><h2 className="text-2xl font-bold">{record ? "Sửa khoản thu" : "Thêm thu nhập"}</h2><p className="mt-1 text-sm text-slate-400">Khoản thu sẽ được ghi nhận vào bảng thu nhập.</p></div><form onSubmit={submit} className="space-y-4"><Card><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Field label="Thành viên"><select required className={inputClass} value={draft.memberId} onChange={event => selectMember(event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Công việc liên quan"><select className={inputClass} value={draft.workId} onChange={event => selectJob(event.target.value)}><option value="">Không gắn công việc</option>{memberJobs.map(job => <option key={job.id} value={job.id}>{job.title} · {job.company}</option>)}</select></Field><Field label="Ngày nhận"><DateVNInput required value={draft.incomeDate} onChange={value => patch({ incomeDate: value })} /></Field><Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field><Field label="Nội dung / Ghi chú ngắn"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder="VD: Lương CB..." /></Field><Field label="Số tiền"><input required type="text" className={inputClass} value={formattedAmount} onChange={handleAmountChange} placeholder="0 đ" /></Field><div className="md:col-span-2"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
+  return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button><div><h2 className="text-2xl font-bold">{record ? "Sửa khoản thu" : "Thêm thu nhập"}</h2><p className="mt-1 text-sm text-slate-400">Khoản thu sẽ được ghi nhận vào bảng thu nhập.</p></div><form onSubmit={submit} className="space-y-4"><Card><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Field label="Thành viên"><select required className={inputClass} value={draft.memberId} onChange={event => selectMember(event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Công việc liên quan"><select className={inputClass} value={draft.jobId} onChange={event => selectJob(event.target.value)}><option value="">Không gắn công việc</option>{memberJobs.map(job => <option key={job.id} value={job.id}>{job.title} · {job.company}</option>)}</select></Field><Field label="Ngày nhận"><DateVNInput required value={draft.incomeDate} onChange={value => patch({ incomeDate: value })} /></Field><Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field><Field label="Nội dung / Ghi chú ngắn"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder="VD: Lương CB..." /></Field><Field label="Số tiền"><input required type="text" className={inputClass} value={formattedAmount} onChange={handleAmountChange} placeholder="0 đ" /></Field><div className="md:col-span-2"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
 }
 function IncomeManagement() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
@@ -3545,3 +3554,5 @@ function Settings({ user, onLogout, openProfile, openChangePassword, language, s
   <SectionTitle label="Cài đặt ứng dụng" /><Card className="space-y-3 text-sm text-slate-500 dark:text-slate-300"><p><b className="text-[var(--app-foreground)]">Android / Chrome:</b> mở menu trình duyệt và chọn Thêm vào màn hình chính hoặc Cài đặt ứng dụng.</p><p><b className="text-[var(--app-foreground)]">iPhone / Safari:</b> nhấn nút Chia sẻ, sau đó chọn Thêm vào MH chính.</p><p>Sau khi cài đặt, Family Hub mở ở chế độ standalone như một ứng dụng và hỗ trợ mở lại dữ liệu đã dùng khi mất mạng.</p></Card>
   <p className="mt-5 text-center text-xs text-slate-400">{t("storage")}</p></div>;
 }
+
+function EmptyState() { return <div className="p-8 text-center text-sm text-slate-500">Không có dữ liệu</div>; }

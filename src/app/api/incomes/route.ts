@@ -34,7 +34,7 @@ function normalizeRecordPayload(item: Record<string, unknown>) {
     status,
     note: text(item.note),
     workSource: text(item.workSource),
-    workId: text(item.workId || item.work_id),
+    jobId: text(item.jobId || item.job_id || item.workId || item.work_id),
   };
 }
 
@@ -49,7 +49,6 @@ export async function POST(request: NextRequest) {
   const actor = await getSessionUser();
   if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
   const body = await request.json() as Record<string, unknown> | Record<string, unknown>[];
-  const rows = (Array.isArray(body) ? body : Array.isArray(body.rows) ? body.rows as Record<string, unknown>[] : [body]).map(normalizeRecordPayload);
   const payloadList = (Array.isArray(body) ? body : Array.isArray(body.rows) ? body.rows as Record<string, unknown>[] : [body]);
   if (!payloadList.length || payloadList.some(p => !p.name)) return NextResponse.json({ ok: false, error: "Thiếu tên khoản thu." }, { status: 400 });
   const client = await pool.connect();
@@ -59,13 +58,13 @@ export async function POST(request: NextRequest) {
     for (const payload of payloadList) {
       const row = normalizeRecordPayload(payload);
       const result = await client.query(
-        `INSERT INTO income_records (id, source_id, member_id, work_id, income_date, year, month, category, name, amount, status, note, work_source, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()) RETURNING *`,
+        `INSERT INTO income_records (id, source_id, member_id, job_id, work_id, income_date, year, month, category, name, amount, status, note, work_source, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()) RETURNING *`,
         [
           row.id,
           text(payload.sourceId) || null,
           text(payload.memberId || actor.memberId) || null,
-          row.workId || null,
+          row.jobId || null,
           row.incomeDate,
           row.year,
           row.month,
@@ -99,11 +98,11 @@ export async function PUT(request: NextRequest) {
   if (!row.id || !row.name) return NextResponse.json({ ok: false, error: "Thiếu id hoặc tên khoản thu." }, { status: 400 });
   const result = await pool.query(
     `UPDATE income_records
-     SET member_id = $1, work_id = $2, income_date = $3, year = $4, month = $5, category = $6, name = $7, amount = $8, status = $9, note = $10, work_source = $11, updated_at = NOW()
+     SET member_id = $1, job_id = $2, work_id = $2, income_date = $3, year = $4, month = $5, category = $6, name = $7, amount = $8, status = $9, note = $10, work_source = $11, updated_at = NOW()
      WHERE id = $12 RETURNING *`,
     [
       text(payload.memberId || actor.memberId) || null,
-      row.workId || null,
+      row.jobId || null,
       row.incomeDate,
       row.year,
       row.month,

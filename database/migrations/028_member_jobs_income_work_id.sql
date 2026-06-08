@@ -18,7 +18,12 @@ CREATE TABLE IF NOT EXISTS member_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_member_jobs_member_id ON member_jobs(member_id);
 CREATE INDEX IF NOT EXISTS idx_member_jobs_status ON member_jobs(status);
-CREATE INDEX IF NOT EXISTS idx_member_jobs_dates ON member_jobs(start_date, end_date);
 
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'member_jobs' AND column_name = 'start_date') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_member_jobs_dates ON member_jobs(start_date, end_date)';
+  END IF;
+END $$;
 ALTER TABLE income_records ADD COLUMN IF NOT EXISTS work_id UUID REFERENCES member_jobs(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_income_records_work_id ON income_records(work_id);

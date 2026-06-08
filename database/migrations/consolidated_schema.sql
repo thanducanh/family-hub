@@ -564,7 +564,65 @@ CREATE TABLE IF NOT EXISTS member_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_member_jobs_member_id ON member_jobs(member_id);
 CREATE INDEX IF NOT EXISTS idx_member_jobs_status ON member_jobs(status);
-CREATE INDEX IF NOT EXISTS idx_member_jobs_dates ON member_jobs(start_date, end_date);
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'member_jobs' AND column_name = 'start_date') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_member_jobs_dates ON member_jobs(start_date, end_date)';
+  END IF;
+END $$;
 
 ALTER TABLE income_records ADD COLUMN IF NOT EXISTS work_id UUID REFERENCES member_jobs(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_income_records_work_id ON income_records(work_id);
+
+
+-- ==========================================
+-- MIGRATION: 029_refactor_member_jobs_income_job_id.sql
+-- ==========================================
+
+ALTER TABLE member_jobs DROP COLUMN IF EXISTS monthly_salary;
+ALTER TABLE member_jobs DROP COLUMN IF EXISTS salary_by_month;
+
+ALTER TABLE income_records ADD COLUMN IF NOT EXISTS job_id UUID REFERENCES member_jobs(id) ON DELETE SET NULL;
+
+UPDATE income_records
+SET job_id = work_id
+WHERE job_id IS NULL AND work_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_income_records_job_id ON income_records(job_id);
+
+
+-- ==========================================
+-- MIGRATION: 030_member_jobs_year_timeline.sql
+-- ==========================================
+
+ALTER TABLE member_jobs ADD COLUMN IF NOT EXISTS start_year INTEGER;
+ALTER TABLE member_jobs ADD COLUMN IF NOT EXISTS end_year INTEGER;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'member_jobs' AND column_name = 'start_date') THEN
+    EXECUTE 'UPDATE member_jobs SET start_year = COALESCE(start_year, EXTRACT(YEAR FROM start_date)::INTEGER) WHERE start_date IS NOT NULL';
+    EXECUTE 'UPDATE member_jobs SET end_year = CASE WHEN status = ''active'' THEN NULL ELSE COALESCE(end_year, EXTRACT(YEAR FROM end_date)::INTEGER) END';
+    
+    ALTER TABLE member_jobs DROP COLUMN start_date;
+    ALTER TABLE member_jobs DROP COLUMN end_date;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'member_jobs' AND column_name = 'position') THEN
+    ALTER TABLE member_jobs DROP COLUMN position;
+  END IF;
+  
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'member_jobs' AND column_name = 'monthly_salary') THEN
+    ALTER TABLE member_jobs DROP COLUMN monthly_salary;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'member_jobs' AND column_name = 'salary_by_month') THEN
+    ALTER TABLE member_jobs DROP COLUMN salary_by_month;
+  END IF;
+END $$;
+
+ALTER TABLE member_jobs ALTER COLUMN start_year SET NOT NULL;
+
+DROP INDEX IF EXISTS idx_member_jobs_dates;
+CREATE INDEX IF NOT EXISTS idx_member_jobs_years ON member_jobs(start_year, end_year);

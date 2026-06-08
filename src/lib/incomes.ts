@@ -7,7 +7,7 @@ export type IncomeSourceRow = {
   note: string; active: boolean; createdAt: string; updatedAt: string;
 };
 export type IncomeRecordRow = {
-  id: string; sourceId: string; memberId: string; memberName: string; workId: string; workName: string; workSource: string; incomeDate: string; receivedDate: string;
+  id: string; sourceId: string; memberId: string; memberName: string; jobId: string; jobName: string; workId: string; workName: string; workSource: string; incomeDate: string; receivedDate: string;
   year: number; month: number; category: IncomeCategory; name: string; amount: number; status: IncomeStatus;
   note: string; createdAt: string; updatedAt: string;
 };
@@ -78,13 +78,17 @@ export function toIncomeYearlySummary(row: Record<string, unknown>): IncomeYearl
 
 export function toIncomeRecord(row: Record<string, unknown>): IncomeRecordRow {
   const incomeDate = dateOnly(row.income_date || row.received_date);
+  const jobId = String(row.job_id || row.work_id || "");
+  const jobName = String(row.job_name || row.work_name || "");
   return {
     id: String(row.id),
     sourceId: String(row.source_id || ""),
     memberId: row.member_id ? String(row.member_id) : "",
     memberName: String(row.member_name || ""),
-    workId: String(row.work_id || ""),
-    workName: String(row.work_name || ""),
+    jobId,
+    jobName,
+    workId: jobId,
+    workName: jobName,
     workSource: String(row.work_source || ""),
     incomeDate,
     receivedDate: incomeDate,
@@ -101,18 +105,15 @@ export function toIncomeRecord(row: Record<string, unknown>): IncomeRecordRow {
 }
 
 function toMemberJob(row: Record<string, unknown>): MemberJob {
-  const salary = row.salary_by_month;
+  const status = String(row.status) === "ended" ? "ended" : "active";
   return {
     id: String(row.id),
     memberId: String(row.member_id || ""),
     title: String(row.title || ""),
     company: String(row.company || ""),
-    position: String(row.position || ""),
-    startDate: dateOnly(row.start_date),
-    endDate: dateOnly(row.end_date),
-    status: String(row.status) === "ended" ? "ended" : "active",
-    monthlySalary: Number(row.monthly_salary || 0),
-    salaryByMonth: salary && typeof salary === "object" ? Object.fromEntries(Object.entries(salary as Record<string, unknown>).map(([key, value]) => [key, Number(value || 0)])) : {},
+    startYear: row.start_year === null || row.start_year === undefined ? null : Number(row.start_year),
+    endYear: status === "active" || row.end_year === null || row.end_year === undefined ? null : Number(row.end_year),
+    status,
     note: String(row.note || ""),
     createdAt: String(row.created_at || ""),
     updatedAt: String(row.updated_at || ""),
@@ -127,15 +128,15 @@ export async function fetchIncomeData(year: number) {
       JOIN members m ON m.id = s.member_id
       WHERE m.deleted_at IS NULL
       ORDER BY s.active DESC, m.name, s.name`),
-    pool.query(`SELECT r.*, COALESCE(m.name, '') AS member_name, COALESCE(j.title || ' · ' || j.company, '') AS work_name
+    pool.query(`SELECT r.*, COALESCE(r.job_id, r.work_id) AS job_id, COALESCE(m.name, '') AS member_name, COALESCE(j.title || ' · ' || j.company, '') AS job_name
       FROM income_records r
       LEFT JOIN members m ON m.id = r.member_id AND m.deleted_at IS NULL
-      LEFT JOIN member_jobs j ON j.id = r.work_id
+      LEFT JOIN member_jobs j ON j.id = COALESCE(r.job_id, r.work_id)
       WHERE r.year = $1
       ORDER BY r.income_date ASC, r.created_at ASC`, [year]),
     pool.query(`SELECT * FROM income_yearly_summaries ORDER BY year DESC, created_at ASC`),
     pool.query(`SELECT year, SUM(amount) as total FROM income_records WHERE status='Đã nhận' GROUP BY year`),
-    pool.query(`SELECT id, member_id, title, company, position, start_date, end_date, status, monthly_salary, salary_by_month, note, created_at, updated_at FROM member_jobs ORDER BY start_date DESC, created_at DESC`),
+    pool.query(`SELECT id, member_id, title, company, start_year, end_year, status, note, created_at, updated_at FROM member_jobs ORDER BY start_year DESC NULLS LAST, created_at DESC`),
   ]);
 
   const members = membersResult.rows.map(row => ({ id: String(row.id), name: String(row.name || "") }));
@@ -143,17 +144,10 @@ export async function fetchIncomeData(year: number) {
   const records = recordsResult.rows.map(toIncomeRecord);
   const yearlySummaries = yearlyResult.rows.map(toIncomeYearlySummary);
   const jobs = jobsResult.rows.map(toMemberJob);
-  
-  // Aggregate chart data for all years
   const yearlyComparisonMap: Record<number, number> = {};
-  for (const row of yearTotalsResult.rows) {
-    yearlyComparisonMap[Number(row.year)] = Number(row.total || 0);
-  }
-  for (const sum of yearlySummaries) {
-    yearlyComparisonMap[sum.year] = (yearlyComparisonMap[sum.year] || 0) + sum.amount;
-  }
+  for (const row of yearTotalsResult.rows) yearlyComparisonMap[Number(row.year)] = Number(row.total || 0);
+  for (const sum of yearlySummaries) yearlyComparisonMap[sum.year] = (yearlyComparisonMap[sum.year] || 0) + sum.amount;
   const yearlyComparison = Object.entries(yearlyComparisonMap).map(([y, t]) => ({ year: Number(y), total: t })).sort((a, b) => a.year - b.year);
-  
   const sourceTemplates = Array.from(new Set([...incomeTemplateNames, ...sources.map(source => source.name).filter(Boolean)]));
   return { members, sources, jobs, sourceTemplates, records, allRecords: records, yearlySummaries, yearlyComparison, stats: buildIncomeStats(year, records, yearlySummaries) };
 }
@@ -170,14 +164,10 @@ function buildIncomeStats(year: number, records: IncomeRecordRow[], yearlySummar
     byMember[record.memberId].total += record.amount;
   }
   const recordsTotalYear = monthlyTotals.reduce((sum, item) => sum + item.total, 0);
-  
   const currentYearSummaries = yearlySummaries.filter(s => s.year === year);
-  for (const s of currentYearSummaries) {
-    byCategory[s.category] += s.amount;
-  }
+  for (const s of currentYearSummaries) byCategory[s.category] += s.amount;
   const yearlySummariesTotal = currentYearSummaries.reduce((sum, item) => sum + item.amount, 0);
   const totalYear = recordsTotalYear + yearlySummariesTotal;
-  
   return {
     year,
     totalYear,
