@@ -95,7 +95,7 @@ export function toIncomeRecord(row: Record<string, unknown>): IncomeRecordRow {
     year: Number(incomeDate.slice(0, 4) || row.year || 0),
     month: Number(incomeDate.slice(5, 7) || row.month || 0),
     category: category(row.category),
-    name: String(row.name || ""),
+    name: String(row.name || "Thu nhập"),
     amount: Number(row.amount || 0),
     status: status(row.status),
     note: String(row.note || ""),
@@ -139,7 +139,7 @@ export async function fetchIncomeData(year: number) {
       LEFT JOIN member_jobs j ON j.id = COALESCE(r.job_id, r.work_id)
       WHERE r.year = $1 OR CAST(EXTRACT(YEAR FROM COALESCE(r.received_date, r.income_date)) AS INTEGER) = $1
       ORDER BY COALESCE(r.received_date, r.income_date) ASC, r.created_at ASC`, [year]),
-    pool.query(`SELECT * FROM income_yearly_summaries ORDER BY year DESC, created_at ASC`),
+    pool.query(`SELECT * FROM income_yearly_summaries ORDER BY year DESC, created_at ASC`).catch(e => { console.warn("Skip yearly:", e.message); return { rows: [] }; }),
     pool.query(`SELECT COALESCE(CAST(EXTRACT(YEAR FROM COALESCE(received_date, income_date)) AS INTEGER), year) as year, SUM(amount) as total FROM income_records GROUP BY COALESCE(CAST(EXTRACT(YEAR FROM COALESCE(received_date, income_date)) AS INTEGER), year)`),
     pool.query(`SELECT id, member_id, title, company, start_year, end_year, status, note, created_at, updated_at FROM member_jobs ORDER BY start_year DESC NULLS LAST, created_at DESC`),
   ]);
