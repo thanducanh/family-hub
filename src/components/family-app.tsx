@@ -1779,6 +1779,7 @@ function IncomeSheetManagement({ user }: { user: AuthUser }) {
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   
   const allRecords = incomeData?.allRecords || [];
+  console.log("[income] rows after map", allRecords);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const records = allRecords.filter(record => (monthFilter === "all" || record.month === Number(monthFilter)) && (categoryFilter === "all" || record.category === categoryFilter) && (!normalizedQuery || `${record.name} ${record.note} ${record.memberName || ""}`.toLocaleLowerCase().includes(normalizedQuery)));
   console.log("[income] rows after filter", records);
