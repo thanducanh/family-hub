@@ -126,62 +126,46 @@ function toMemberJob(row: Record<string, unknown>): MemberJob {
 }
 
 export async function fetchIncomeData(year: number) {
-  const [membersResult, sourcesResult, recordsResult, yearlyResult, yearTotalsResult, jobsResult] = await Promise.all([
-    pool.query("SELECT id, name FROM members WHERE deleted_at IS NULL ORDER BY name"),
-    pool.query(`SELECT s.*, m.name AS member_name
-      FROM income_sources s
-      JOIN members m ON m.id = s.member_id
-      WHERE m.deleted_at IS NULL
-      ORDER BY s.active DESC, m.name, s.name`),
-    pool.query(`SELECT r.*, COALESCE(r.job_id, r.work_id) AS job_id, COALESCE(m.name, '') AS member_name, COALESCE(j.title || ' · ' || j.company, '') AS job_name
-      FROM income_records r
-      LEFT JOIN members m ON m.id = r.member_id AND m.deleted_at IS NULL
-      LEFT JOIN member_jobs j ON j.id = COALESCE(r.job_id, r.work_id)
-      WHERE r.year = $1 OR CAST(EXTRACT(YEAR FROM COALESCE(r.received_date, r.income_date)) AS INTEGER) = $1
-      ORDER BY COALESCE(r.received_date, r.income_date) ASC, r.created_at ASC`, [year]),
-    pool.query(`SELECT * FROM income_yearly_summaries ORDER BY year DESC, created_at ASC`).catch(e => { console.warn("Skip yearly:", e.message); return { rows: [] }; }),
-    pool.query(`SELECT COALESCE(CAST(EXTRACT(YEAR FROM COALESCE(received_date, income_date)) AS INTEGER), year) as year, SUM(amount) as total FROM income_records GROUP BY COALESCE(CAST(EXTRACT(YEAR FROM COALESCE(received_date, income_date)) AS INTEGER), year)`),
-    pool.query(`SELECT id, member_id, title, company, start_year, end_year, status, note, created_at, updated_at FROM member_jobs ORDER BY start_year DESC NULLS LAST, created_at DESC`),
-  ]);
+  try {
+    const result = await pool.query(
+      `SELECT * FROM income_records ORDER BY COALESCE(received_date, income_date) ASC, created_at ASC`
+    );
 
-  const members = membersResult.rows.map(row => ({ id: String(row.id), name: String(row.name || "") }));
-  const sources = sourcesResult.rows.map(toIncomeSource);
-  const records = recordsResult.rows.map(toIncomeRecord);
-  const yearlySummaries = yearlyResult.rows.map(toIncomeYearlySummary);
-  const jobs = jobsResult.rows.map(toMemberJob);
-  const yearlyComparisonMap: Record<number, number> = {};
-  for (const row of yearTotalsResult.rows) yearlyComparisonMap[Number(row.year)] = Number(row.total || 0);
-  for (const sum of yearlySummaries) yearlyComparisonMap[sum.year] = (yearlyComparisonMap[sum.year] || 0) + sum.amount;
-  const yearlyComparison = Object.entries(yearlyComparisonMap).map(([y, t]) => ({ year: Number(y), total: t })).sort((a, b) => a.year - b.year);
-  const sourceTemplates = Array.from(new Set([...incomeTemplateNames, ...sources.map(source => source.name).filter(Boolean)]));
-  return { members, sources, jobs, sourceTemplates, records, allRecords: records, yearlySummaries, yearlyComparison, stats: buildIncomeStats(year, records, yearlySummaries) };
-}
+    const allRows = result.rows.map(toIncomeRecord);
+    const records = allRows.filter(r => r.year === year);
+    
+    // Tính tổng năm
+    const yearlyComparisonMap = new Map<number, number>();
+    for (const r of allRows) {
+      if (!isReceivedStatusValue(r.status)) continue;
+      yearlyComparisonMap.set(r.year, (yearlyComparisonMap.get(r.year) || 0) + r.amount);
+    }
+    const yearlyComparison = Array.from(yearlyComparisonMap.entries())
+      .map(([y, total]) => ({ year: y, total }))
+      .sort((a, b) => b.year - a.year);
 
-function buildIncomeStats(year: number, records: IncomeRecordRow[], yearlySummaries: IncomeYearlySummaryRow[]) {
-  const monthlyTotals = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, total: 0 }));
-  const byMember: Record<string, { memberId: string; memberName: string; total: number }> = {};
-  const byCategory: Record<IncomeCategory, number> = { "Lương": 0, "Thưởng": 0, "Khác": 0 };
-  for (const record of records) {
-    if (record.year !== year || !isReceivedStatusValue(record.status)) continue;
-    monthlyTotals[record.month - 1].total += record.amount;
-    byCategory[record.category] += record.amount;
-    byMember[record.memberId] = byMember[record.memberId] || { memberId: record.memberId, memberName: record.memberName, total: 0 };
-    byMember[record.memberId].total += record.amount;
+    // Tính yearlySummaries (mảng rỗng vì không dùng bảng đó nữa)
+    const yearlySummaries: IncomeYearlySummaryRow[] = [];
+
+    return {
+      members: [],
+      sources: [],
+      records,
+      allRecords: records,
+      yearlySummaries,
+      yearlyComparison,
+      jobs: []
+    };
+  } catch (error) {
+    console.error("fetchIncomeData error:", error);
+    return {
+      members: [],
+      sources: [],
+      records: [],
+      allRecords: [],
+      yearlySummaries: [],
+      yearlyComparison: [],
+      jobs: []
+    };
   }
-  const recordsTotalYear = monthlyTotals.reduce((sum, item) => sum + item.total, 0);
-  const currentYearSummaries = yearlySummaries.filter(s => s.year === year);
-  for (const s of currentYearSummaries) byCategory[s.category] += s.amount;
-  const yearlySummariesTotal = currentYearSummaries.reduce((sum, item) => sum + item.amount, 0);
-  const totalYear = recordsTotalYear + yearlySummariesTotal;
-  return {
-    year,
-    totalYear,
-    fixedMonthly: 0,
-    variableTotal: totalYear,
-    averageMonthly: totalYear / 12,
-    monthlyTotals,
-    byMember: Object.values(byMember).sort((left, right) => right.total - left.total),
-    byCategory,
-    byType: { fixed: 0, variable: totalYear },
-  };
 }

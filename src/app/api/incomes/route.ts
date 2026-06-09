@@ -43,43 +43,10 @@ function normalizeRecordPayload(item: Record<string, unknown>) {
 }
 
 export async function GET(request: NextRequest) {
-  try {
-    const actor = await getSessionUser();
-    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
-    const year = normalizeYear(new URL(request.url).searchParams.get("year"));
-    
-    // Only read from income_records as requested
-    const result = await pool.query(
-      `SELECT * FROM income_records 
-       WHERE CAST(EXTRACT(YEAR FROM received_date) AS INTEGER) = $1
-       ORDER BY received_date ASC, created_at ASC`, 
-      [year]
-    );
-
-    const data = result.rows.map(row => {
-      const receivedDate = row.received_date;
-      const d = new Date(receivedDate);
-      return {
-        id: row.id,
-        memberId: row.member_id,
-        jobId: row.job_id ?? null,
-        category: row.category ?? "Khác",
-        name: row.name ?? "Thu nhập",
-        amount: Number(row.amount),
-        receivedDate: receivedDate,
-        note: row.note ?? "",
-        year: !isNaN(d.getFullYear()) ? d.getFullYear() : row.year,
-        month: !isNaN(d.getMonth()) ? d.getMonth() + 1 : row.month
-      };
-    });
-
-    console.log("[GET /api/incomes] currentUser.memberId:", actor.memberId);
-    console.log(`[GET /api/incomes] records count from DB: ${data.length}`);
-    return NextResponse.json({ ok: true, data });
-  } catch (error) {
-    console.error("[GET /api/incomes] ERROR:", error);
-    return NextResponse.json({ ok: false, error: "Lỗi hệ thống khi tải thu nhập", details: String(error) }, { status: 500 });
-  }
+  if (!await requireSession()) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+  const year = normalizeYear(new URL(request.url).searchParams.get("year"));
+  const data = await fetchIncomeData(year);
+  return NextResponse.json({ ok: true, data });
 }
 
 export async function POST(request: NextRequest) {

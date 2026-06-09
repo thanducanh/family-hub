@@ -1701,6 +1701,38 @@ function isReceivedIncome(record: IncomeRecord) {
   const value = String(record.status || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
   return !value || !value.includes("chua");
 }
+type IncomeRecordWithJob = IncomeRecord & { jobTitle?: string | null; jobCompany?: string | null };
+function shortCompanyName(value: string) {
+  const text = value.trim();
+  if (!text) return "";
+  const normalized = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
+  if (normalized.includes("tan son nhat")) return "TSN";
+  const words = text.split(/\s+/).filter(Boolean);
+  return words.length > 4 ? words.map(word => word[0]).join("").toUpperCase() : text;
+}
+function incomeJobTitle(record: IncomeRecord) {
+  const item = record as IncomeRecordWithJob;
+  return String(item.jobTitle || record.jobName || record.workName || "").split(/\s+[\u00b7\ufffd]\s+/)[0] || "";
+}
+function incomeJobCompany(record: IncomeRecord) {
+  const item = record as IncomeRecordWithJob;
+  const explicitCompany = String(item.jobCompany || "").trim();
+  if (explicitCompany) return explicitCompany;
+  const full = String(record.jobName || record.workName || "");
+  return /\s+[\u00b7\ufffd]\s+/.test(full) ? full.split(/\s+[\u00b7\ufffd]\s+/).slice(1).join(" · ").trim() : "";
+}
+function incomeJobShortLabel(record: IncomeRecord) {
+  const title = incomeJobTitle(record);
+  if (!title) return "Không gắn công việc";
+  const company = shortCompanyName(incomeJobCompany(record));
+  return company ? `${title} · ${company}` : title;
+}
+function incomeJobFullLabel(record: IncomeRecord) {
+  const title = incomeJobTitle(record);
+  if (!title) return "Không gắn công việc";
+  const company = incomeJobCompany(record);
+  return company ? `${title}\n${company}` : title;
+}
 const incomeTypeLabel: Record<IncomeSourceType, string> = { fixed: "Cố định", variable: "Không cố định" };
 const frequencyLabel: Record<IncomeFrequency, string> = { monthly: "Hàng tháng", weekly: "Hàng tuần", yearly: "Hàng năm", one_time: "Một lần", custom: "Tùy chỉnh" };
 type IncomeDraft = { id?: string; memberId: string; jobId: string; incomeDate: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string; };
@@ -1766,6 +1798,7 @@ function IncomeSheetManagement({ user }: { user: AuthUser }) {
   const [activeTab, setActiveTab] = useState<"monthly" | "yearly">("monthly");
   const [loading, setLoading] = useState(true);
   const [activeIncomeMenuId, setActiveIncomeMenuId] = useState<string | null>(null);
+  const [expandedIncomeIds, setExpandedIncomeIds] = useState<Set<string>>(() => new Set());
   
   const load = useCallback(async () => {
     setLoading(true);
@@ -1777,6 +1810,14 @@ function IncomeSheetManagement({ user }: { user: AuthUser }) {
   }, [year]);
   
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  function toggleIncomeDetail(id: string) {
+    setExpandedIncomeIds(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   
   const allRecords = incomeData?.allRecords || [];
   console.log("[income] rows after map", allRecords);
@@ -1984,19 +2025,35 @@ function IncomeSheetManagement({ user }: { user: AuthUser }) {
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5">
-              <tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Loại khoản thu</th><th className="px-4 py-3">Công việc</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr>
+              <tr><th className="w-10 px-4 py-3"></th><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Loại</th><th className="px-4 py-3">Công việc</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3 text-right">Hành động</th></tr>
             </thead>
             <tbody>
-              {records.map(record => <tr key={record.id} className="border-t border-[var(--app-border)] bg-white dark:bg-[var(--app-card)]">
-                <td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td>
-                <td className="px-4 py-3">{record.month}</td>
-                <td className="px-4 py-3">{record.category}</td>
-                <td className="px-4 py-3">{record.jobName || record.workName || "Không gắn công việc"}</td>
-                <td className="px-4 py-3">{record.name}</td>
-                <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td>
-                <td className="px-4 py-3 text-slate-500">{record.note}</td>
-                <td className="px-4 py-3 text-right"><IncomeRecordActionMenu record={record} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => edit(record)} remove={() => remove(record)} /></td>
-              </tr>)}
+              {records.map(record => {
+                const expanded = expandedIncomeIds.has(record.id);
+                return <Fragment key={record.id}>
+                  <tr className="border-t border-[var(--app-border)] bg-white dark:bg-[var(--app-card)]">
+                    <td className="px-4 py-3"><button type="button" onClick={() => toggleIncomeDetail(record.id)} aria-label={expanded ? "Thu gon chi tiet" : "Xem chi tiet"} className="grid size-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5">{expanded ? "^" : "v"}</button></td>
+                    <td className="px-4 py-3">{formatDateVN(record.incomeDate || record.receivedDate)}</td>
+                    <td className="px-4 py-3">{record.month}</td>
+                    <td className="px-4 py-3">{record.category}</td>
+                    <td className="px-4 py-3">{incomeJobShortLabel(record)}</td>
+                    <td className="px-4 py-3">{record.name}</td>
+                    <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td>
+                    <td className="px-4 py-3 text-right"><IncomeRecordInlineActions edit={() => edit(record)} remove={() => remove(record)} /></td>
+                  </tr>
+                  {expanded && <tr className="border-t border-[var(--app-border)] bg-slate-50/70 dark:bg-white/5">
+                    <td className="px-4 py-4" colSpan={8}>
+                      <div className="grid gap-3 text-sm text-slate-500 md:grid-cols-2 lg:grid-cols-4">
+                        <div><p className="text-xs font-bold uppercase text-slate-400">Ngày nhận đầy đủ</p><p className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{formatDateVN(record.incomeDate || record.receivedDate)}</p></div>
+                        <div><p className="text-xs font-bold uppercase text-slate-400">Công việc đầy đủ</p><p className="mt-1 whitespace-pre-line font-semibold text-slate-700 dark:text-slate-200">{incomeJobFullLabel(record)}</p></div>
+                        <div><p className="text-xs font-bold uppercase text-slate-400">Nơi làm</p><p className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{incomeJobCompany(record) || "Không có"}</p></div>
+                        <div><p className="text-xs font-bold uppercase text-slate-400">Ghi chú</p><p className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{record.note || "Không có"}</p></div>
+                        {process.env.NODE_ENV === "development" && <div className="lg:col-span-4"><p className="text-xs font-bold uppercase text-slate-400">ID</p><p className="mt-1 font-mono text-xs text-slate-500">{record.id}</p></div>}
+                      </div>
+                    </td>
+                  </tr>}
+                </Fragment>;
+              })}
             </tbody>
           </table>
           {!records.length && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu thu nhập.</div>}
@@ -2030,7 +2087,24 @@ function IncomeSheetManagement({ user }: { user: AuthUser }) {
       
       {/* Mobile view logic */}
       <div className="space-y-3 p-3 md:hidden">
-        {activeTab === "monthly" && records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.name}</b><p className="text-xs text-slate-400">{formatDateVN(record.incomeDate)} · {record.category}</p></div><div className="flex items-start gap-2"><b className="text-emerald-500">{money(record.amount)}</b><IncomeRecordActionMenu record={record} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => edit(record)} remove={() => remove(record)} /></div></div><p className="mt-1 text-xs text-slate-400">{record.note}</p></div>)}
+        {activeTab === "monthly" && records.map(record => {
+          const expanded = expandedIncomeIds.has(record.id);
+          return <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3">
+            <div className="flex items-start justify-between gap-3">
+              <button type="button" onClick={() => toggleIncomeDetail(record.id)} className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5">{expanded ? "^" : "v"}</button>
+              <div className="min-w-0 flex-1"><b>{record.name}</b><p className="text-xs text-slate-400">{formatDateVN(record.incomeDate || record.receivedDate)} / {record.category} / {incomeJobShortLabel(record)}</p></div>
+              <b className="shrink-0 text-emerald-500">{money(record.amount)}</b>
+            </div>
+            {expanded && <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-500 dark:bg-white/5">
+              <p><b>Ngày nhận:</b> {formatDateVN(record.incomeDate || record.receivedDate)}</p>
+              <p className="mt-1 whitespace-pre-line"><b>Công việc:</b> {incomeJobFullLabel(record)}</p>
+              <p className="mt-1"><b>Nơi làm:</b> {incomeJobCompany(record) || "Không có"}</p>
+              <p className="mt-1"><b>Ghi chú:</b> {record.note || "Không có"}</p>
+              {process.env.NODE_ENV === "development" && <p className="mt-1 font-mono text-xs"><b>ID:</b> {record.id}</p>}
+            </div>}
+            <div className="mt-3 flex justify-end"><IncomeRecordInlineActions edit={() => edit(record)} remove={() => remove(record)} /></div>
+          </div>;
+        })}
         {activeTab === "yearly" && (incomeData?.yearlySummaries || []).map(summary => <div key={summary.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{summary.name}</b><p className="text-xs text-slate-400">Năm {summary.year} · {summary.category}</p></div><div className="flex items-start gap-2"><b className="text-indigo-500">{money(summary.amount)}</b><IncomeRecordActionMenu record={{ id: summary.id } as unknown as IncomeRecord} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => editYearly(summary)} remove={() => removeYearly(summary)} /></div></div><p className="mt-1 text-xs text-slate-400">{summary.note}</p></div>)}
         {(activeTab === "monthly" && !records.length || activeTab === "yearly" && !(incomeData?.yearlySummaries || []).length) && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu.</div>}
       </div>
@@ -2146,13 +2220,20 @@ function LegacyIncomeSheetManagement() {
   return <div className="space-y-5"><div className="grid gap-3 md:grid-cols-[120px_140px_1fr_auto_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select><select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Tất cả thành viên</option>{incomeData?.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select><button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button><button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Tổng cả năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card>{categoryTotals.slice(0, 3).map(item => <Card key={item.category}><p className="text-xs text-slate-400">{item.category}</p><b>{money(item.total)}</b></Card>)}</div><Card><div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div><div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">{monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2"><div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div><span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span></div>)}</div></Card><Card className="overflow-hidden p-0"><div className="border-b border-[var(--app-border)] p-4"><b>Bảng thu nhập theo tháng</b></div><div className="hidden overflow-x-auto md:block"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5"><tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Thành viên</th><th className="px-4 py-3">Nhóm thu</th><th className="px-4 py-3">Tên khoản thu</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr></thead><tbody>{Array.from({ length: 12 }, (_, index) => index + 1).filter(month => monthFilter === "all" || month === Number(monthFilter)).map(month => { const items = records.filter(record => record.month === month); const subtotal = items.filter(record => record.status === "Đã nhận").reduce((sum, record) => sum + record.amount, 0); return <><tr key={`m-${month}`} className="bg-emerald-50/70 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10"><td className="px-4 py-2" colSpan={5}>Tháng {month}</td><td className="px-4 py-2 text-right">{money(subtotal)}</td><td className="px-4 py-2" colSpan={3}>Tổng tháng</td></tr>{items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]"><td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td><td className="px-4 py-3">{record.month}</td><td className="px-4 py-3">{record.memberName}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3">{record.name}</td><td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3">{record.status}</td><td className="px-4 py-3 text-slate-500">{record.note}</td><td className="px-4 py-3 text-right"><button onClick={() => { setEditing(record); setView("edit"); }} className="rounded-lg px-2 py-1 text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="rounded-lg px-2 py-1 text-xs font-bold text-rose-500">Xóa</button></td></tr>)}</>; })}</tbody></table></div><div className="space-y-3 p-3 md:hidden">{records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.name}</b><p className="text-xs text-slate-400">{formatDateVN(record.incomeDate)} · {record.memberName} · {record.category}</p></div><b className="text-emerald-500">{money(record.amount)}</b></div><p className="mt-1 text-xs text-slate-400">{record.status} · {record.note}</p><div className="mt-2 flex gap-2"><button onClick={() => { setEditing(record); setView("edit"); }} className="text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="text-xs font-bold text-rose-500">Xóa</button></div></div>)}</div></Card></div>;
 }
 function IncomeRecordActionMenu({ record, activeId, setActiveId, edit, remove }: { record: IncomeRecord; activeId: string | null; setActiveId: (id: string | null) => void; edit: (record: IncomeRecord) => void; remove: (record: IncomeRecord) => void }) {
-  const open = activeId === record.id;
-  return <div className="relative inline-flex justify-end"><button type="button" aria-label="Mở menu hành động" aria-expanded={open} onClick={() => setActiveId(open ? null : record.id)} className="grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5">⋮</button>{open && <><div className="fixed inset-0 z-10" onClick={() => setActiveId(null)} /><div className="absolute right-0 top-9 z-20 w-28 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 text-left shadow-xl"><button type="button" onClick={() => edit(record)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Sửa</button><button type="button" onClick={() => void remove(record)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button></div></>}</div>;
+  void activeId;
+  void setActiveId;
+  return <IncomeRecordInlineActions edit={() => edit(record)} remove={() => remove(record)} />;
+}
+function IncomeRecordInlineActions({ edit, remove }: { edit: () => void; remove: () => void }) {
+  return <div className="inline-flex items-center justify-end gap-1">
+    <button type="button" onClick={edit} className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-white/5">Sửa</button>
+    <button type="button" onClick={() => void remove()} className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button>
+  </div>;
 }
 function IncomeRecordForm({ record, members: initialMembers, jobs: initialJobs, templates, user, back, saved }: { record: IncomeRecord | null; members: { id: string; name: string }[]; jobs: MemberJob[]; templates: string[]; user?: AuthUser; back: () => void; saved: () => void }) {
   const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
   const emptyRow = (): IncomeDraft => ({ memberId: user?.memberId || initialMembers[0]?.id || "", jobId: "", incomeDate: today, category: "Lương", name: "Lương CB", amount: "", status: "Đã nhận", note: "" });
-  const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || user?.memberId || initialMembers[0]?.id || "", jobId: record.jobId || record.workId || "", incomeDate: record.incomeDate, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
+  const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || user?.memberId || initialMembers[0]?.id || "", jobId: record.jobId || record.workId || "", incomeDate: record.incomeDate || record.receivedDate || today, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
   const [otherMember, setOtherMember] = useState(() => record ? record.memberId !== user?.memberId : false);
   
   const userRole = String(user?.role || "");
@@ -2308,7 +2389,7 @@ function IncomeManagement() {
   if (view.mode === "edit") return <IncomeSourceFullPage source={view.source} members={members} back={() => setView({ mode: "list" })} saved={() => { setView({ mode: "list" }); void load(); }} />;
   if (view.mode === "view") return <IncomeSourceFullPageDetail source={view.source} back={() => setView({ mode: "list" })} edit={() => setView({ mode: "edit", source: view.source })} remove={() => void remove(view.source)} />;
   return <div className="space-y-5">
-    <div className="grid gap-3 md:grid-cols-[120px_1fr_180px_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Tất cả thành viên</option>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select><select className={filterClass} value={typeFilter} onChange={event => setTypeFilter(event.target.value as IncomeSourceType | "all")}><option value="all">Tất cả nguồn thu</option><option value="fixed">Cố định</option><option value="variable">Không cố định</option></select><button onClick={() => setView({ mode: "new" })} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm nguồn thu</button></div>
+    <div className="grid gap-3 md:grid-cols-[120px_1fr_180px_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Tất cả thành viên</option>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select><select className={filterClass} value={typeFilter} onChange={event => setTypeFilter(event.target.value as IncomeSourceType | "all")}><option value="all">Tất cả nguồn thu</option><option value="fixed">Cố định</option><option value="variable">Không có định</option></select><button onClick={() => setView({ mode: "new" })} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm nguồn thu</button></div>
     <Card className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><b>Hiển thị thành viên</b><p className="text-xs text-slate-400">{members.length - hiddenMembers.size}/{members.length} đang hiển thị</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setHiddenMembers(new Set())} className="rounded-lg border border-emerald-200 px-3 py-2 text-xs font-bold text-emerald-600">Hiện tất cả</button><button onClick={() => setHiddenMembers(new Set(members.map(member => member.id)))} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-500 dark:border-white/10">Ẩn tất cả</button></div></div>{manyMembers && <select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Dropdown chọn thành viên</option>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select>}<div className={manyMembers ? "max-h-32 overflow-auto rounded-lg border border-[var(--app-border)] p-2" : ""}><div className="flex flex-wrap gap-2">{members.map(member => <button key={member.id} onClick={() => toggleMember(member.id)} className={`rounded-full border px-3 py-1.5 text-xs font-bold ${hiddenMembers.has(member.id) ? "border-slate-200 text-slate-400 opacity-60 dark:border-white/10" : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"}`}>{member.name}</button>)}</div></div></Card>
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Tổng thu năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card><Card><p className="text-xs text-slate-400">Thu cố định/tháng</p><b>{money(fixedMonthly)}</b></Card><Card><p className="text-xs text-slate-400">Thu không cố định</p><b>{money(variableTotal)}</b></Card><Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b>{money(totalYear / 12)}</b></Card></div>
     <Card><div className="mb-4 flex items-center justify-between"><b>Biểu đồ {year}</b><span className="text-xs text-slate-400">{records.length} dòng thu</span></div><div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">{monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2"><div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div title={money(item.total)} className="w-full rounded-md bg-emerald-500 transition-all" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div><span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span></div>)}</div></Card>
@@ -2330,7 +2411,7 @@ function IncomeSourceFullPage({ source, members, back, saved }: { source: Income
     if (!response.ok) { alert(result?.error || "Không thể lưu nguồn thu."); return; }
     saved();
   }
-  return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại danh sách thu nhập</button><div><h2 className="text-2xl font-bold">{existing ? "Sửa nguồn thu" : "Thêm nguồn thu"}</h2><p className="mt-1 text-sm text-slate-400">Nhập nhanh và giữ liên kết với thành viên.</p></div><form onSubmit={submit} className="space-y-5"><Card><div className="grid gap-4 md:grid-cols-2"><Field label="Thành viên"><select required className={inputClass} value={form.memberId} onChange={event => set("memberId", event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Tên nguồn thu"><input required className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Loại"><select className={inputClass} value={form.type} onChange={event => set("type", event.target.value as IncomeSourceType)}><option value="fixed">Cố định</option><option value="variable">Không cố định</option></select></Field><Field label="Số tiền"><input required min="0" type="number" className={inputClass} value={form.amount} onChange={event => set("amount", event.target.value)} /></Field><Field label="Tần suất"><select className={inputClass} value={form.frequency} onChange={event => set("frequency", event.target.value as IncomeFrequency)}>{Object.entries(frequencyLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label="Ngày nhận / ngày bắt đầu"><DateVNInput required value={form.receivedDate} onChange={value => set("receivedDate", value)} /></Field><div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={4} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={event => set("active", event.target.checked)} /> Đang dùng</label>{!existing && form.type === "variable" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.createRecord} onChange={event => set("createRecord", event.target.checked)} /> Ghi nhận khoản thu này ngay</label>}</div></Card><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
+  return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại danh sách thu nhập</button><div><h2 className="text-2xl font-bold">{existing ? "Sửa nguồn thu" : "Thêm nguồn thu"}</h2><p className="mt-1 text-sm text-slate-400">Nhập nhanh và giữ liên kết với thành viên.</p></div><form onSubmit={submit} className="space-y-5"><Card><div className="grid gap-4 md:grid-cols-2"><Field label="Thành viên"><select required className={inputClass} value={form.memberId} onChange={event => set("memberId", event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Tên nguồn thu"><input required className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Loại"><select className={inputClass} value={form.type} onChange={event => set("type", event.target.value as IncomeSourceType)}><option value="fixed">Cố định</option><option value="variable">Không có định</option></select></Field><Field label="Số tiền"><input required min="0" type="number" className={inputClass} value={form.amount} onChange={event => set("amount", event.target.value)} /></Field><Field label="Tần suất"><select className={inputClass} value={form.frequency} onChange={event => set("frequency", event.target.value as IncomeFrequency)}>{Object.entries(frequencyLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label="Ngày nhận / ngày bắt đầu"><DateVNInput required value={form.receivedDate} onChange={value => set("receivedDate", value)} /></Field><div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={4} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={event => set("active", event.target.checked)} /> Đang dùng</label>{!existing && form.type === "variable" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.createRecord} onChange={event => set("createRecord", event.target.checked)} /> Ghi nhận khoản thu này ngay</label>}</div></Card><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
 }
 function IncomeSourceFullPageDetail({ source, back, edit, remove }: { source: IncomeSource; back: () => void; edit: () => void; remove: () => void }) {
   return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại danh sách thu nhập</button><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-bold">{source.name}</h2><p className="mt-1 text-sm text-slate-400">{source.memberName} · {incomeTypeLabel[source.type]} · {source.active ? "Đang dùng" : "Đã tắt"}</p></div><div className="flex gap-2"><button onClick={edit} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-white">Sửa</button><button onClick={remove} className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-bold text-rose-500">Xóa</button></div></div><div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Số tiền</p><b className="text-emerald-500">{money(source.amount)}</b></Card><Card><p className="text-xs text-slate-400">Tần suất</p><b>{frequencyLabel[source.frequency]}</b></Card><Card><p className="text-xs text-slate-400">Ngày nhận</p><b>{source.receivedDate || source.startDate || "Chưa cập nhật"}</b></Card><Card><p className="text-xs text-slate-400">Trạng thái</p><b>{source.active ? "Đang dùng" : "Đã tắt"}</b></Card></div><Card><b>Ghi chú</b><p className="mt-2 text-sm text-slate-500 dark:text-slate-300">{source.note || "Không có ghi chú."}</p></Card></div>;
