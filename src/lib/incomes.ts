@@ -77,7 +77,7 @@ export function toIncomeYearlySummary(row: Record<string, unknown>): IncomeYearl
 }
 
 export function toIncomeRecord(row: Record<string, unknown>): IncomeRecordRow {
-  const incomeDate = dateOnly(row.income_date || row.received_date);
+  const incomeDate = dateOnly(row.received_date || row.income_date);
   const jobId = String(row.job_id || row.work_id || "");
   const jobName = String(row.job_name || row.work_name || "");
   return {
@@ -92,8 +92,8 @@ export function toIncomeRecord(row: Record<string, unknown>): IncomeRecordRow {
     workSource: String(row.work_source || ""),
     incomeDate,
     receivedDate: incomeDate,
-    year: Number(row.year || incomeDate.slice(0, 4) || 0),
-    month: Number(row.month || incomeDate.slice(5, 7) || 0),
+    year: Number(incomeDate.slice(0, 4) || row.year || 0),
+    month: Number(incomeDate.slice(5, 7) || row.month || 0),
     category: category(row.category),
     name: String(row.name || ""),
     amount: Number(row.amount || 0),
@@ -102,6 +102,11 @@ export function toIncomeRecord(row: Record<string, unknown>): IncomeRecordRow {
     createdAt: String(row.created_at || ""),
     updatedAt: String(row.updated_at || ""),
   };
+}
+
+function isReceivedStatusValue(value: unknown) {
+  const text = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
+  return !text || !text.includes("chua");
 }
 
 function toMemberJob(row: Record<string, unknown>): MemberJob {
@@ -132,10 +137,10 @@ export async function fetchIncomeData(year: number) {
       FROM income_records r
       LEFT JOIN members m ON m.id = r.member_id AND m.deleted_at IS NULL
       LEFT JOIN member_jobs j ON j.id = COALESCE(r.job_id, r.work_id)
-      WHERE r.year = $1
-      ORDER BY r.income_date ASC, r.created_at ASC`, [year]),
+      WHERE r.year = $1 OR CAST(EXTRACT(YEAR FROM COALESCE(r.received_date, r.income_date)) AS INTEGER) = $1
+      ORDER BY COALESCE(r.received_date, r.income_date) ASC, r.created_at ASC`, [year]),
     pool.query(`SELECT * FROM income_yearly_summaries ORDER BY year DESC, created_at ASC`),
-    pool.query(`SELECT year, SUM(amount) as total FROM income_records WHERE status='Đã nhận' GROUP BY year`),
+    pool.query(`SELECT COALESCE(CAST(EXTRACT(YEAR FROM COALESCE(received_date, income_date)) AS INTEGER), year) as year, SUM(amount) as total FROM income_records GROUP BY COALESCE(CAST(EXTRACT(YEAR FROM COALESCE(received_date, income_date)) AS INTEGER), year)`),
     pool.query(`SELECT id, member_id, title, company, start_year, end_year, status, note, created_at, updated_at FROM member_jobs ORDER BY start_year DESC NULLS LAST, created_at DESC`),
   ]);
 
@@ -157,7 +162,7 @@ function buildIncomeStats(year: number, records: IncomeRecordRow[], yearlySummar
   const byMember: Record<string, { memberId: string; memberName: string; total: number }> = {};
   const byCategory: Record<IncomeCategory, number> = { "Lương": 0, "Thưởng": 0, "Khác": 0 };
   for (const record of records) {
-    if (record.year !== year || record.status !== "Đã nhận") continue;
+    if (record.year !== year || !isReceivedStatusValue(record.status)) continue;
     monthlyTotals[record.month - 1].total += record.amount;
     byCategory[record.category] += record.amount;
     byMember[record.memberId] = byMember[record.memberId] || { memberId: record.memberId, memberName: record.memberName, total: 0 };

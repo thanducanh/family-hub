@@ -264,7 +264,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     screen === "dashboard" ? <Dashboard data={data} go={go} notifications={notifications} user={user} /> :
     screen === "members" ? <Members data={data} user={user} update={update} /> :
     screen === "tasks" ? <Tasks data={data} update={update} open={setEditor} t={t} /> :
-    screen === "finance" ? <Finance data={data} open={setEditor} t={t} /> :
+    screen === "finance" ? <Finance data={data} open={setEditor} t={t} user={user} /> :
     screen === "chat" ? <ComingSoonModule title={t("chat")} /> :
     screen === "calendar" ? <Calendar data={data} user={user} /> :
     screen === "notes" ? <Notes data={data} open={setEditor} t={t} /> :
@@ -1441,13 +1441,12 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
       )}</div></div></div>;
 }
 const jobStatuses: { value: MemberJobStatus; label: string }[] = [{ value: "active", label: "Đang làm" }, { value: "ended", label: "Đã nghỉ" }];
-const receivedStatus: IncomeStatus = "Đã nhận";
 function incomeJobId(record: IncomeRecord) { return record.jobId || record.workId || ""; }
 function jobIncomeForMonth(job: MemberJob, records: IncomeRecord[], month: number) {
-  return records.filter(record => incomeJobId(record) === job.id && record.month === month && record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
+  return records.filter(record => incomeJobId(record) === job.id && record.month === month && isReceivedIncome(record)).reduce((sum, record) => sum + record.amount, 0);
 }
 function jobYearTotal(job: MemberJob, records: IncomeRecord[]) {
-  return records.filter(record => incomeJobId(record) === job.id && record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
+  return records.filter(record => incomeJobId(record) === job.id && isReceivedIncome(record)).reduce((sum, record) => sum + record.amount, 0);
 }
 function jobYearRange(job: MemberJob) {
   return `${job.startYear || "?"} - ${job.status === "active" ? "Nay" : job.endYear || "?"}`;
@@ -1548,6 +1547,7 @@ function ConfirmMemberDelete({ member, warning, close, remove }: { member: Membe
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-5" onMouseDown={close}><div className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-6 shadow-2xl" onMouseDown={event => event.stopPropagation()}><h2 className="text-lg font-semibold">Ẩn thành viên?</h2><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Thành viên <b>{member.nickname || member.name}</b> sẽ được ẩn khỏi danh sách. Dữ liệu lịch sử không bị xóa.</p>{warning && <p className="mt-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-600 dark:bg-orange-400/10">{warning}</p>}<div className="mt-6 flex justify-end gap-3"><button onClick={close} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button onClick={remove} className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Xác nhận ẩn</button></div></div></div>;
 }
 type ListProps = { data: AppData; open: (editor: Editor) => void; t: ReturnType<typeof translator> };
+type FinanceProps = ListProps & { user: AuthUser };
 type TaskProps = ListProps & { update: (data: AppData) => void };
 function EditButton({ onClick }: { onClick: () => void }) { return <button onClick={onClick} className="rounded-xl px-3 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Sửa</button>; }
 function TaskRow({ task, toggle, edit }: { task: Task; toggle?: () => void; edit?: () => void }) { const overdue = isOverdue(task); return <Card className="mb-3 flex items-center gap-3"><button onClick={toggle} className={`grid size-7 shrink-0 place-items-center rounded-full border ${task.status === "done" ? "border-emerald-400 bg-emerald-400 text-white" : task.status === "doing" ? "border-orange-400 bg-orange-100 text-orange-500" : "border-slate-200"}`}>{task.status === "done" && icons.check}</button><div className="min-w-0 flex-1"><b className={task.status === "done" ? "line-through opacity-50" : ""}>{task.title}</b><p className={`text-xs ${overdue ? "text-red-500" : "text-slate-400"}`}>{task.assignee} · {task.dueDate || task.due} · {overdue ? "Quá hạn" : task.status === "todo" ? "Chờ làm" : task.status === "doing" ? "Đang làm" : "Hoàn thành"} · {task.priority === "high" ? "Cao" : task.priority === "low" ? "Thấp" : "Bình thường"}</p></div>{edit && <EditButton onClick={edit} />}</Card>; }
@@ -1632,7 +1632,7 @@ function FinanceOverview() {
   );
 }
 
-function Finance({ data, open, t }: ListProps) {
+function Finance({ data, open, t, user }: FinanceProps) {
   const [tab, setTab] = useState<"overview" | "income" | "expense">("overview");
   return (
     <>
@@ -1642,7 +1642,7 @@ function Finance({ data, open, t }: ListProps) {
         <button onClick={() => setTab("expense")} className={`rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button>
       </div>
       {tab === "overview" && <FinanceOverview />}
-      {tab === "income" && <IncomeSheetManagement />}
+      {tab === "income" && <IncomeSheetManagement user={user} />}
       {tab === "expense" && <ExpensePreview data={data} open={open} t={t} />}
     </>
   );
@@ -1658,9 +1658,49 @@ type IncomeApiData = {
   yearlyComparison?: { year: number; total: number }[];
   stats?: { byCategory?: Record<string, number> };
 };
+const emptyIncomeApiData: IncomeApiData = { members: [], sources: [], jobs: [], sourceTemplates: [], records: [], allRecords: [], yearlySummaries: [], yearlyComparison: [], stats: { byCategory: {} } };
+function normalizeIncomeApiData(value: unknown): IncomeApiData {
+  if (Array.isArray(value)) return { ...emptyIncomeApiData, records: value as IncomeRecord[], allRecords: value as IncomeRecord[] };
+  if (!value || typeof value !== "object") return { ...emptyIncomeApiData };
+  const data = value as Partial<IncomeApiData>;
+  return {
+    ...emptyIncomeApiData,
+    ...data,
+    members: Array.isArray(data.members) ? data.members : [],
+    sources: Array.isArray(data.sources) ? data.sources : [],
+    jobs: Array.isArray(data.jobs) ? data.jobs : [],
+    sourceTemplates: Array.isArray(data.sourceTemplates) ? data.sourceTemplates : [],
+    records: Array.isArray(data.records) ? data.records : Array.isArray(data.allRecords) ? data.allRecords : [],
+    allRecords: Array.isArray(data.allRecords) ? data.allRecords : Array.isArray(data.records) ? data.records : [],
+    yearlySummaries: Array.isArray(data.yearlySummaries) ? data.yearlySummaries : [],
+    yearlyComparison: Array.isArray(data.yearlyComparison) ? data.yearlyComparison : [],
+  };
+}
+async function fetchIncomeApiData(year: string): Promise<IncomeApiData> {
+  try {
+    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
+    const result = await readJsonSafe<unknown>(response);
+    if (!response.ok) {
+      if (process.env.NODE_ENV === "development") console.warn("[income] load fallback", { status: response.status, body: result });
+      return { ...emptyIncomeApiData };
+    }
+    const payload = result && typeof result === "object" && "data" in result ? result.data : result;
+    console.log("[income] GET raw", payload);
+    const data = normalizeIncomeApiData(payload);
+    const rows = Array.isArray(data.allRecords) ? data.allRecords : [];
+    console.log("[income] rows after map", rows);
+    return data;
+  } catch (error) {
+    if (process.env.NODE_ENV === "development") console.warn("[income] load fallback", error);
+    return { ...emptyIncomeApiData };
+  }
+}
 const incomeCategories: IncomeCategory[] = ["Lương", "Thưởng", "Khác"];
-const incomeStatuses: IncomeStatus[] = ["Đã nhận", "Chưa nhận"];
 const incomeTemplates = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền tồn tháng trước", "Khác"];
+function isReceivedIncome(record: IncomeRecord) {
+  const value = String(record.status || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
+  return !value || !value.includes("chua");
+}
 const incomeTypeLabel: Record<IncomeSourceType, string> = { fixed: "Cố định", variable: "Không cố định" };
 const frequencyLabel: Record<IncomeFrequency, string> = { monthly: "Hàng tháng", weekly: "Hàng tuần", yearly: "Hàng năm", one_time: "Một lần", custom: "Tùy chỉnh" };
 type IncomeDraft = { id?: string; memberId: string; jobId: string; incomeDate: string; category: IncomeCategory; name: string; amount: string; status: IncomeStatus; note: string; };
@@ -1711,7 +1751,8 @@ function YearlyTooltip({ active, payload }: any) {
   return null;
 }
 
-function IncomeSheetManagement() {
+
+function IncomeSheetManagement({ user }: { user: AuthUser }) {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [monthFilter, setMonthFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState<IncomeCategory | "all">("all");
@@ -1725,15 +1766,14 @@ function IncomeSheetManagement() {
   const [activeTab, setActiveTab] = useState<"monthly" | "yearly">("monthly");
   const [loading, setLoading] = useState(true);
   const [activeIncomeMenuId, setActiveIncomeMenuId] = useState<string | null>(null);
-  const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set());
   
   const load = useCallback(async () => {
     setLoading(true);
-    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
-    const result = await readJsonSafe<{ data?: IncomeApiData; error?: string }>(response);
-    if (response.ok && result?.data) setIncomeData(result.data);
-    else alert(result?.error || "Không thể tải dữ liệu thu nhập.");
-    setLoading(false);
+    try {
+      setIncomeData(await fetchIncomeApiData(year));
+    } finally {
+      setLoading(false);
+    }
   }, [year]);
   
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
@@ -1741,6 +1781,7 @@ function IncomeSheetManagement() {
   const allRecords = incomeData?.allRecords || [];
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const records = allRecords.filter(record => (monthFilter === "all" || record.month === Number(monthFilter)) && (categoryFilter === "all" || record.category === categoryFilter) && (!normalizedQuery || `${record.name} ${record.note} ${record.memberName || ""}`.toLocaleLowerCase().includes(normalizedQuery)));
+  console.log("[income] rows after filter", records);
   records.sort((a, b) => {
     const dateA = new Date(a.incomeDate).getTime();
     const dateB = new Date(b.incomeDate).getTime();
@@ -1748,9 +1789,8 @@ function IncomeSheetManagement() {
     return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
   });
   
-  const receivedStatus = incomeStatuses[0];
   const monthlyTotals = Array.from({ length: 12 }, (_, index) => {
-    const monthRecords = allRecords.filter(record => record.month === index + 1 && record.status === receivedStatus);
+    const monthRecords = allRecords.filter(record => record.month === index + 1 && isReceivedIncome(record));
     const total = monthRecords.reduce((sum, record) => sum + record.amount, 0);
     const details = monthRecords.reduce((acc, record) => {
       acc[record.name] = (acc[record.name] || 0) + record.amount;
@@ -1758,7 +1798,7 @@ function IncomeSheetManagement() {
     }, {} as Record<string, number>);
     return { month: index + 1, monthName: `Tháng ${index + 1}`, total, details };
   });
-  const visibleMonthTotal = records.filter(record => record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
+  const visibleMonthTotal = allRecords.filter(record => (monthFilter === "all" || record.month === Number(monthFilter)) && isReceivedIncome(record)).reduce((sum, record) => sum + record.amount, 0);
   
   // Tổng năm = tổng records + tổng yearlySummaries
   const currentYearSummaries = (incomeData?.yearlySummaries || []).filter(s => String(s.year) === year);
@@ -1767,10 +1807,11 @@ function IncomeSheetManagement() {
   
   // Category totals bao gồm cả yearlySummaries
   const categoryTotals = incomeCategories.map(category => {
-    const recordTotal = allRecords.filter(record => record.category === category && record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
+    const recordTotal = allRecords.filter(record => record.category === category && isReceivedIncome(record)).reduce((sum, record) => sum + record.amount, 0);
     const summaryTotal = currentYearSummaries.filter(s => s.category === category).reduce((sum, s) => sum + s.amount, 0);
     return { category, total: recordTotal + summaryTotal };
   });
+  const selectedCategoryTotal = categoryFilter === "all" ? allRecords.filter(isReceivedIncome).reduce((sum, record) => sum + record.amount, 0) + yearlySummariesTotal : categoryTotals.find(item => item.category === categoryFilter)?.total || 0;
   
   const renderedMonths = Array.from(new Set(records.map(record => record.month))).sort((left, right) => left - right);
   
@@ -1794,15 +1835,6 @@ function IncomeSheetManagement() {
     if (d === 0) return <p className="mt-1 text-[10px] text-slate-400">Không đổi so với năm trước</p>;
     const percent = prev === 0 ? "100%" : (Math.abs(d) / Math.abs(prev) * 100).toFixed(1) + "%";
     return <p className={`mt-1 text-[10px] font-bold ${d > 0 ? "text-emerald-500" : "text-rose-500"}`}>{d > 0 ? "↑" : "↓"} {money(Math.abs(d))} ({percent})</p>;
-  }
-  
-  function toggleMonth(month: number) {
-    setExpandedMonths(current => {
-      const next = new Set(current);
-      if (next.has(month)) next.delete(month);
-      else next.add(month);
-      return next;
-    });
   }
   
   async function remove(record: IncomeRecord) {
@@ -1843,7 +1875,7 @@ function IncomeSheetManagement() {
       items.forEach(record => {
         detailedData.push([formatDateVN(record.incomeDate), String(record.month), String(record.year), record.category, record.name, String(record.amount), record.note]);
       });
-      const subtotal = items.filter(record => record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
+      const subtotal = items.filter(record => isReceivedIncome(record)).reduce((sum, record) => sum + record.amount, 0);
       detailedData.push([`Tổng tháng ${month}`, "", "", "", "", String(subtotal), ""]);
     });
     
@@ -1872,7 +1904,7 @@ function IncomeSheetManagement() {
     XLSX.writeFile(wb, `thu-nhap-${year}.xlsx`);
   }
   
-  if (view === "new" || view === "edit") return <IncomeRecordForm record={editing} members={incomeData?.members || []} jobs={incomeData?.jobs || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
+  if (view === "new" || view === "edit") return <IncomeRecordForm record={editing} members={incomeData?.members || []} jobs={incomeData?.jobs || []} templates={incomeData?.sourceTemplates || incomeTemplates} user={user} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
   if (view === "yearly-new" || view === "yearly-edit") return <YearlyIncomeForm record={editingYearly} back={() => { setView("list"); setEditingYearly(null); }} saved={() => { setView("list"); setEditingYearly(null); void load(); }} />;
   
   return <div className="space-y-5">
@@ -1890,7 +1922,7 @@ function IncomeSheetManagement() {
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Card><p className="text-xs text-slate-400">Tổng thu nhập năm</p><b className="text-emerald-500">{money(totalYear)}</b>{renderCompare(totalYear, prevYearTotal)}</Card>
       <Card><p className="text-xs text-slate-400">Tổng thu tháng</p><b>{money(visibleMonthTotal)}</b>{renderCompare(visibleMonthTotal, undefined)}</Card>
-      <Card><p className="text-xs text-slate-400">Thu theo loại</p><b>{money(categoryTotals.find(item => item.category === categoryFilter)?.total || visibleMonthTotal)}</b>{renderCompare(categoryTotals.find(item => item.category === categoryFilter)?.total || visibleMonthTotal, undefined)}</Card>
+      <Card><p className="text-xs text-slate-400">Thu theo loại</p><b>{money(selectedCategoryTotal)}</b>{renderCompare(selectedCategoryTotal, undefined)}</Card>
       <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b>{money(totalYear / 12)}</b>{renderCompare(totalYear / 12, prevYearTotal ? prevYearTotal / 12 : undefined)}</Card>
     </div>
 
@@ -1951,35 +1983,19 @@ function IncomeSheetManagement() {
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5">
-              <tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Loại khoản thu</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr>
+              <tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Loại khoản thu</th><th className="px-4 py-3">Công việc</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr>
             </thead>
             <tbody>
-              {renderedMonths.map(month => {
-                const items = records.filter(record => record.month === month);
-                const subtotal = items.filter(record => record.status === receivedStatus).reduce((sum, record) => sum + record.amount, 0);
-                const isExpanded = expandedMonths.has(month);
-                return <Fragment key={`m-${month}`}>
-                  <tr className="cursor-pointer border-t border-[var(--app-border)] bg-slate-50/50 hover:bg-slate-100 dark:bg-white/5 dark:hover:bg-white/10" onClick={() => toggleMonth(month)}>
-                    <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200" colSpan={4}>
-                      Tháng {month} <span className="ml-2 text-xs font-normal text-slate-400">({items.length} khoản thu)</span>
-                      <span className="ml-2 inline-block w-4 text-center text-[10px] text-slate-400">{isExpanded ? "▲" : "▼"}</span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(subtotal)}</td>
-                    <td className="px-4 py-3" colSpan={2}></td>
-                  </tr>
-                  {isExpanded && items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)] bg-white dark:bg-[var(--app-card)]">
-                    <td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td>
-                    <td className="px-4 py-3">{record.month}</td>
-                    <td className="px-4 py-3">{record.category}</td>
-                    <td className="px-4 py-3">{record.name}</td>
-                    <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td>
-                    <td className="px-4 py-3 text-slate-500">{record.note}</td>
-                    <td className="px-4 py-3 text-right">
-                      <IncomeRecordActionMenu record={record} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => edit(record)} remove={() => remove(record)} />
-                    </td>
-                  </tr>)}
-                </Fragment>;
-              })}
+              {records.map(record => <tr key={record.id} className="border-t border-[var(--app-border)] bg-white dark:bg-[var(--app-card)]">
+                <td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td>
+                <td className="px-4 py-3">{record.month}</td>
+                <td className="px-4 py-3">{record.category}</td>
+                <td className="px-4 py-3">{record.jobName || record.workName || "Không gắn công việc"}</td>
+                <td className="px-4 py-3">{record.name}</td>
+                <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td>
+                <td className="px-4 py-3 text-slate-500">{record.note}</td>
+                <td className="px-4 py-3 text-right"><IncomeRecordActionMenu record={record} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => edit(record)} remove={() => remove(record)} /></td>
+              </tr>)}
             </tbody>
           </table>
           {!records.length && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu thu nhập.</div>}
@@ -2037,7 +2053,7 @@ function YearlyIncomeForm({ record, back, saved }: { record: IncomeYearlySummary
     const payload = { ...draft, amount: Number(rawAmount) };
     const response = await fetch(record ? `/api/incomes-yearly?id=${encodeURIComponent(record.id)}` : "/api/incomes-yearly", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record ? payload : { rows: [payload] }) });
     const result = await readJsonSafe<{ error?: string }>(response);
-    if (!response.ok) { alert(result?.error || "Không thể lưu thu nhập."); return; }
+    if (!response.ok) { alert(result?.error || "Kh?ng th? l?u thu nh?p."); return; }
     saved();
   }
   
@@ -2132,37 +2148,113 @@ function IncomeRecordActionMenu({ record, activeId, setActiveId, edit, remove }:
   const open = activeId === record.id;
   return <div className="relative inline-flex justify-end"><button type="button" aria-label="Mở menu hành động" aria-expanded={open} onClick={() => setActiveId(open ? null : record.id)} className="grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5">⋮</button>{open && <><div className="fixed inset-0 z-10" onClick={() => setActiveId(null)} /><div className="absolute right-0 top-9 z-20 w-28 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 text-left shadow-xl"><button type="button" onClick={() => edit(record)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-white/5">Sửa</button><button type="button" onClick={() => void remove(record)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button></div></>}</div>;
 }
-function IncomeRecordForm({ record, members, jobs, templates, back, saved }: { record: IncomeRecord | null; members: { id: string; name: string }[]; jobs: MemberJob[]; templates: string[]; back: () => void; saved: () => void }) {
+function IncomeRecordForm({ record, members: initialMembers, jobs: initialJobs, templates, user, back, saved }: { record: IncomeRecord | null; members: { id: string; name: string }[]; jobs: MemberJob[]; templates: string[]; user?: AuthUser; back: () => void; saved: () => void }) {
   const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-  const emptyRow = (): IncomeDraft => ({ memberId: members[0]?.id || "", jobId: "", incomeDate: today, category: "Lương", name: "Lương CB", amount: "", status: "Đã nhận", note: "" });
-  const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || members[0]?.id || "", jobId: record.jobId || record.workId || "", incomeDate: record.incomeDate, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
-  const memberJobs = jobs.filter(job => !draft.memberId || job.memberId === draft.memberId);
+  const emptyRow = (): IncomeDraft => ({ memberId: user?.memberId || initialMembers[0]?.id || "", jobId: "", incomeDate: today, category: "Lương", name: "Lương CB", amount: "", status: "Đã nhận", note: "" });
+  const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || user?.memberId || initialMembers[0]?.id || "", jobId: record.jobId || record.workId || "", incomeDate: record.incomeDate, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
+  const [otherMember, setOtherMember] = useState(() => record ? record.memberId !== user?.memberId : false);
+  
+  const userRole = String(user?.role || "");
+  const isAdmin = userRole === "full_access" || userRole === "system_admin" || userRole === "admin";
+  const currentMemberId = user?.memberId || "";
+  const effectiveMemberId = (isAdmin && otherMember) ? draft.memberId : currentMemberId;
+  
+  const [apiMembers, setApiMembers] = useState<{ id: string; name: string }[]>(initialMembers);
+  useEffect(() => {
+    let active = true;
+    if (isAdmin && otherMember) {
+      fetch("/api/members").then(res => res.json()).then(data => {
+        if (active && data.ok && Array.isArray(data.data)) setApiMembers(data.data);
+      });
+    }
+    return () => { active = false; };
+  }, [isAdmin, otherMember]);
+
+  const [apiJobs, setApiJobs] = useState<MemberJob[]>(initialJobs);
+  useEffect(() => {
+    if (!effectiveMemberId) {
+      queueMicrotask(() => setApiJobs([]));
+      return;
+    }
+    let active = true;
+    fetch(`/api/member-jobs?memberId=${effectiveMemberId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (active && data.ok && Array.isArray(data.data)) setApiJobs(data.data);
+      });
+    return () => { active = false; };
+  }, [effectiveMemberId]);
+
+  const activeJobs = apiJobs.filter(job => job.status === "active" || job.endYear === null || job.id === draft.jobId);
   
   function patch(value: Partial<IncomeDraft>) { setDraft(current => ({ ...current, ...value })); }
-  function selectMember(memberId: string) { setDraft(current => ({ ...current, memberId, jobId: jobs.some(job => job.id === current.jobId && job.memberId === memberId) ? current.jobId : "" })); }
+  function selectMember(memberId: string) { setDraft(current => ({ ...current, memberId, jobId: "" })); }
   function selectJob(jobId: string) {
-    const job = jobs.find(item => item.id === jobId);
-    setDraft(current => ({ ...current, jobId, memberId: job?.memberId || current.memberId, name: jobId && job ? (current.name || job.title) : current.name }));
+    const job = apiJobs.find(item => item.id === jobId);
+    setDraft(current => ({ ...current, jobId, name: jobId && job && job.title !== "Khác" ? (current.name || job.title) : current.name }));
   }
   
+  function handleOtherMemberChange(checked: boolean) {
+    setOtherMember(checked);
+    setDraft(current => ({ ...current, memberId: checked ? "" : currentMemberId, jobId: "" }));
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const rawAmount = String(draft.amount).replace(/\D/g, "");
-    if (!rawAmount) { alert("Vui lòng nhập số tiền hợp lệ."); return; }
-    const payload = { ...draft, amount: Number(rawAmount), status: "Đã nhận" as IncomeStatus };
+    const amount = Number(rawAmount);
+    if (!Number.isFinite(amount) || amount <= 0) { alert("Vui lòng nhập số tiền hợp lệ."); return; }
+    const content = draft.name.trim();
+    if (!content) { alert("Vui lòng nhập nội dung khoản thu."); return; }
+    if (!effectiveMemberId) { alert("Chưa xác định thành viên nhận thu nhập."); return; }
+    
+    const payloadJobId = draft.jobId === "other" ? null : (draft.jobId || null);
+    const payload = { memberId: effectiveMemberId, jobId: payloadJobId, category: draft.category, name: content, content, amount, receivedDate: draft.incomeDate, note: draft.note.trim() || null };
+    console.log("[submit income] payload:", payload);
     const response = await fetch(record ? `/api/incomes?id=${encodeURIComponent(record.id)}` : "/api/incomes", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record ? payload : { rows: [payload] }) });
-    const result = await readJsonSafe<{ error?: string }>(response);
-    if (!response.ok) { alert(result?.error || "Không thể lưu thu nhập."); return; }
+    const result = await readJsonSafe<{ error?: string; details?: string }>(response);
+    if (!response.ok) {
+      console.error("[income save] ERROR response", { status: response.status, body: result });
+      const errorMsg = result?.error || "Không thể lưu thu nhập.";
+      const detailMsg = result?.details ? `\nLỗi: ${result.details}` : "";
+      alert(errorMsg + detailMsg);
+      return;
+    }
+    alert("Đã lưu thu nhập");
     saved();
   }
   
   const rawAmountStr = String(draft.amount).replace(/\D/g, "");
-  const formattedAmount = rawAmountStr ? rawAmountStr.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + " đ" : "";
+  const amountPreview = rawAmountStr ? money(Number(rawAmountStr)) : "";
   function handleAmountChange(e: React.ChangeEvent<HTMLInputElement>) {
     patch({ amount: e.target.value.replace(/\D/g, "") });
   }
 
-  return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button><div><h2 className="text-2xl font-bold">{record ? "Sửa khoản thu" : "Thêm thu nhập"}</h2><p className="mt-1 text-sm text-slate-400">Khoản thu sẽ được ghi nhận vào bảng thu nhập.</p></div><form onSubmit={submit} className="space-y-4"><Card><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><Field label="Thành viên"><select required className={inputClass} value={draft.memberId} onChange={event => selectMember(event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Công việc liên quan"><select className={inputClass} value={draft.jobId} onChange={event => selectJob(event.target.value)}><option value="">Không gắn công việc</option>{memberJobs.map(job => <option key={job.id} value={job.id}>{job.title} · {job.company}</option>)}</select></Field><Field label="Ngày nhận"><DateVNInput required value={draft.incomeDate} onChange={value => patch({ incomeDate: value })} /></Field><Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field><Field label="Nội dung / Ghi chú ngắn"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder="VD: Lương CB..." /></Field><Field label="Số tiền"><input required type="text" className={inputClass} value={formattedAmount} onChange={handleAmountChange} placeholder="0 đ" /></Field><div className="md:col-span-2"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
+  return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button><div><h2 className="text-2xl font-bold">{record ? "Sửa khoản thu" : "Thêm thu nhập"}</h2><p className="mt-1 text-sm text-slate-400">Khoản thu sẽ được ghi nhận vào bảng thu nhập.</p></div><form onSubmit={submit} className="space-y-4"><Card><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+  {isAdmin && (
+    <div className="md:col-span-2 xl:col-span-4 mb-2">
+      <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+        <input type="checkbox" checked={otherMember} onChange={e => handleOtherMemberChange(e.target.checked)} className="rounded text-emerald-500 focus:ring-emerald-500" /> Nhập cho thành viên khác
+      </label>
+    </div>
+  )}
+  {isAdmin && otherMember && (
+    <Field label="Thành viên">
+      <select required className={inputClass} value={draft.memberId} onChange={event => selectMember(event.target.value)}>
+        <option value="" disabled>Chọn thành viên</option>
+        {apiMembers.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
+      </select>
+    </Field>
+  )}
+  <Field label="Công việc liên quan">
+    <select className={inputClass} value={draft.jobId} onChange={event => selectJob(event.target.value)} disabled={!effectiveMemberId}>
+      {!effectiveMemberId && <option value="">Chưa xác định thành viên</option>}
+      {effectiveMemberId && <option value="">Không gắn công việc</option>}
+      {effectiveMemberId && <option value="other">Khác</option>}
+      {effectiveMemberId && activeJobs.map(job => <option key={job.id} value={job.id}>{job.title} · {job.company}</option>)}
+    </select>
+  </Field>
+  <Field label="Ngày nhận"><DateVNInput required value={draft.incomeDate} onChange={value => patch({ incomeDate: value })} /></Field><Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field><Field label="Nội dung / Ghi chú ngắn"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder="VD: Lương CB..." /></Field><Field label="Số tiền"><input required type="text" inputMode="numeric" pattern="[0-9]*" className={inputClass} value={draft.amount} onChange={handleAmountChange} placeholder="VD: 2280000" />{amountPreview && <p className="mt-1 text-xs text-slate-400">? {amountPreview}</p>}</Field><div className="md:col-span-2"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
 }
 function IncomeManagement() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
