@@ -1500,7 +1500,22 @@ function JobActionMenu({ job, view, edit, remove, canEdit }: { job: MemberJob; v
 }
 function MemberJobDetail({ job, records, year, close, edit }: { job: MemberJob; records: IncomeRecord[]; year: string; close: () => void; edit: () => void }) {
   const months = Array.from({ length: 12 }, (_, index) => ({ month: index + 1, amount: jobIncomeForMonth(job, records, index + 1) }));
-  return <Sheet close={close}><div><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase text-slate-400">{jobYearRange(job)}</p><h2 className="mt-1 text-lg font-bold">{job.title}</h2><p className="mt-1 text-sm text-slate-400">{job.company}</p></div><button onClick={edit} className="rounded-xl border border-[var(--app-border)] px-3 py-2 text-xs font-bold">Sửa</button></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><AccountDetail label="Thời gian" value={jobYearRange(job)} /><AccountDetail label="Trạng thái" value={job.status === "active" ? "Đang làm" : "Đã nghỉ"} /><AccountDetail label={`Tổng thu nhập ${year}`} value={money(jobYearTotal(job, records))} /></div><div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">{months.map(item => <div key={item.month} className="rounded-xl border border-[var(--app-border)] p-3"><p className="text-xs text-slate-400">Tháng {item.month}</p><b className="text-sm text-emerald-500">{money(item.amount)}</b></div>)}</div>{job.note && <p className="mt-5 rounded-xl border border-[var(--app-border)] p-4 text-sm text-slate-500">{job.note}</p>}</div></Sheet>;
+  const jobRecords = records.filter(r => r.jobId === job.id);
+  const [showForm, setShowForm] = useState(false);
+  
+  if (showForm) return <Sheet close={close}><div className="-m-6 p-6"><IncomeRecordForm record={null} members={[{id: job.memberId, name: ""}]} templates={[]} back={() => setShowForm(false)} saved={() => { setShowForm(false); window.location.reload(); }} fixedJobId={job.id} fixedMemberId={job.memberId} /></div></Sheet>;
+
+  return <Sheet close={close}><div className="space-y-6"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase text-slate-400">{jobYearRange(job)}</p><h2 className="mt-1 text-lg font-bold">{job.title}</h2><p className="mt-1 text-sm text-slate-400">{job.company}</p></div><button onClick={edit} className="rounded-xl border border-[var(--app-border)] px-3 py-2 text-xs font-bold">Sửa</button></div><div className="grid gap-3 sm:grid-cols-2"><AccountDetail label="Thời gian" value={jobYearRange(job)} /><AccountDetail label="Trạng thái" value={job.status === "active" ? "Đang làm" : "Đã nghỉ"} /><AccountDetail label={`Tổng thu nhập ${year}`} value={money(jobYearTotal(job, records))} /></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{months.map(item => <div key={item.month} className="rounded-xl border border-[var(--app-border)] p-3"><p className="text-xs text-slate-400">Tháng {item.month}</p><b className="text-sm text-emerald-500">{money(item.amount)}</b></div>)}</div>{job.note && <p className="rounded-xl border border-[var(--app-border)] p-4 text-sm text-slate-500">{job.note}</p>}
+  
+  <div>
+    <div className="mb-3 flex items-center justify-between">
+      <h3 className="font-bold">Lương / Thu nhập công việc</h3>
+      <button onClick={() => setShowForm(true)} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white">+ Thêm thu nhập</button>
+    </div>
+    {jobRecords.length === 0 ? <p className="text-sm text-slate-400">Chưa có dữ liệu.</p> : <div className="space-y-2">{jobRecords.map(r => <div key={r.id} className="rounded-lg border border-[var(--app-border)] p-3 flex justify-between gap-3"><div><p className="text-sm font-bold">{formatDateVN(r.incomeDate)} · {r.category}</p><p className="text-sm">{r.name}</p><p className="text-xs text-slate-400">{r.note}</p></div><b className="text-emerald-500">{money(r.amount)}</b></div>)}</div>}
+  </div>
+  
+  </div></Sheet>;
 }
 function MemberJobSheet({ job, memberId, year, close, saved }: { job: MemberJob | "new"; memberId: string; year: string; close: () => void; saved: (job: MemberJob) => void }) {
   const existing = job === "new" ? null : job;
@@ -1946,7 +1961,7 @@ function IncomeSheetManagement({ user }: { user: AuthUser }) {
     XLSX.writeFile(wb, `thu-nhap-${year}.xlsx`);
   }
   
-  if (view === "new" || view === "edit") return <IncomeRecordForm record={editing} members={incomeData?.members || []} jobs={incomeData?.jobs || []} templates={incomeData?.sourceTemplates || incomeTemplates} user={user} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
+  if (view === "new" || view === "edit") return <IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} user={user} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
   if (view === "yearly-new" || view === "yearly-edit") return <YearlyIncomeForm record={editingYearly} back={() => { setView("list"); setEditingYearly(null); }} saved={() => { setView("list"); setEditingYearly(null); void load(); }} />;
   
   return <div className="space-y-5">
@@ -2037,7 +2052,7 @@ function IncomeSheetManagement({ user }: { user: AuthUser }) {
                     <td className="px-4 py-3">{record.month}</td>
                     <td className="px-4 py-3">{record.category}</td>
                     <td className="px-4 py-3">{incomeJobShortLabel(record)}</td>
-                    <td className="px-4 py-3">{record.name}</td>
+                    <td className="px-4 py-3 leading-tight">{record.jobId ? record.jobName : <>Thu khác<br /><span className="text-xs font-normal text-slate-500">{record.name}</span></>}</td>
                     <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td>
                     <td className="px-4 py-3 text-right"><IncomeRecordInlineActions edit={() => edit(record)} remove={() => remove(record)} /></td>
                   </tr>
@@ -2216,8 +2231,8 @@ function LegacyIncomeSheetManagement() {
     link.href = url; link.download = `thu-nhap-${year}.xls`; link.click();
     URL.revokeObjectURL(url);
   }
-  if (view !== "list") return <IncomeRecordForm record={editing} members={incomeData?.members || []} jobs={incomeData?.jobs || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
-  return <div className="space-y-5"><div className="grid gap-3 md:grid-cols-[120px_140px_1fr_auto_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select><select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Tất cả thành viên</option>{incomeData?.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select><button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button><button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Tổng cả năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card>{categoryTotals.slice(0, 3).map(item => <Card key={item.category}><p className="text-xs text-slate-400">{item.category}</p><b>{money(item.total)}</b></Card>)}</div><Card><div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div><div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">{monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2"><div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div><span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span></div>)}</div></Card><Card className="overflow-hidden p-0"><div className="border-b border-[var(--app-border)] p-4"><b>Bảng thu nhập theo tháng</b></div><div className="hidden overflow-x-auto md:block"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5"><tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Thành viên</th><th className="px-4 py-3">Nhóm thu</th><th className="px-4 py-3">Tên khoản thu</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr></thead><tbody>{Array.from({ length: 12 }, (_, index) => index + 1).filter(month => monthFilter === "all" || month === Number(monthFilter)).map(month => { const items = records.filter(record => record.month === month); const subtotal = items.filter(record => record.status === "Đã nhận").reduce((sum, record) => sum + record.amount, 0); return <><tr key={`m-${month}`} className="bg-emerald-50/70 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10"><td className="px-4 py-2" colSpan={5}>Tháng {month}</td><td className="px-4 py-2 text-right">{money(subtotal)}</td><td className="px-4 py-2" colSpan={3}>Tổng tháng</td></tr>{items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]"><td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td><td className="px-4 py-3">{record.month}</td><td className="px-4 py-3">{record.memberName}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3">{record.name}</td><td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3">{record.status}</td><td className="px-4 py-3 text-slate-500">{record.note}</td><td className="px-4 py-3 text-right"><button onClick={() => { setEditing(record); setView("edit"); }} className="rounded-lg px-2 py-1 text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="rounded-lg px-2 py-1 text-xs font-bold text-rose-500">Xóa</button></td></tr>)}</>; })}</tbody></table></div><div className="space-y-3 p-3 md:hidden">{records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.name}</b><p className="text-xs text-slate-400">{formatDateVN(record.incomeDate)} · {record.memberName} · {record.category}</p></div><b className="text-emerald-500">{money(record.amount)}</b></div><p className="mt-1 text-xs text-slate-400">{record.status} · {record.note}</p><div className="mt-2 flex gap-2"><button onClick={() => { setEditing(record); setView("edit"); }} className="text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="text-xs font-bold text-rose-500">Xóa</button></div></div>)}</div></Card></div>;
+  if (view !== "list") return <IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
+  return <div className="space-y-5"><div className="grid gap-3 md:grid-cols-[120px_140px_1fr_auto_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select><select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Tất cả thành viên</option>{incomeData?.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select><button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button><button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Tổng cả năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card>{categoryTotals.slice(0, 3).map(item => <Card key={item.category}><p className="text-xs text-slate-400">{item.category}</p><b>{money(item.total)}</b></Card>)}</div><Card><div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div><div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">{monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2"><div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div><span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span></div>)}</div></Card><Card className="overflow-hidden p-0"><div className="border-b border-[var(--app-border)] p-4"><b>Bảng thu nhập theo tháng</b></div><div className="hidden overflow-x-auto md:block"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5"><tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Thành viên</th><th className="px-4 py-3">Nhóm thu</th><th className="px-4 py-3">Tên khoản thu</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr></thead><tbody>{Array.from({ length: 12 }, (_, index) => index + 1).filter(month => monthFilter === "all" || month === Number(monthFilter)).map(month => { const items = records.filter(record => record.month === month); const subtotal = items.filter(record => record.status === "Đã nhận").reduce((sum, record) => sum + record.amount, 0); return <><tr key={`m-${month}`} className="bg-emerald-50/70 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10"><td className="px-4 py-2" colSpan={5}>Tháng {month}</td><td className="px-4 py-2 text-right">{money(subtotal)}</td><td className="px-4 py-2" colSpan={3}>Tổng tháng</td></tr>{items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]"><td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td><td className="px-4 py-3">{record.month}</td><td className="px-4 py-3">{record.memberName}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3 leading-tight">{record.jobId ? record.jobName : <>Thu khác<br /><span className="text-xs font-normal text-slate-500">{record.name}</span></>}</td><td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3">{record.status}</td><td className="px-4 py-3 text-slate-500">{record.note}</td><td className="px-4 py-3 text-right"><button onClick={() => { setEditing(record); setView("edit"); }} className="rounded-lg px-2 py-1 text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="rounded-lg px-2 py-1 text-xs font-bold text-rose-500">Xóa</button></td></tr>)}</>; })}</tbody></table></div><div className="space-y-3 p-3 md:hidden">{records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.jobId ? record.jobName : "Thu khác"}</b>{record.jobId ? null : <p className="text-sm font-semibold text-slate-600">{record.name}</p>}<p className="mt-0.5 text-xs text-slate-400">{formatDateVN(record.incomeDate)} · {record.memberName} · {record.category}</p></div><b className="text-emerald-500">{money(record.amount)}</b></div><p className="mt-1 text-xs text-slate-400">{record.status} · {record.note}</p><div className="mt-2 flex gap-2"><button onClick={() => { setEditing(record); setView("edit"); }} className="text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="text-xs font-bold text-rose-500">Xóa</button></div></div>)}</div></Card></div>;
 }
 function IncomeRecordActionMenu({ record, activeId, setActiveId, edit, remove }: { record: IncomeRecord; activeId: string | null; setActiveId: (id: string | null) => void; edit: (record: IncomeRecord) => void; remove: (record: IncomeRecord) => void }) {
   void activeId;
@@ -2230,113 +2245,74 @@ function IncomeRecordInlineActions({ edit, remove }: { edit: () => void; remove:
     <button type="button" onClick={() => void remove()} className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button>
   </div>;
 }
-function IncomeRecordForm({ record, members: initialMembers, jobs: initialJobs, templates, user, back, saved }: { record: IncomeRecord | null; members: { id: string; name: string }[]; jobs: MemberJob[]; templates: string[]; user?: AuthUser; back: () => void; saved: () => void }) {
+function IncomeRecordForm({ record, members: initialMembers, templates, user, back, saved, fixedJobId, fixedMemberId }: { record: IncomeRecord | null; members: { id: string; name: string }[]; templates: string[]; user?: AuthUser; back: () => void; saved: () => void; fixedJobId?: string; fixedMemberId?: string }) {
   const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-  const emptyRow = (): IncomeDraft => ({ memberId: user?.memberId || initialMembers[0]?.id || "", jobId: "", incomeDate: today, category: "Lương", name: "Lương CB", amount: "", status: "Đã nhận", note: "" });
-  const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || user?.memberId || initialMembers[0]?.id || "", jobId: record.jobId || record.workId || "", incomeDate: record.incomeDate || record.receivedDate || today, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
-  const [otherMember, setOtherMember] = useState(() => record ? record.memberId !== user?.memberId : false);
+  const emptyRow = (): IncomeDraft => ({ memberId: fixedMemberId || user?.memberId || initialMembers[0]?.id || "", jobId: fixedJobId || "", incomeDate: today, category: "Lương", name: "", amount: "", status: "Đã nhận", note: "" });
+  const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || fixedMemberId || user?.memberId || initialMembers[0]?.id || "", jobId: record.jobId || record.workId || fixedJobId || "", incomeDate: record.incomeDate || record.receivedDate || today, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
+  const [otherMember, setOtherMember] = useState(() => record ? record.memberId !== user?.memberId && !fixedMemberId : false);
   
   const userRole = String(user?.role || "");
   const isAdmin = userRole === "full_access" || userRole === "system_admin" || userRole === "admin";
   const currentMemberId = user?.memberId || "";
-  const effectiveMemberId = (isAdmin && otherMember) ? draft.memberId : currentMemberId;
+  const effectiveMemberId = fixedMemberId || ((isAdmin && otherMember) ? draft.memberId : currentMemberId);
   
   const [apiMembers, setApiMembers] = useState<{ id: string; name: string }[]>(initialMembers);
   useEffect(() => {
     let active = true;
-    if (isAdmin && otherMember) {
+    if (isAdmin && otherMember && !fixedMemberId) {
       fetch("/api/members").then(res => res.json()).then(data => {
         if (active && data.ok && Array.isArray(data.data)) setApiMembers(data.data);
       });
     }
     return () => { active = false; };
-  }, [isAdmin, otherMember]);
+  }, [isAdmin, otherMember, fixedMemberId]);
 
-  const [apiJobs, setApiJobs] = useState<MemberJob[]>(initialJobs);
-  useEffect(() => {
-    if (!effectiveMemberId) {
-      queueMicrotask(() => setApiJobs([]));
-      return;
-    }
-    let active = true;
-    fetch(`/api/member-jobs?memberId=${effectiveMemberId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (active && data.ok && Array.isArray(data.data)) setApiJobs(data.data);
-      });
-    return () => { active = false; };
-  }, [effectiveMemberId]);
-
-  const activeJobs = apiJobs.filter(job => job.status === "active" || job.endYear === null || job.id === draft.jobId);
-  
   function patch(value: Partial<IncomeDraft>) { setDraft(current => ({ ...current, ...value })); }
-  function selectMember(memberId: string) { setDraft(current => ({ ...current, memberId, jobId: "" })); }
-  function selectJob(jobId: string) {
-    const job = apiJobs.find(item => item.id === jobId);
-    setDraft(current => ({ ...current, jobId, name: jobId && job && job.title !== "Khác" ? (current.name || job.title) : current.name }));
-  }
-  
-  function handleOtherMemberChange(checked: boolean) {
-    setOtherMember(checked);
-    setDraft(current => ({ ...current, memberId: checked ? "" : currentMemberId, jobId: "" }));
-  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const rawAmount = String(draft.amount).replace(/\D/g, "");
     const amount = Number(rawAmount);
     if (!Number.isFinite(amount) || amount <= 0) { alert("Vui lòng nhập số tiền hợp lệ."); return; }
-    const content = draft.name.trim();
-    if (!content) { alert("Vui lòng nhập nội dung khoản thu."); return; }
+    const contentText = draft.name.trim();
+    if (!contentText) { alert("Vui lòng nhập nội dung khoản thu."); return; }
     if (!effectiveMemberId) { alert("Chưa xác định thành viên nhận thu nhập."); return; }
     
-    const payloadJobId = draft.jobId === "other" ? null : (draft.jobId || null);
-    const payload = { memberId: effectiveMemberId, jobId: payloadJobId, category: draft.category, name: content, content, amount, receivedDate: draft.incomeDate, note: draft.note.trim() || null };
-    console.log("[submit income] payload:", payload);
+    // Nếu dùng từ màn hình JobDetail thì giữ nguyên fixedJobId, ngược lại set null
+    const payloadJobId = fixedJobId ? fixedJobId : null;
+    const payload = { memberId: effectiveMemberId, jobId: payloadJobId, category: draft.category, name: contentText, content: contentText, amount, receivedDate: draft.incomeDate, note: draft.note.trim() || null };
+    
     const response = await fetch(record ? `/api/incomes?id=${encodeURIComponent(record.id)}` : "/api/incomes", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record ? payload : { rows: [payload] }) });
     const result = await readJsonSafe<{ error?: string; details?: string }>(response);
     if (!response.ok) {
-      console.error("[income save] ERROR response", { status: response.status, body: result });
-      const errorMsg = result?.error || "Không thể lưu thu nhập.";
-      const detailMsg = result?.details ? `\nLỗi: ${result.details}` : "";
-      alert(errorMsg + detailMsg);
+      alert((result?.error || "Không thể lưu thu nhập.") + (result?.details ? `\nLỗi: ${result.details}` : ""));
       return;
     }
     alert("Đã lưu thu nhập");
     saved();
   }
-  
+
+  const allowMemberSelect = isAdmin && !fixedMemberId;
   const rawAmountStr = String(draft.amount).replace(/\D/g, "");
   const amountPreview = rawAmountStr ? money(Number(rawAmountStr)) : "";
-  function handleAmountChange(e: React.ChangeEvent<HTMLInputElement>) {
-    patch({ amount: e.target.value.replace(/\D/g, "") });
-  }
 
   return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button><div><h2 className="text-2xl font-bold">{record ? "Sửa khoản thu" : "Thêm thu nhập"}</h2><p className="mt-1 text-sm text-slate-400">Khoản thu sẽ được ghi nhận vào bảng thu nhập.</p></div><form onSubmit={submit} className="space-y-4"><Card><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-  {isAdmin && (
+  {allowMemberSelect && (
     <div className="md:col-span-2 xl:col-span-4 mb-2">
       <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-        <input type="checkbox" checked={otherMember} onChange={e => handleOtherMemberChange(e.target.checked)} className="rounded text-emerald-500 focus:ring-emerald-500" /> Nhập cho thành viên khác
+        <input type="checkbox" checked={otherMember} onChange={e => { setOtherMember(e.target.checked); patch({ memberId: e.target.checked ? "" : currentMemberId }); }} className="rounded text-emerald-500 focus:ring-emerald-500" /> Nhập cho thành viên khác
       </label>
     </div>
   )}
-  {isAdmin && otherMember && (
+  {allowMemberSelect && otherMember && (
     <Field label="Thành viên">
-      <select required className={inputClass} value={draft.memberId} onChange={event => selectMember(event.target.value)}>
+      <select required className={inputClass} value={draft.memberId} onChange={event => patch({ memberId: event.target.value })}>
         <option value="" disabled>Chọn thành viên</option>
         {apiMembers.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
       </select>
     </Field>
   )}
-  <Field label="Công việc liên quan">
-    <select className={inputClass} value={draft.jobId} onChange={event => selectJob(event.target.value)} disabled={!effectiveMemberId}>
-      {!effectiveMemberId && <option value="">Chưa xác định thành viên</option>}
-      {effectiveMemberId && <option value="">Không gắn công việc</option>}
-      {effectiveMemberId && <option value="other">Khác</option>}
-      {effectiveMemberId && activeJobs.map(job => <option key={job.id} value={job.id}>{job.title} · {job.company}</option>)}
-    </select>
-  </Field>
-  <Field label="Ngày nhận"><DateVNInput required value={draft.incomeDate} onChange={value => patch({ incomeDate: value })} /></Field><Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field><Field label="Nội dung / Ghi chú ngắn"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder="VD: Lương CB..." /></Field><Field label="Số tiền"><input required type="text" inputMode="numeric" pattern="[0-9]*" className={inputClass} value={draft.amount} onChange={handleAmountChange} placeholder="VD: 2280000" />{amountPreview && <p className="mt-1 text-xs text-slate-400">? {amountPreview}</p>}</Field><div className="md:col-span-2"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
+  <Field label="Ngày nhận"><DateVNInput required value={draft.incomeDate} onChange={value => patch({ incomeDate: value })} /></Field><Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field><Field label="Nội dung khoản thu"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder={fixedJobId ? "VD: Lương CB..." : "VD: Bán đồ, được thưởng..."} /></Field><Field label="Số tiền"><input required type="text" inputMode="numeric" pattern="[0-9]*" className={inputClass} value={draft.amount} onChange={e => patch({ amount: e.target.value.replace(/\D/g, "") })} placeholder="VD: 2280000" />{amountPreview && <p className="mt-1 text-xs text-slate-400">? {amountPreview}</p>}</Field><div className="md:col-span-2"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
 }
 function IncomeManagement() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
