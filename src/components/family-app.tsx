@@ -1579,36 +1579,32 @@ function Tasks({ data, update, open, t }: TaskProps) {
   return <><select className={`${filterClass} mb-4 max-w-xs`} value={status} onChange={event => setStatus(event.target.value as Task["status"] | "all")}><option value="all">Tất cả công việc</option><option value="todo">Chờ</option><option value="doing">Đang làm</option><option value="done">Hoàn thành</option></select><div className="grid gap-x-4 md:grid-cols-2">{tasks.map(x => <TaskRow key={x.id} task={x} toggle={() => toggle(x.id)} edit={() => open({ kind: "tasks", item: x })} />)}</div><AddButton label={t("add")} onClick={() => open({ kind: "tasks" })} /></>;
 }
 function FinanceOverview() {
-  const [data, setData] = useState<{ year: number; income: number; expense: number }[]>([]);
+  const [data, setData] = useState<{ month: number; income: number; expense: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
-  const [showComparison, setShowComparison] = useState(true);
+  const [chartMode, setChartMode] = useState<"income" | "expense" | "compare" | "savings">("compare");
 
   const load = useCallback(async () => {
     setLoading(true);
-    const response = await fetch('/api/finance-overview', { cache: "no-store" });
-    const result = await readJsonSafe<{ data?: { year: number; income: number; expense: number }[] }>(response);
+    const response = await fetch(`/api/finance-overview?year=${yearStr}`, { cache: "no-store" });
+    const result = await readJsonSafe<{ data?: { month: number; income: number; expense: number }[] }>(response);
     if (response.ok && result?.data) setData(result.data);
     setLoading(false);
-  }, []);
+  }, [yearStr]);
 
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
-  const year = Number(yearStr);
-  const currentYearData = data.find(d => d.year === year) || { year, income: 0, expense: 0 };
-  const prevYearData = data.find(d => d.year === year - 1);
-  const diff = currentYearData.income - currentYearData.expense;
-  const maxVal = Math.max(1, ...data.map(d => Math.max(d.income, d.expense)));
-  const prevDiff = prevYearData ? prevYearData.income - prevYearData.expense : undefined;
-
-  function renderCompare(current: number, prev: number | undefined) {
-    if (!showComparison) return null;
-    if (prev === undefined) return <p className="mt-1 text-[10px] text-slate-400">Chưa có dữ liệu so sánh</p>;
-    const d = current - prev;
-    if (d === 0) return <p className="mt-1 text-[10px] text-slate-400">Không đổi so với năm trước</p>;
-    const percent = prev === 0 ? "100%" : (Math.abs(d) / Math.abs(prev) * 100).toFixed(1) + "%";
-    return <p className={`mt-1 text-[10px] font-bold ${d > 0 ? "text-emerald-500" : "text-rose-500"}`}>{d > 0 ? "↑" : "↓"} {money(Math.abs(d))} ({percent})</p>;
-  }
+  const totalIncome = data.reduce((sum, d) => sum + d.income, 0);
+  const totalExpense = data.reduce((sum, d) => sum + d.expense, 0);
+  const savings = totalIncome - totalExpense;
+  const savingsRate = totalIncome > 0 ? ((savings / totalIncome) * 100).toFixed(1) + "%" : "N/A";
+  
+  const maxVal = Math.max(1, ...data.map(d => {
+    if (chartMode === "income") return d.income;
+    if (chartMode === "expense") return d.expense;
+    if (chartMode === "savings") return Math.abs(d.income - d.expense);
+    return Math.max(d.income, d.expense);
+  }));
 
   return (
     <div className="space-y-5">
@@ -1616,37 +1612,44 @@ function FinanceOverview() {
         <select className={filterClass} value={yearStr} onChange={event => setYearStr(event.target.value)}>
           {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
         </select>
-        <button onClick={() => setShowComparison(!showComparison)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-500 dark:border-white/10 dark:text-slate-300">{showComparison ? "Ẩn so sánh" : "Hiện so sánh"}</button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Card><p className="text-xs text-slate-400">Tổng thu năm</p><b className="text-emerald-500">{money(currentYearData.income)}</b>{renderCompare(currentYearData.income, prevYearData?.income)}</Card>
-        <Card><p className="text-xs text-slate-400">Tổng chi năm</p><b className="text-rose-500">{money(currentYearData.expense)}</b>{renderCompare(currentYearData.expense, prevYearData?.expense)}</Card>
-        <Card><p className="text-xs text-slate-400">Chênh lệch</p><b className={diff >= 0 ? "text-indigo-500" : "text-rose-500"}>{money(diff)}</b>{renderCompare(diff, prevDiff)}</Card>
-        <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b className="text-emerald-500">{money(currentYearData.income / 12)}</b>{renderCompare(currentYearData.income / 12, prevYearData ? prevYearData.income / 12 : undefined)}</Card>
-        <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b className="text-rose-500">{money(currentYearData.expense / 12)}</b>{renderCompare(currentYearData.expense / 12, prevYearData ? prevYearData.expense / 12 : undefined)}</Card>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <Card><p className="text-xs text-slate-400">Tổng thu năm</p><b className="text-emerald-500">{money(totalIncome)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Tổng chi năm</p><b className="text-rose-500">{money(totalExpense)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Tiết kiệm năm</p><b className={savings >= 0 ? "text-blue-500" : "text-rose-500"}>{money(savings)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Tỷ lệ tiết kiệm</p><b className="text-indigo-500">{savingsRate}</b></Card>
+        <Card><p className="text-xs text-slate-400">Trung bình thu/tháng</p><b className="text-emerald-500">{money(totalIncome / 12)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Trung bình chi/tháng</p><b className="text-rose-500">{money(totalExpense / 12)}</b></Card>
       </div>
 
       <Card>
-        <div className="mb-4 flex items-center justify-between">
-          <b>So sánh Thu và Chi theo năm</b>
-          {loading && <span className="text-xs text-slate-400">Đang tải...</span>}
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2">
+            <b>Biểu đồ Tổng quan</b>
+            {loading && <span className="text-xs text-slate-400">Đang tải...</span>}
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button onClick={() => setChartMode("income")} className={`rounded-full px-3 py-1 font-bold ${chartMode === "income" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-slate-100 text-slate-500 dark:bg-white/5"}`}>Thu nhập</button>
+            <button onClick={() => setChartMode("expense")} className={`rounded-full px-3 py-1 font-bold ${chartMode === "expense" ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" : "bg-slate-100 text-slate-500 dark:bg-white/5"}`}>Chi tiêu</button>
+            <button onClick={() => setChartMode("compare")} className={`rounded-full px-3 py-1 font-bold ${chartMode === "compare" ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" : "bg-slate-100 text-slate-500 dark:bg-white/5"}`}>So sánh</button>
+            <button onClick={() => setChartMode("savings")} className={`rounded-full px-3 py-1 font-bold ${chartMode === "savings" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-slate-100 text-slate-500 dark:bg-white/5"}`}>Tiết kiệm</button>
+          </div>
         </div>
-        <div className="flex h-64 w-full items-end justify-between gap-2 overflow-x-auto pb-2 md:justify-center md:gap-6">
-          {data.slice().sort((a,b) => a.year - b.year).map(item => (
-            <div key={item.year} className="flex min-w-[60px] max-w-[120px] flex-1 flex-col items-center gap-2">
-              <div className="flex h-[240px] w-full items-end justify-center gap-1">
-                <div className="w-1/2 rounded-t-md bg-emerald-500" style={{ height: `${Math.max(2, (item.income / maxVal) * 100)}%` }} title={`Thu: ${money(item.income)}`} />
-                <div className="w-1/2 rounded-t-md bg-rose-500" style={{ height: `${Math.max(2, (item.expense / maxVal) * 100)}%` }} title={`Chi: ${money(item.expense)}`} />
+        <div className="flex h-64 w-full items-end justify-between gap-1 overflow-x-auto pb-2 md:justify-center md:gap-4 lg:gap-6">
+          {data.map(item => {
+            const itemSavings = item.income - item.expense;
+            return (
+            <div key={item.month} className="flex min-w-[30px] flex-1 flex-col items-center gap-2 md:max-w-[60px]">
+              <div className="flex h-[240px] w-full items-end justify-center gap-0.5 md:gap-1">
+                {(chartMode === "income" || chartMode === "compare") && <div className="w-full rounded-t-md bg-emerald-500" style={{ height: `${Math.max(2, (item.income / maxVal) * 100)}%` }} title={`Thu: ${money(item.income)}`} />}
+                {(chartMode === "expense" || chartMode === "compare") && <div className="w-full rounded-t-md bg-rose-500" style={{ height: `${Math.max(2, (item.expense / maxVal) * 100)}%` }} title={`Chi: ${money(item.expense)}`} />}
+                {chartMode === "savings" && <div className={`w-full rounded-t-md ${itemSavings >= 0 ? "bg-blue-500" : "bg-orange-500"}`} style={{ height: `${Math.max(2, (Math.abs(itemSavings) / maxVal) * 100)}%` }} title={`Tiết kiệm: ${money(itemSavings)}`} />}
               </div>
-              <span className="text-xs font-bold text-slate-400">{item.year}</span>
+              <span className="text-[10px] font-bold text-slate-400 md:text-xs">T{item.month}</span>
             </div>
-          ))}
+          )})}
           {!data.length && !loading && <div className="w-full text-center text-sm text-slate-400">Chưa có dữ liệu.</div>}
-        </div>
-        <div className="mt-4 flex items-center justify-center gap-4 text-xs font-semibold text-slate-500">
-          <div className="flex items-center gap-2"><div className="size-3 rounded-full bg-emerald-500"/> Thu nhập</div>
-          <div className="flex items-center gap-2"><div className="size-3 rounded-full bg-rose-500"/> Chi tiêu</div>
         </div>
       </Card>
   </div>
@@ -1654,18 +1657,85 @@ function FinanceOverview() {
 }
 
 function Finance({ data, open, t, user, update }: FinanceProps) {
-  const [tab, setTab] = useState<"overview" | "income" | "expense">("overview");
+  const [tab, setTab] = useState<"overview" | "income" | "expense" | "savings">("overview");
   return (
     <>
       <div className="mb-4 inline-flex flex-wrap gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1 text-sm font-bold">
         <button onClick={() => setTab("overview")} className={`rounded-lg px-4 py-2 ${tab === "overview" ? "bg-indigo-500 text-white" : "text-slate-500"}`}>Tổng quan</button>
         <button onClick={() => setTab("income")} className={`rounded-lg px-4 py-2 ${tab === "income" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Thu nhập</button>
         <button onClick={() => setTab("expense")} className={`rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button>
+        <button onClick={() => setTab("savings")} className={`rounded-lg px-4 py-2 ${tab === "savings" ? "bg-blue-500 text-white" : "text-slate-500"}`}>Tiết kiệm</button>
       </div>
       {tab === "overview" && <FinanceOverview />}
       {tab === "income" && <IncomeSheetManagement user={user} />}
       {tab === "expense" && <ExpenseSheetManagement data={data} update={update} user={user} />}
+      {tab === "savings" && <SavingsSheet />}
     </>
+  );
+}
+
+function SavingsSheet() {
+  const [data, setData] = useState<{ month: number; income: number; expense: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const response = await fetch(`/api/finance-overview?year=${yearStr}`, { cache: "no-store" });
+    const result = await readJsonSafe<{ data?: { month: number; income: number; expense: number }[] }>(response);
+    if (response.ok && result?.data) setData(result.data);
+    setLoading(false);
+  }, [yearStr]);
+
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex gap-3">
+        <select className={filterClass} value={yearStr} onChange={event => setYearStr(event.target.value)}>
+          {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
+        </select>
+      </div>
+      <Card className="overflow-hidden p-0">
+        <div className="flex items-center justify-between border-b border-[var(--app-border)] p-4">
+          <b>Bảng tiết kiệm {yearStr}</b>
+          {loading && <span className="text-xs text-slate-400">Đang tải...</span>}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5">
+              <tr>
+                <th className="px-4 py-3">Tháng</th>
+                <th className="px-4 py-3 text-right">Thu nhập</th>
+                <th className="px-4 py-3 text-right">Chi tiêu</th>
+                <th className="px-4 py-3 text-right">Tiết kiệm</th>
+                <th className="px-4 py-3 text-right">Tỷ lệ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--app-border)]">
+              {data.map(item => {
+                const itemSavings = item.income - item.expense;
+                const savingsRate = item.income > 0 ? ((itemSavings / item.income) * 100).toFixed(1) + "%" : "N/A";
+                return (
+                  <tr key={item.month} className="hover:bg-slate-50 dark:hover:bg-white/5">
+                    <td className="px-4 py-3 font-semibold">Tháng {item.month}</td>
+                    <td className="px-4 py-3 text-right text-emerald-500">{money(item.income)}</td>
+                    <td className="px-4 py-3 text-right text-rose-500">{money(item.expense)}</td>
+                    <td className="px-4 py-3 text-right font-bold">
+                      <div className="flex items-center justify-end gap-2">
+                        {itemSavings < 0 && <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">Chi vượt thu</span>}
+                        <span className={itemSavings >= 0 ? "text-blue-500" : "text-orange-500"}>{money(itemSavings)}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-slate-500">{savingsRate}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
   );
 }
 type IncomeApiData = {
