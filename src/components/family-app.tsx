@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from "recharts";
@@ -35,9 +35,13 @@ async function readJsonSafe<T>(response: Response): Promise<T | null> {
 }
 function parseDate(value: string | null | undefined, now = new Date()) {
   if (!value) return null;
+  const asDate = new Date(value);
+  if (!Number.isNaN(asDate.getTime())) {
+    return new Date(asDate.getFullYear(), asDate.getMonth(), asDate.getDate());
+  }
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(`${value}T00:00:00`);
-  if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
-    const parsed = new Date(value);
+  if (/^\d{4}-\d{2}-\d{2}[T ]/.test(value)) {
+    const parsed = new Date(value.replace(" ", "T"));
     return Number.isNaN(parsed.getTime()) ? null : new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
   }
   const [day, month] = value.split("/").map(Number);
@@ -86,7 +90,7 @@ function BirthdaySelect({ value, onChange, disabled = false }: { value: string; 
     setDay(safeDay); setMonth(nextMonth); setYear(nextYear);
     onChange(safeDay && nextMonth && nextYear ? `${nextYear}-${nextMonth.padStart(2, "0")}-${safeDay.padStart(2, "0")}` : "");
   };
-  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   const selectClass = `${inputClass} min-h-12`;
   return <Field label="Ngày sinh"><div className="grid grid-cols-3 gap-2"><select disabled={disabled} className={selectClass} value={day && Number(day) <= maxDay ? String(Number(day)) : ""} onChange={event => select(event.target.value, month, year)}><option value="">Ngày</option>{Array.from({ length: maxDay }, (_, index) => String(index + 1)).map(value => <option key={value}>{value}</option>)}</select><select disabled={disabled} className={selectClass} value={month ? String(Number(month)) : ""} onChange={event => select(day, event.target.value, year)}><option value="">Tháng</option>{Array.from({ length: 12 }, (_, index) => String(index + 1)).map(value => <option key={value}>{value}</option>)}</select><select disabled={disabled} className={selectClass} value={year} onChange={event => select(day, month, event.target.value)}><option value="">Năm</option>{Array.from({ length: new Date().getFullYear() - 1899 }, (_, index) => String(new Date().getFullYear() - index)).map(value => <option key={value}>{value}</option>)}</select></div></Field>;
 }
@@ -264,7 +268,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     screen === "dashboard" ? <Dashboard data={data} go={go} notifications={notifications} user={user} /> :
     screen === "members" ? <Members data={data} user={user} update={update} /> :
     screen === "tasks" ? <Tasks data={data} update={update} open={setEditor} t={t} /> :
-    screen === "finance" ? <Finance data={data} open={setEditor} t={t} user={user} /> :
+    screen === "finance" ? <Finance data={data} open={setEditor} t={t} user={user} update={update} /> :
     screen === "chat" ? <ComingSoonModule title={t("chat")} /> :
     screen === "calendar" ? <Calendar data={data} user={user} /> :
     screen === "notes" ? <Notes data={data} open={setEditor} t={t} /> :
@@ -297,10 +301,12 @@ function visibleDataFor(user: AuthUser, data: AppData) {
   return user.role === "self_only" ? { ...data, members: data.members.filter(member => member.id === user.memberId) } : data;
 }
 
-function AccountAvatar({ user, size = "size-10" }: { user: { avatar?: string; displayName: string; member?: Member }; size?: string }) {
-  const displayName = user.member?.name || user.displayName;
-  const avatar = user.member?.avatar || user.avatar;
-  if (avatar) return <Image unoptimized width={96} height={96} src={avatar} className={`${size} shrink-0 rounded-full object-cover`} alt={displayName} />;
+function AccountAvatar({ user, size = "size-10" }: { user: any; size?: string }) {
+  const displayName = user.member?.name || user.displayName || "?";
+  const avatar = user.member?.avatar || user.avatar || user.profileImage || user.image || user.avatarUrl;
+  const [error, setError] = useState(false);
+  useEffect(() => { setError(false); }, [avatar]);
+  if (avatar && !error) return <Image unoptimized width={96} height={96} src={avatar} className={`${size} shrink-0 rounded-full object-cover`} alt={displayName} onError={() => setError(true)} />;
   return <span className={`grid ${size} shrink-0 place-items-center rounded-full bg-slate-200 text-sm font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-200`}>{displayName[0]?.toUpperCase() || "?"}</span>;
 }
 
@@ -313,7 +319,7 @@ function AccountMenu({ user, openProfile, openSettings, logout }: { user: AuthUs
       <button onClick={openSettings} className={menuClass}><SettingsIcon /> Cài đặt tài khoản</button>
     </div>
     <button onClick={logout} className={`${menuClass} mt-3 text-rose-500`}><LogoutIcon /> Đăng xuất</button>
-  </div>;
+    </div>;
 }
 
 function ProfilePage({ user, member, data, update, openChangePassword, logout, savedUser, refreshCurrentUser }: { user: AuthUser; member?: Member; data: AppData; update: (data: AppData) => void; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void; refreshCurrentUser: () => Promise<AuthUser | null> }) {
@@ -375,7 +381,7 @@ function SystemAdminProfile({ user, openChangePassword, logout, savedUser, refre
   const [error, setError] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(true);
-  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   useEffect(() => {
     void fetch("/api/auth/profile").then(async response => {
       const result = await readJsonSafe<{ user?: ProfileUser }>(response);
@@ -452,7 +458,7 @@ function PasswordEyeIcon({ visible }: { visible: boolean }) {
 
 function PasswordField({ label, value, setValue, autoComplete, required = true }: { label: string; value: string; setValue: (value: string) => void; autoComplete: string; required?: boolean }) {
   const [visible, setVisible] = useState(false);
-  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   return <Field label={label}><div className="relative"><input required={required} type={visible ? "text" : "password"} autoComplete={autoComplete} className={`${inputClass} pr-12`} value={value} onChange={event => setValue(event.target.value)} /><button type="button" aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onClick={() => setVisible(current => !current)} className="absolute inset-y-0 right-0 grid w-12 place-items-center text-slate-400 hover:text-rose-500"><PasswordEyeIcon visible={visible} /></button></div></Field>;
 }
 
@@ -488,7 +494,7 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
-  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   useEffect(() => { 
     void fetch("/api/auth/profile").then(async response => { 
       const result = await readJsonSafe<{ error?: string; user?: ProfileUser }>(response); 
@@ -520,7 +526,7 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể cập nhật hồ sơ."); }
     finally { setLoading(false); }
   }
-  return <Sheet close={close}><form onSubmit={submit}><h2 className="text-lg font-bold">Hồ sơ cá nhân</h2><div className="mt-5 flex items-center gap-3"><AccountAvatar user={{ avatar: form.avatar, displayName: form.displayName }} size="size-16" /><div><b>{form.displayName || user.username}</b><p className="text-xs text-slate-400">{profile?.username ?? user.username} · {accessLabel(profile?.role ?? user.role)}</p></div></div><div className="mt-5 space-y-4"><Field label="Username"><input disabled className={inputClass} value={profile?.username ?? user.username} readOnly /></Field>{profile?.memberId ? <><Field label="Họ tên"><input required className={inputClass} value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} /></Field><Field label="Biệt danh"><input className={inputClass} value={form.nickname} onChange={event => setForm(current => ({ ...current, nickname: event.target.value }))} /></Field><Field label="Email (Tài khoản)"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field><Field label="Số điện thoại"><input type="tel" className={inputClass} value={form.phone} onChange={event => setForm(current => ({ ...current, phone: event.target.value }))} /></Field><BirthdaySelect value={form.birthday} onChange={value => setForm(current => ({...current, birthday: value}))} /><Field label="Giới tính"><select className={inputClass} value={form.gender} onChange={event => setForm(current => ({ ...current, gender: event.target.value }))}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field><Field label="Ghi chú cá nhân"><textarea rows={3} className={inputClass} value={form.notes} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} /></Field></> : <><Field label="Tên hiển thị"><input required className={inputClass} value={form.displayName} onChange={event => setForm(current => ({ ...current, displayName: event.target.value }))} /></Field><Field label="Email"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field><Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field>{user.role === "full_access" && <Field label="Liên kết thành viên"><select className={inputClass} value={form.memberId} onChange={event => setForm(current => ({ ...current, memberId: event.target.value }))}><option value="">Chưa liên kết</option>{members.map(member => <option key={member.id} value={member.id}>{member.nickname || member.name}</option>)}</select></Field>}</>}<Field label="Quyền hệ thống"><input disabled className={inputClass} value={accessLabel(profile?.role ?? user.role)} readOnly /></Field><Field label="Trạng thái"><input disabled className={inputClass} value={profile?.active === false ? "Đã tắt" : "Đang hoạt động"} readOnly /></Field>{profile?.createdAt && <Field label="Ngày tạo tài khoản"><input disabled className={inputClass} value={new Date(profile.createdAt).toLocaleString("vi-VN")} readOnly /></Field>}</div>{error && <p className="mt-3 text-sm text-red-500">{error}</p>}{success && <p className="mt-3 text-sm font-bold text-emerald-500">{success}</p>}<div className="mt-6 flex gap-3"><button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Đóng</button><button disabled={loading} className="flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{loading ? "Đang lưu..." : "Lưu hồ sơ"}</button></div></form></Sheet>;
+  return <Sheet close={close}><form onSubmit={submit}><h2 className="text-lg font-bold">Hồ sơ cá nhân</h2><div className="mt-5 flex items-center gap-3"><AccountAvatar user={{ avatar: form.avatar, displayName: form.displayName }} size="size-16" /><div><b>{form.displayName || user.username}</b><p className="text-xs text-slate-400">{profile?.username ?? user.username} · {accessLabel(profile?.role ?? user.role)}</p></div></div><div className="mt-5 space-y-4"><Field label="Username"><input disabled className={inputClass} value={profile?.username ?? user.username} readOnly /></Field>{profile?.memberId ? <><Field label="Họ tên"><input required className={inputClass} value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} /></Field><Field label="Biệt danh"><input className={inputClass} value={form.nickname} onChange={event => setForm(current => ({ ...current, nickname: event.target.value }))} /></Field><Field label="Email (Tài khoản)"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field><Field label="Số điện thoại"><input type="tel" className={inputClass} value={form.phone} onChange={event => setForm(current => ({ ...current, phone: event.target.value }))} /></Field><BirthdaySelect value={form.birthday} onChange={value => setForm(current => ({...current, birthday: value}))} /><Field label="Giới tính"><select className={inputClass} value={form.gender} onChange={event => setForm(current => ({ ...current, gender: event.target.value }))}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.notes} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} /></Field></> : <><Field label="Tên hiển thị"><input required className={inputClass} value={form.displayName} onChange={event => setForm(current => ({ ...current, displayName: event.target.value }))} /></Field><Field label="Email"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field><Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field>{user.role === "full_access" && <Field label="Liên kết thành viên"><select className={inputClass} value={form.memberId} onChange={event => setForm(current => ({ ...current, memberId: event.target.value }))}><option value="">Chưa liên kết</option>{members.map(member => <option key={member.id} value={member.id}>{member.nickname || member.name}</option>)}</select></Field>}</>}<Field label="Quyền hệ thống"><input disabled className={inputClass} value={accessLabel(profile?.role ?? user.role)} readOnly /></Field><Field label="Trạng thái"><input disabled className={inputClass} value={profile?.active === false ? "Đã tắt" : "Đang hoạt động"} readOnly /></Field>{profile?.createdAt && <Field label="Ngày tạo tài khoản"><input disabled className={inputClass} value={new Date(profile.createdAt).toLocaleString("vi-VN")} readOnly /></Field>}</div>{error && <p className="mt-3 text-sm text-red-500">{error}</p>}{success && <p className="mt-3 text-sm font-bold text-emerald-500">{success}</p>}<div className="mt-6 flex gap-3"><button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Đóng</button><button disabled={loading} className="flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{loading ? "Đang lưu..." : "Lưu hồ sơ"}</button></div></form></Sheet>;
 }
 
 function Sheet({ close, children }: { close: () => void; children: React.ReactNode }) {
@@ -534,7 +540,7 @@ function UserEditor({ user, close, saved, presetMemberId = "" }: { user: Managed
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ username: existing?.username ?? "", email: existing?.email ?? "", displayName: existing?.displayName ?? "", avatar: existing?.avatar ?? "", role: existing?.role ?? "self_only" as UserRole, memberId: existing?.memberId ?? presetMemberId, active: existing?.active ?? true, password: "" });
-  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   useEffect(() => { void fetch("/api/members").then(async response => { const json = await response.json(); const members = Array.isArray(json) ? json : (json.data ?? []); if (response.ok) setMembers(members); }); }, []);
   const set = (key: string, value: string | boolean) => setForm(current => ({ ...current, [key]: value }));
   async function submit(event: React.FormEvent) {
@@ -561,7 +567,7 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
   const [editType, setEditType] = useState<'none' | 'account' | 'password'>('none');
   const [menuOpen, setMenuOpen] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
 
   const [form, setForm] = useState({
     username: account?.username || "",
@@ -927,7 +933,7 @@ function SectionTitle({ label, action, onClick }: { label: string; action?: stri
 function AddButton({ onClick, label }: { onClick: () => void; label: string }) {
   return <button onClick={onClick} className="mt-4 w-full rounded-2xl border border-dashed border-rose-300 py-3 text-sm font-bold text-rose-500">{icons.plus} {label}</button>;
 }
-const filterClass = "w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] px-3 py-3 text-sm outline-none focus:border-rose-400";
+const filterClass = "w-full min-w-0 max-w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] px-3 py-3 text-sm outline-none focus:border-rose-400";
 
 function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: Screen) => void; notifications: CalendarNotification[]; user: AuthUser }) {
   const now = new Date();
@@ -937,7 +943,7 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
     return parsed?.getMonth() === now.getMonth() && parsed.getFullYear() === now.getFullYear();
   };
   const sumTransactions = (items: Transaction[]) => items.reduce((sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0), 0);
-  const total = (type: Transaction["type"], thisMonth = false) => sumTransactions(data.transactions.filter(item => item.type === type && (!thisMonth || isThisMonth(item.date))));
+  const total = (type: Transaction["type"], thisMonth = false) => sumTransactions(data.transactions.filter(item => String(item.type).toLowerCase() === type && (!thisMonth || isThisMonth(item.date))));
   const monthlyIncome = total("income", true);
   const monthlyExpense = total("expense", true);
   const upcomingEvents = data.events.filter(event => {
@@ -958,11 +964,11 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
   const monthly = Array.from({ length: 6 }, (_, index) => {
     const date = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
     const matches = (item: Transaction) => { const parsed = parseDate(item.date, now); return parsed?.getMonth() === date.getMonth() && parsed.getFullYear() === date.getFullYear(); };
-    return { label: `${date.getMonth() + 1}/${String(date.getFullYear()).slice(-2)}`, income: sumTransactions(data.transactions.filter(item => item.type === "income" && matches(item))), expense: sumTransactions(data.transactions.filter(item => item.type === "expense" && matches(item))) };
+    return { label: `${date.getMonth() + 1}/${String(date.getFullYear()).slice(-2)}`, income: sumTransactions(data.transactions.filter(item => String(item.type).toLowerCase() === "income" && matches(item))), expense: sumTransactions(data.transactions.filter(item => String(item.type).toLowerCase() === "expense" && matches(item))) };
   });
   const categoryTotals = Object.entries(
     data.transactions
-      .filter((item) => item.type === "expense")
+      .filter((item) => String(item.type).toLowerCase() === "expense")
       .reduce<Record<string, number>>((result, item) => {
         const category = item.category || "Khác";
 
@@ -1259,7 +1265,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
   const [form, setForm] = useState<Member>(() => existing ?? { id: crypto.randomUUID(), name: "", nickname: "", birthday: "", gender: "", phone: "", avatar: "", notes: "", color: "#cbd5e1" });
   const [detailsLoaded, setDetailsLoaded] = useState(!existing);
   const canManage = user.role === "full_access";
-  const inputClass = "h-12 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   const tasks = data.tasks.filter(task => task.memberId === form.id);
   const events = data.events.filter(event => event.memberId === form.id);
   const notes = data.notes.filter(note => note.memberId === form.id);
@@ -1562,7 +1568,7 @@ function ConfirmMemberDelete({ member, warning, close, remove }: { member: Membe
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-5" onMouseDown={close}><div className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-6 shadow-2xl" onMouseDown={event => event.stopPropagation()}><h2 className="text-lg font-semibold">Ẩn thành viên?</h2><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Thành viên <b>{member.nickname || member.name}</b> sẽ được ẩn khỏi danh sách. Dữ liệu lịch sử không bị xóa.</p>{warning && <p className="mt-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-600 dark:bg-orange-400/10">{warning}</p>}<div className="mt-6 flex justify-end gap-3"><button onClick={close} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button onClick={remove} className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Xác nhận ẩn</button></div></div></div>;
 }
 type ListProps = { data: AppData; open: (editor: Editor) => void; t: ReturnType<typeof translator> };
-type FinanceProps = ListProps & { user: AuthUser };
+type FinanceProps = ListProps & { user: AuthUser; update: (data: AppData) => void };
 type TaskProps = ListProps & { update: (data: AppData) => void };
 function EditButton({ onClick }: { onClick: () => void }) { return <button onClick={onClick} className="rounded-xl px-3 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Sửa</button>; }
 function TaskRow({ task, toggle, edit }: { task: Task; toggle?: () => void; edit?: () => void }) { const overdue = isOverdue(task); return <Card className="mb-3 flex items-center gap-3"><button onClick={toggle} className={`grid size-7 shrink-0 place-items-center rounded-full border ${task.status === "done" ? "border-emerald-400 bg-emerald-400 text-white" : task.status === "doing" ? "border-orange-400 bg-orange-100 text-orange-500" : "border-slate-200"}`}>{task.status === "done" && icons.check}</button><div className="min-w-0 flex-1"><b className={task.status === "done" ? "line-through opacity-50" : ""}>{task.title}</b><p className={`text-xs ${overdue ? "text-red-500" : "text-slate-400"}`}>{task.assignee} · {task.dueDate || task.due} · {overdue ? "Quá hạn" : task.status === "todo" ? "Chờ làm" : task.status === "doing" ? "Đang làm" : "Hoàn thành"} · {task.priority === "high" ? "Cao" : task.priority === "low" ? "Thấp" : "Bình thường"}</p></div>{edit && <EditButton onClick={edit} />}</Card>; }
@@ -1643,11 +1649,11 @@ function FinanceOverview() {
           <div className="flex items-center gap-2"><div className="size-3 rounded-full bg-rose-500"/> Chi tiêu</div>
         </div>
       </Card>
-    </div>
+  </div>
   );
 }
 
-function Finance({ data, open, t, user }: FinanceProps) {
+function Finance({ data, open, t, user, update }: FinanceProps) {
   const [tab, setTab] = useState<"overview" | "income" | "expense">("overview");
   return (
     <>
@@ -1658,7 +1664,7 @@ function Finance({ data, open, t, user }: FinanceProps) {
       </div>
       {tab === "overview" && <FinanceOverview />}
       {tab === "income" && <IncomeSheetManagement user={user} />}
-      {tab === "expense" && <ExpensePreview data={data} open={open} t={t} />}
+      {tab === "expense" && <ExpenseSheetManagement data={data} update={update} user={user} />}
     </>
   );
 }
@@ -1710,8 +1716,8 @@ async function fetchIncomeApiData(year: string): Promise<IncomeApiData> {
     return { ...emptyIncomeApiData };
   }
 }
-const incomeCategories: IncomeCategory[] = ["Lương", "Thưởng", "Khác"];
-const incomeTemplates = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền tồn tháng trước", "Khác"];
+const incomeCategories: IncomeCategory[] = ["Lương", "Thưởng", "Tiền lễ", "Khác"];
+const incomeTemplates = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền lễ", "Khác"];
 function isReceivedIncome(record: IncomeRecord) {
   const value = String(record.status || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
   return !value || !value.includes("chua");
@@ -1802,29 +1808,73 @@ function YearlyTooltip({ active, payload }: any) {
 function IncomeSheetManagement({ user }: { user: AuthUser }) {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [monthFilter, setMonthFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState<IncomeCategory | "all">("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [incomeData, setIncomeData] = useState<IncomeApiData | null>(null);
   const [view, setView] = useState<"list" | "new" | "edit" | "yearly-new" | "yearly-edit">("list");
-  const [viewMode, setViewMode] = useState<"list" | "chart">("list");
-  const [showComparison, setShowComparison] = useState(true);
   const [editing, setEditing] = useState<IncomeRecord | null>(null);
   const [editingYearly, setEditingYearly] = useState<IncomeYearlySummaryRow | null>(null);
-  const [activeTab, setActiveTab] = useState<"monthly" | "yearly">("monthly");
   const [loading, setLoading] = useState(true);
   const [activeIncomeMenuId, setActiveIncomeMenuId] = useState<string | null>(null);
   const [expandedIncomeIds, setExpandedIncomeIds] = useState<Set<string>>(() => new Set());
-  
+  const [detailIncome, setDetailIncome] = useState<IncomeRecord | null>(null);
+  const [deletingIncome, setDeletingIncome] = useState<IncomeRecord | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const showToast = useCallback((message: string, type: "success" | "error" = "success") => setToast({ message, type }), []);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2800);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    try {
-      setIncomeData(await fetchIncomeApiData(year));
-    } finally {
-      setLoading(false);
-    }
+    try { setIncomeData(await fetchIncomeApiData(year)); }
+    finally { setLoading(false); }
   }, [year]);
-  
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+
+  const allRecords = incomeData?.allRecords || [];
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const jobSourceMap = new Map<string, { id: string; label: string; total: number }>();
+  let otherSourceTotal = 0;
+  allRecords.filter(isReceivedIncome).forEach(record => {
+    const jobId = record.jobId || record.workId || "";
+    if (jobId) {
+      const current = jobSourceMap.get(jobId) || { id: jobId, label: incomeJobShortLabel(record), total: 0 };
+      current.total += record.amount;
+      jobSourceMap.set(jobId, current);
+    } else otherSourceTotal += record.amount;
+  });
+  const sourceOptions = Array.from(jobSourceMap.values()).sort((a, b) => a.label.localeCompare(b.label, "vi"));
+
+  const sourceFilteredRecords = allRecords.filter(record => {
+    const jobId = record.jobId || record.workId || "";
+    if (sourceFilter === "other") return !jobId;
+    if (sourceFilter.startsWith("job:")) return jobId === sourceFilter.slice(4);
+    return true;
+  });
+  const records = sourceFilteredRecords.filter(record => {
+    const jobText = incomeJobShortLabel(record) + " " + incomeJobFullLabel(record) + " " + incomeJobCompany(record);
+    const haystack = (record.name + " " + record.note + " " + (record.memberName || "") + " " + jobText).toLocaleLowerCase();
+    return (monthFilter === "all" || record.month === Number(monthFilter)) && (!normalizedQuery || haystack.includes(normalizedQuery));
+  }).sort((a, b) => new Date(b.incomeDate || b.receivedDate).getTime() - new Date(a.incomeDate || a.receivedDate).getTime());
+
+  const receivedRecords = sourceFilteredRecords.filter(isReceivedIncome);
+  const currentYearSummaries = sourceFilter === "all" ? (incomeData?.yearlySummaries || []).filter(item => String(item.year) === year) : [];
+  const yearlySummariesTotal = currentYearSummaries.reduce((sum, item) => sum + item.amount, 0);
+  const totalYear = receivedRecords.reduce((sum, record) => sum + record.amount, 0) + yearlySummariesTotal;
+  const selectedMonth = monthFilter === "all" ? String(new Date().getMonth() + 1) : monthFilter;
+  const totalMonth = receivedRecords.filter(record => record.month === Number(selectedMonth)).reduce((sum, record) => sum + record.amount, 0);
+  const totalOther = receivedRecords.filter(record => !(record.jobId || record.workId)).reduce((sum, record) => sum + record.amount, 0);
+  const activeJobCount = new Set(receivedRecords.map(record => record.jobId || record.workId || "").filter(Boolean)).size;
+  const monthSummaryRows = Array.from({ length: 12 }, (_, index) => {
+    const itemMonth = index + 1;
+    const items = records.filter(record => record.month === itemMonth);
+    return { month: itemMonth, items, total: items.filter(isReceivedIncome).reduce((sum, record) => sum + record.amount, 0), count: items.length };
+  });
+
   function toggleIncomeDetail(id: string) {
     setExpandedIncomeIds(current => {
       const next = new Set(current);
@@ -1833,299 +1883,66 @@ function IncomeSheetManagement({ user }: { user: AuthUser }) {
       return next;
     });
   }
-  
-  const allRecords = incomeData?.allRecords || [];
-  console.log("[income] rows after map", allRecords);
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const records = allRecords.filter(record => (monthFilter === "all" || record.month === Number(monthFilter)) && (categoryFilter === "all" || record.category === categoryFilter) && (!normalizedQuery || `${record.name} ${record.note} ${record.memberName || ""}`.toLocaleLowerCase().includes(normalizedQuery)));
-  console.log("[income] rows after filter", records);
-  records.sort((a, b) => {
-    const dateA = new Date(a.incomeDate).getTime();
-    const dateB = new Date(b.incomeDate).getTime();
-    if (dateA !== dateB) return dateA - dateB;
-    return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
-  });
-  
-  const monthlyTotals = Array.from({ length: 12 }, (_, index) => {
-    const monthRecords = allRecords.filter(record => record.month === index + 1 && isReceivedIncome(record));
-    const total = monthRecords.reduce((sum, record) => sum + record.amount, 0);
-    const details = monthRecords.reduce((acc, record) => {
-      acc[record.name] = (acc[record.name] || 0) + record.amount;
-      return acc;
-    }, {} as Record<string, number>);
-    return { month: index + 1, monthName: `Tháng ${index + 1}`, total, details };
-  });
-  const visibleMonthTotal = allRecords.filter(record => (monthFilter === "all" || record.month === Number(monthFilter)) && isReceivedIncome(record)).reduce((sum, record) => sum + record.amount, 0);
-  
-  // Tổng năm = tổng records + tổng yearlySummaries
-  const currentYearSummaries = (incomeData?.yearlySummaries || []).filter(s => String(s.year) === year);
-  const yearlySummariesTotal = currentYearSummaries.reduce((sum, s) => sum + s.amount, 0);
-  const totalYear = monthlyTotals.reduce((sum, item) => sum + item.total, 0) + yearlySummariesTotal;
-  
-  // Category totals bao gồm cả yearlySummaries
-  const categoryTotals = incomeCategories.map(category => {
-    const recordTotal = allRecords.filter(record => record.category === category && isReceivedIncome(record)).reduce((sum, record) => sum + record.amount, 0);
-    const summaryTotal = currentYearSummaries.filter(s => s.category === category).reduce((sum, s) => sum + s.amount, 0);
-    return { category, total: recordTotal + summaryTotal };
-  });
-  const selectedCategoryTotal = categoryFilter === "all" ? allRecords.filter(isReceivedIncome).reduce((sum, record) => sum + record.amount, 0) + yearlySummariesTotal : categoryTotals.find(item => item.category === categoryFilter)?.total || 0;
-  
-  const renderedMonths = Array.from(new Set(records.map(record => record.month))).sort((left, right) => left - right);
-  
-  const yearlyChartData = incomeData?.yearlyComparison || [];
-  const processedYearlyChartData = yearlyChartData.slice().sort((a,b) => a.year - b.year).map((item, index, array) => {
-    const prevTotal = array[index - 1]?.total;
-    let diff = undefined;
-    let percent = undefined;
-    if (prevTotal !== undefined) {
-      diff = item.total - prevTotal;
-      percent = prevTotal === 0 ? "100%" : (Math.abs(diff) / prevTotal * 100).toFixed(1) + "%";
-    }
-    return { ...item, diff, percent, prevTotal };
-  });
-  const prevYearTotal = processedYearlyChartData.find(d => d.year === Number(year))?.prevTotal;
 
-  function renderCompare(current: number, prev: number | undefined) {
-    if (!showComparison) return null;
-    if (prev === undefined) return <p className="mt-1 text-[10px] text-slate-400">Chưa có dữ liệu so sánh</p>;
-    const d = current - prev;
-    if (d === 0) return <p className="mt-1 text-[10px] text-slate-400">Không đổi so với năm trước</p>;
-    const percent = prev === 0 ? "100%" : (Math.abs(d) / Math.abs(prev) * 100).toFixed(1) + "%";
-    return <p className={`mt-1 text-[10px] font-bold ${d > 0 ? "text-emerald-500" : "text-rose-500"}`}>{d > 0 ? "↑" : "↓"} {money(Math.abs(d))} ({percent})</p>;
-  }
-  
-  async function remove(record: IncomeRecord) {
-    if (!confirm(`Xóa dòng thu "${record.name}"?`)) return;
-    const response = await fetch(`/api/incomes?id=${encodeURIComponent(record.id)}`, { method: "DELETE" });
-    if (!response.ok) alert("Không thể xóa dòng thu nhập.");
+  async function confirmDeleteIncome() {
+    if (!deletingIncome) return;
+    const response = await fetch('/api/incomes?id=' + encodeURIComponent(deletingIncome.id), { method: "DELETE" });
+    const result = await readJsonSafe<{ error?: string; details?: string }>(response);
+    if (!response.ok) {
+      showToast(result?.error || result?.details || "Không thể xóa khoản thu.", "error");
+      return;
+    }
+    setDeletingIncome(null);
     setActiveIncomeMenuId(null);
-    void load();
+    await load();
+    showToast("Đã xóa khoản thu");
   }
-  
-  async function removeYearly(summary: IncomeYearlySummaryRow) {
-    if (!confirm(`Xóa dòng thu nhập tổng năm "${summary.name}"?`)) return;
-    const response = await fetch(`/api/incomes-yearly?id=${encodeURIComponent(summary.id)}`, { method: "DELETE" });
-    if (!response.ok) alert("Không thể xóa dòng thu nhập tổng năm.");
-    setActiveIncomeMenuId(null);
-    void load();
-  }
-  
-  function edit(record: IncomeRecord) {
-    setEditing(record);
-    setView("edit");
-    setActiveIncomeMenuId(null);
-  }
-  
-  function editYearly(summary: IncomeYearlySummaryRow) {
-    setEditingYearly(summary);
-    setView("yearly-edit");
-    setActiveIncomeMenuId(null);
-  }
-  
+
+  function edit(record: IncomeRecord) { setEditing(record); setView("edit"); setActiveIncomeMenuId(null); }
   function exportExcel() {
-    if (!XLSX) { alert("Không tải được thư viện Excel."); return; }
-    
-    // Sheet 1: Thu nhập chi tiết
-    const detailedData = [["Ngày nhận", "Tháng", "Năm", "Loại khoản thu", "Nội dung", "Số tiền", "Ghi chú"]];
-    renderedMonths.forEach(month => {
-      const items = records.filter(record => record.month === month);
-      items.forEach(record => {
-        detailedData.push([formatDateVN(record.incomeDate), String(record.month), String(record.year), record.category, record.name, String(record.amount), record.note]);
-      });
-      const subtotal = items.filter(record => isReceivedIncome(record)).reduce((sum, record) => sum + record.amount, 0);
-      detailedData.push([`Tổng tháng ${month}`, "", "", "", "", String(subtotal), ""]);
-    });
-    
-    // Sheet 2: Tổng năm cũ
-    const summaryData = [["Năm", "Loại khoản thu", "Nội dung", "Số tiền", "Ghi chú"]];
-    (incomeData?.yearlySummaries || []).forEach(s => {
-      summaryData.push([String(s.year), s.category, s.name, String(s.amount), s.note]);
-    });
-    
-    // Sheet 3: Thống kê
-    const statsData = [["Thống kê", "Giá trị"]];
-    statsData.push(["Tổng thu nhập năm " + year, String(totalYear)]);
-    categoryTotals.forEach(item => {
-      statsData.push([`Tổng ${item.category}`, String(item.total)]);
-    });
-    
+    const rows = [["Ngày nhận", "Tháng", "Nguồn thu", "Loại", "Nội dung", "Số tiền", "Ghi chú"]];
+    records.forEach(record => rows.push([formatDateVN(record.incomeDate || record.receivedDate), String(record.month), incomeJobShortLabel(record), record.category, record.name, String(record.amount), record.note]));
     const wb = XLSX.utils.book_new();
-    const ws1 = XLSX.utils.aoa_to_sheet(detailedData);
-    const ws2 = XLSX.utils.aoa_to_sheet(summaryData);
-    const ws3 = XLSX.utils.aoa_to_sheet(statsData);
-    
-    XLSX.utils.book_append_sheet(wb, ws1, "Thu nhập chi tiết");
-    XLSX.utils.book_append_sheet(wb, ws2, "Tổng năm cũ");
-    XLSX.utils.book_append_sheet(wb, ws3, "Thống kê năm");
-    
-    XLSX.writeFile(wb, `thu-nhap-${year}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), "Thu nhập");
+    XLSX.writeFile(wb, "thu-nhap-" + year + ".xlsx");
   }
-  
-  if (view === "new" || view === "edit") return <IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} user={user} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
-  if (view === "yearly-new" || view === "yearly-edit") return <YearlyIncomeForm record={editingYearly} back={() => { setView("list"); setEditingYearly(null); }} saved={() => { setView("list"); setEditingYearly(null); void load(); }} />;
-  
-  return <div className="space-y-5">
-    <div className="grid gap-3 md:grid-cols-[90px_100px_120px_1fr_auto_auto_auto_auto]">
+
+  const toastNode = toast && <div className="fixed right-4 top-4 z-[70] w-[calc(100%-2rem)] max-w-sm rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] px-4 py-3 text-sm font-semibold shadow-2xl sm:right-6 sm:top-6"><span className={toast.type === "success" ? "text-emerald-600" : "text-rose-600"}>{toast.message}</span></div>;
+
+  if (view === "new" || view === "edit") return <>{toastNode}<IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} user={user} back={() => { setView("list"); setEditing(null); }} saved={() => { const wasEditing = Boolean(editing); setView("list"); setEditing(null); void load(); showToast(wasEditing ? "Đã cập nhật khoản thu" : "Đã thêm khoản thu"); }} notify={showToast} /></>;
+  if (view === "yearly-new" || view === "yearly-edit") return <>{toastNode}<YearlyIncomeForm record={editingYearly} back={() => { setView("list"); setEditingYearly(null); }} saved={() => { setView("list"); setEditingYearly(null); void load(); }} /></>;
+
+  return <div className="space-y-5 font-sans">
+    {toastNode}
+    <div className="grid gap-3 md:grid-cols-[90px_120px_220px_minmax(220px,1fr)_auto_auto]">
       <select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select>
       <select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select>
-      <select className={filterClass} value={categoryFilter} onChange={event => setCategoryFilter(event.target.value as IncomeCategory | "all")}><option value="all">Khoản thu</option>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select>
-      <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm khoản thu..." />
-      <button onClick={() => setShowComparison(!showComparison)} className="rounded-xl border border-slate-200 px-3 py-3 text-sm font-bold text-slate-500 dark:border-white/10 dark:text-slate-300">{showComparison ? "Ẩn so sánh" : "Hiện so sánh"}</button>
-      <button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button>
-      <button onClick={() => { setEditingYearly(null); setView("yearly-new"); }} className="rounded-xl bg-indigo-500 px-4 py-3 text-sm font-bold text-white">Nhập tổng năm cũ</button>
-      <button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button>
-    </div>
-    
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Card><p className="text-xs text-slate-400">Tổng thu nhập năm</p><b className="text-emerald-500">{money(totalYear)}</b>{renderCompare(totalYear, prevYearTotal)}</Card>
-      <Card><p className="text-xs text-slate-400">Tổng thu tháng</p><b>{money(visibleMonthTotal)}</b>{renderCompare(visibleMonthTotal, undefined)}</Card>
-      <Card><p className="text-xs text-slate-400">Thu theo loại</p><b>{money(selectedCategoryTotal)}</b>{renderCompare(selectedCategoryTotal, undefined)}</Card>
-      <Card><p className="text-xs text-slate-400">Trung bình/tháng</p><b>{money(totalYear / 12)}</b>{renderCompare(totalYear / 12, prevYearTotal ? prevYearTotal / 12 : undefined)}</Card>
+      <select className={filterClass} value={sourceFilter} onChange={event => setSourceFilter(event.target.value)}><option value="all" hidden>Nguồn thu</option><optgroup label="Nguồn thu"><option value="all">Tất cả</option>{sourceOptions.map(source => <option key={source.id} value={"job:" + source.id}>{source.label}</option>)}{otherSourceTotal > 0 && <option value="other">Khác</option>}</optgroup></select>
+      <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm nội dung, công việc, nơi làm, ghi chú..." />
+      <button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white">Thêm thu nhập</button>
+      <button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-semibold text-emerald-600">Xuất Excel</button>
     </div>
 
-    <div className="flex gap-2 border-b border-[var(--app-border)] pb-2">
-      <button onClick={() => setViewMode("list")} className={`px-4 py-2 text-sm font-bold rounded-lg ${viewMode === "list" ? "bg-slate-200 dark:bg-white/10" : "text-slate-400"}`}>Danh sách</button>
-      <button onClick={() => setViewMode("chart")} className={`px-4 py-2 text-sm font-bold rounded-lg ${viewMode === "chart" ? "bg-slate-200 dark:bg-white/10" : "text-slate-400"}`}>Biểu đồ</button>
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <Card><p className="text-xs text-slate-500">Tổng thu nhập năm</p><b className="font-semibold text-emerald-600">{money(totalYear)}</b></Card>
+      <Card><p className="text-xs text-slate-500">Tổng thu tháng {selectedMonth}</p><b className="font-semibold text-slate-900 dark:text-slate-100">{money(totalMonth)}</b></Card>
+      <Card><p className="text-xs text-slate-500">Tổng thu khác</p><b className="font-semibold text-slate-900 dark:text-slate-100">{money(totalOther)}</b></Card>
+      <Card><p className="text-xs text-slate-500">Số công việc có thu</p><b className="font-semibold text-slate-900 dark:text-slate-100">{activeJobCount}</b></Card>
     </div>
-    
-    {viewMode === "chart" && (
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-      <Card>
-        <div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div>
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={monthlyTotals} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.2} />
-              <XAxis dataKey="monthName" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#94a3b8" }} dy={10} />
-              <YAxis hide />
-              <RechartsTooltip content={<MonthlyTooltip />} cursor={{ fill: "transparent" }} />
-              <Bar dataKey="total" radius={[6, 6, 0, 0]} maxBarSize={60}>
-                {monthlyTotals.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill="#10b981" />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-      <Card>
-        <div className="mb-4 flex items-center justify-between"><b>So sánh thu nhập theo năm</b></div>
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={processedYearlyChartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} strokeOpacity={0.2} />
-              <XAxis dataKey="year" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#94a3b8" }} dy={10} />
-              <YAxis hide />
-              <RechartsTooltip content={<YearlyTooltip />} cursor={{ fill: "transparent" }} />
-              <Bar dataKey="total" radius={[6, 6, 0, 0]} maxBarSize={120}>
-                {processedYearlyChartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill="#6366f1" />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-    </div>
-    )}
-    
-    {viewMode === "list" && (
-    <Card className="overflow-hidden p-0">
-      <div className="flex items-center gap-4 border-b border-[var(--app-border)] px-4 pt-4">
-        <button onClick={() => setActiveTab("monthly")} className={`border-b-2 px-2 pb-3 text-sm font-bold ${activeTab === "monthly" ? "border-emerald-500 text-emerald-500" : "border-transparent text-slate-400"}`}>Chi tiết tháng</button>
-        <button onClick={() => setActiveTab("yearly")} className={`border-b-2 px-2 pb-3 text-sm font-bold ${activeTab === "yearly" ? "border-emerald-500 text-emerald-500" : "border-transparent text-slate-400"}`}>Tổng năm cũ</button>
-      </div>
-      
-      {activeTab === "monthly" && (
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5">
-              <tr><th className="w-10 px-4 py-3"></th><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Loại</th><th className="px-4 py-3">Công việc</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3 text-right">Hành động</th></tr>
-            </thead>
-            <tbody>
-              {records.map(record => {
-                const expanded = expandedIncomeIds.has(record.id);
-                return <Fragment key={record.id}>
-                  <tr className="border-t border-[var(--app-border)] bg-white dark:bg-[var(--app-card)]">
-                    <td className="px-4 py-3"><button type="button" onClick={() => toggleIncomeDetail(record.id)} aria-label={expanded ? "Thu gon chi tiet" : "Xem chi tiet"} className="grid size-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5">{expanded ? "^" : "v"}</button></td>
-                    <td className="px-4 py-3">{formatDateVN(record.incomeDate || record.receivedDate)}</td>
-                    <td className="px-4 py-3">{record.month}</td>
-                    <td className="px-4 py-3">{record.category}</td>
-                    <td className="px-4 py-3">{incomeJobShortLabel(record)}</td>
-                    <td className="px-4 py-3 leading-tight">{record.jobId ? record.jobName : <>Thu khác<br /><span className="text-xs font-normal text-slate-500">{record.name}</span></>}</td>
-                    <td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td>
-                    <td className="px-4 py-3 text-right"><IncomeRecordInlineActions edit={() => edit(record)} remove={() => remove(record)} /></td>
-                  </tr>
-                  {expanded && <tr className="border-t border-[var(--app-border)] bg-slate-50/70 dark:bg-white/5">
-                    <td className="px-4 py-4" colSpan={8}>
-                      <div className="grid gap-3 text-sm text-slate-500 md:grid-cols-2 lg:grid-cols-4">
-                        <div><p className="text-xs font-bold uppercase text-slate-400">Ngày nhận đầy đủ</p><p className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{formatDateVN(record.incomeDate || record.receivedDate)}</p></div>
-                        <div><p className="text-xs font-bold uppercase text-slate-400">Công việc đầy đủ</p><p className="mt-1 whitespace-pre-line font-semibold text-slate-700 dark:text-slate-200">{incomeJobFullLabel(record)}</p></div>
-                        <div><p className="text-xs font-bold uppercase text-slate-400">Nơi làm</p><p className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{incomeJobCompany(record) || "Không có"}</p></div>
-                        <div><p className="text-xs font-bold uppercase text-slate-400">Ghi chú</p><p className="mt-1 font-semibold text-slate-700 dark:text-slate-200">{record.note || "Không có"}</p></div>
-                        {process.env.NODE_ENV === "development" && <div className="lg:col-span-4"><p className="text-xs font-bold uppercase text-slate-400">ID</p><p className="mt-1 font-mono text-xs text-slate-500">{record.id}</p></div>}
-                      </div>
-                    </td>
-                  </tr>}
-                </Fragment>;
-              })}
-            </tbody>
-          </table>
-          {!records.length && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu thu nhập.</div>}
-        </div>
-      )}
-      
-      {activeTab === "yearly" && (
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5">
-              <tr><th className="px-4 py-3">Năm</th><th className="px-4 py-3">Loại khoản thu</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr>
-            </thead>
-            <tbody>
-              {(incomeData?.yearlySummaries || []).map(summary => (
-                <tr key={summary.id} className="border-t border-[var(--app-border)]">
-                  <td className="px-4 py-3">{summary.year}</td>
-                  <td className="px-4 py-3">{summary.category}</td>
-                  <td className="px-4 py-3">{summary.name}</td>
-                  <td className="px-4 py-3 text-right font-bold text-indigo-500">{money(summary.amount)}</td>
-                  <td className="px-4 py-3 text-slate-500">{summary.note}</td>
-                  <td className="px-4 py-3 text-right">
-                    <IncomeRecordActionMenu record={{ id: summary.id } as unknown as IncomeRecord} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => editYearly(summary)} remove={() => removeYearly(summary)} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!(incomeData?.yearlySummaries || []).length && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu tổng năm.</div>}
-        </div>
-      )}
-      
-      {/* Mobile view logic */}
-      <div className="space-y-3 p-3 md:hidden">
-        {activeTab === "monthly" && records.map(record => {
-          const expanded = expandedIncomeIds.has(record.id);
-          return <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3">
-            <div className="flex items-start justify-between gap-3">
-              <button type="button" onClick={() => toggleIncomeDetail(record.id)} className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5">{expanded ? "^" : "v"}</button>
-              <div className="min-w-0 flex-1"><b>{record.name}</b><p className="text-xs text-slate-400">{formatDateVN(record.incomeDate || record.receivedDate)} / {record.category} / {incomeJobShortLabel(record)}</p></div>
-              <b className="shrink-0 text-emerald-500">{money(record.amount)}</b>
-            </div>
-            {expanded && <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-500 dark:bg-white/5">
-              <p><b>Ngày nhận:</b> {formatDateVN(record.incomeDate || record.receivedDate)}</p>
-              <p className="mt-1 whitespace-pre-line"><b>Công việc:</b> {incomeJobFullLabel(record)}</p>
-              <p className="mt-1"><b>Nơi làm:</b> {incomeJobCompany(record) || "Không có"}</p>
-              <p className="mt-1"><b>Ghi chú:</b> {record.note || "Không có"}</p>
-              {process.env.NODE_ENV === "development" && <p className="mt-1 font-mono text-xs"><b>ID:</b> {record.id}</p>}
-            </div>}
-            <div className="mt-3 flex justify-end"><IncomeRecordInlineActions edit={() => edit(record)} remove={() => remove(record)} /></div>
-          </div>;
-        })}
-        {activeTab === "yearly" && (incomeData?.yearlySummaries || []).map(summary => <div key={summary.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{summary.name}</b><p className="text-xs text-slate-400">Năm {summary.year} · {summary.category}</p></div><div className="flex items-start gap-2"><b className="text-indigo-500">{money(summary.amount)}</b><IncomeRecordActionMenu record={{ id: summary.id } as unknown as IncomeRecord} activeId={activeIncomeMenuId} setActiveId={setActiveIncomeMenuId} edit={() => editYearly(summary)} remove={() => removeYearly(summary)} /></div></div><p className="mt-1 text-xs text-slate-400">{summary.note}</p></div>)}
-        {(activeTab === "monthly" && !records.length || activeTab === "yearly" && !(incomeData?.yearlySummaries || []).length) && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu.</div>}
-      </div>
-    </Card>
-    )}
+
+
+    <Card className="overflow-visible p-0"><div className="flex items-center justify-between border-b border-[var(--app-border)] px-4 py-3"><b className="font-semibold text-slate-800 dark:text-slate-100">Danh sách theo tháng</b>{loading && <span className="text-xs text-slate-500">Đang tải...</span>}</div><div className="divide-y divide-[var(--app-border)]">{monthSummaryRows.map(row => { const expanded = expandedIncomeIds.has("month-" + row.month); return <div key={row.month} className="px-4 py-2.5"><button type="button" onClick={() => toggleIncomeDetail("month-" + row.month)} className="grid w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-white/5 sm:grid-cols-[1fr_120px_100px_32px]"><b className="font-semibold text-slate-800 dark:text-slate-100">Tháng {row.month}</b><span className="font-bold text-emerald-600 sm:text-right">{money(row.total)}</span><span className="text-sm font-medium text-slate-500 sm:text-right">{row.count} khoản</span><span className="grid size-8 place-items-center rounded-lg text-slate-500" aria-hidden><svg viewBox="0 0 24 24" className={"size-4 fill-none stroke-current stroke-2 transition-transform " + (expanded ? "rotate-180" : "")} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg></span></button>{expanded && <div className="mt-1 divide-y divide-[var(--app-border)]">{row.items.length === 0 ? <div className="p-4 text-center text-sm font-medium text-slate-500">Chưa có khoản nào trong tháng này.</div> : row.items.map(record => { const menuOpen = activeIncomeMenuId === record.id; return <div key={record.id} className="flex items-start justify-between gap-3 py-3"><div className="min-w-0 flex-1"><p className="text-xs font-medium text-slate-500">{formatDateVN(record.incomeDate || record.receivedDate)} · {incomeJobShortLabel(record)} · {record.category}</p><p className="mt-0.5 truncate text-sm font-medium text-slate-900 dark:text-slate-100">{record.name || record.note || "Không có nội dung"}</p>{record.note && <p className="mt-0.5 truncate text-xs text-slate-500">{record.note}</p>}</div><div className="flex shrink-0 items-start gap-2"><b className="whitespace-nowrap text-sm font-semibold text-emerald-600 sm:text-base">{money(record.amount)}</b><div className="relative"><button type="button" onClick={() => setActiveIncomeMenuId(menuOpen ? null : record.id)} className="grid size-9 place-items-center rounded-xl border border-[var(--app-border)] text-lg font-semibold text-slate-500">...</button>{menuOpen && <div className="absolute right-0 top-10 z-30 w-36 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl"><button className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setActiveIncomeMenuId(null); setDetailIncome(record); }}>Xem chi tiết</button><button className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => edit(record)}>Sửa</button><button className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5" onClick={() => { setActiveIncomeMenuId(null); setDeletingIncome(record); }}>Xóa</button></div>}</div></div></div>; })}</div>}</div>; })}</div></Card>
+    {detailIncome && <IncomeRecordDetailDialog record={detailIncome} close={() => setDetailIncome(null)} />}
+    {deletingIncome && <IncomeDeleteDialog record={deletingIncome} close={() => setDeletingIncome(null)} confirm={() => void confirmDeleteIncome()} />}
   </div>;
+}
+
+function IncomeRecordDetailDialog({ record, close }: { record: IncomeRecord; close: () => void }) {
+  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45 p-0 md:p-4" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="h-full w-full max-w-lg overflow-y-auto bg-[var(--app-card)] p-5 font-sans shadow-2xl md:rounded-2xl"><div className="flex items-center justify-between"><h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Chi tiết khoản thu</h3><button onClick={close} className="grid size-9 place-items-center rounded-full border border-[var(--app-border)] text-slate-500">×</button></div><div className="mt-4 grid gap-3 text-sm"><AccountDetail label="Nguồn thu" value={incomeJobFullLabel(record)} /><AccountDetail label="Ngày nhận" value={formatDateVN(record.incomeDate || record.receivedDate)} /><AccountDetail label="Loại" value={record.category} /><AccountDetail label="Nội dung" value={record.name || "Không có nội dung"} /><AccountDetail label="Số tiền" value={money(record.amount)} /><div className="rounded-xl border border-[var(--app-border)] p-4"><p className="text-xs font-semibold uppercase text-slate-500">Ghi chú</p><p className="mt-1 font-medium text-slate-900 dark:text-slate-100">{record.note || "Không có"}</p></div></div></div></div>;
+}
+
+function IncomeDeleteDialog({ record, close, confirm }: { record: IncomeRecord; close: () => void; confirm: () => void }) {
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4 font-sans" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-5 shadow-2xl"><h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Bạn có chắc muốn xóa khoản thu này?</h3><div className="mt-4 rounded-xl border border-[var(--app-border)] p-4"><b className="font-medium text-slate-900 dark:text-slate-100">{record.name || "Khoản thu"}</b><p className="mt-1 text-sm font-semibold text-emerald-600">{money(record.amount)}</p></div><div className="mt-5 flex justify-end gap-3"><button onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button onClick={confirm} className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Xóa</button></div></div></div>;
 }
 
 function YearlyIncomeForm({ record, back, saved }: { record: IncomeYearlySummaryRow | null; back: () => void; saved: () => void }) {
@@ -2143,7 +1960,7 @@ function YearlyIncomeForm({ record, back, saved }: { record: IncomeYearlySummary
     const payload = { ...draft, amount: Number(rawAmount) };
     const response = await fetch(record ? `/api/incomes-yearly?id=${encodeURIComponent(record.id)}` : "/api/incomes-yearly", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record ? payload : { rows: [payload] }) });
     const result = await readJsonSafe<{ error?: string }>(response);
-    if (!response.ok) { alert(result?.error || "Kh?ng th? l?u thu nh?p."); return; }
+    if (!response.ok) { alert(result?.error || "Không thể lưu thu nhập."); return; }
     saved();
   }
   
@@ -2232,7 +2049,7 @@ function LegacyIncomeSheetManagement() {
     URL.revokeObjectURL(url);
   }
   if (view !== "list") return <IncomeRecordForm record={editing} members={incomeData?.members || []} templates={incomeData?.sourceTemplates || incomeTemplates} back={() => { setView("list"); setEditing(null); }} saved={() => { setView("list"); setEditing(null); void load(); }} />;
-  return <div className="space-y-5"><div className="grid gap-3 md:grid-cols-[120px_140px_1fr_auto_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select><select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Tất cả thành viên</option>{incomeData?.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select><button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button><button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Tổng cả năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card>{categoryTotals.slice(0, 3).map(item => <Card key={item.category}><p className="text-xs text-slate-400">{item.category}</p><b>{money(item.total)}</b></Card>)}</div><Card><div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div><div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">{monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2"><div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div><span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span></div>)}</div></Card><Card className="overflow-hidden p-0"><div className="border-b border-[var(--app-border)] p-4"><b>Bảng thu nhập theo tháng</b></div><div className="hidden overflow-x-auto md:block"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5"><tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Thành viên</th><th className="px-4 py-3">Nhóm thu</th><th className="px-4 py-3">Tên khoản thu</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr></thead><tbody>{Array.from({ length: 12 }, (_, index) => index + 1).filter(month => monthFilter === "all" || month === Number(monthFilter)).map(month => { const items = records.filter(record => record.month === month); const subtotal = items.filter(record => record.status === "Đã nhận").reduce((sum, record) => sum + record.amount, 0); return <><tr key={`m-${month}`} className="bg-emerald-50/70 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10"><td className="px-4 py-2" colSpan={5}>Tháng {month}</td><td className="px-4 py-2 text-right">{money(subtotal)}</td><td className="px-4 py-2" colSpan={3}>Tổng tháng</td></tr>{items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]"><td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td><td className="px-4 py-3">{record.month}</td><td className="px-4 py-3">{record.memberName}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3 leading-tight">{record.jobId ? record.jobName : <>Thu khác<br /><span className="text-xs font-normal text-slate-500">{record.name}</span></>}</td><td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3">{record.status}</td><td className="px-4 py-3 text-slate-500">{record.note}</td><td className="px-4 py-3 text-right"><button onClick={() => { setEditing(record); setView("edit"); }} className="rounded-lg px-2 py-1 text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="rounded-lg px-2 py-1 text-xs font-bold text-rose-500">Xóa</button></td></tr>)}</>; })}</tbody></table></div><div className="space-y-3 p-3 md:hidden">{records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.jobId ? record.jobName : "Thu khác"}</b>{record.jobId ? null : <p className="text-sm font-semibold text-slate-600">{record.name}</p>}<p className="mt-0.5 text-xs text-slate-400">{formatDateVN(record.incomeDate)} · {record.memberName} · {record.category}</p></div><b className="text-emerald-500">{money(record.amount)}</b></div><p className="mt-1 text-xs text-slate-400">{record.status} · {record.note}</p><div className="mt-2 flex gap-2"><button onClick={() => { setEditing(record); setView("edit"); }} className="text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="text-xs font-bold text-rose-500">Xóa</button></div></div>)}</div></Card></div>;
+  return <div className="space-y-5"><div className="grid gap-3 md:grid-cols-[120px_140px_1fr_auto_auto]"><select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select><select className={filterClass} value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="all">Tất cả tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Th\u00e1ng {index + 1}</option>)}</select><select className={filterClass} value={memberFilter} onChange={event => setMemberFilter(event.target.value)}><option value="all">Tất cả thành viên</option>{incomeData?.members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select><button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Thêm thu nhập</button><button onClick={exportExcel} className="rounded-xl border border-emerald-200 px-4 py-3 text-sm font-bold text-emerald-600">Xuất Excel</button></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Tổng cả năm</p><b className="text-emerald-500">{money(totalYear)}</b></Card>{categoryTotals.slice(0, 3).map(item => <Card key={item.category}><p className="text-xs text-slate-400">{item.category}</p><b>{money(item.total)}</b></Card>)}</div><Card><div className="mb-4 flex items-center justify-between"><b>Tổng thu theo 12 tháng</b>{loading && <span className="text-xs text-slate-400">Đang tải...</span>}</div><div className="flex h-56 items-end gap-2 overflow-x-auto pb-2">{monthlyTotals.map(item => <div key={item.month} className="flex min-w-12 flex-1 flex-col items-center gap-2"><div className="flex h-40 w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5"><div className="w-full rounded-md bg-emerald-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} /></div><span className="text-xs font-bold text-slate-400">{`Tháng ${item.month}`}</span></div>)}</div></Card><Card className="overflow-hidden p-0"><div className="border-b border-[var(--app-border)] p-4"><b>Bảng thu nhập theo tháng</b></div><div className="hidden overflow-x-auto md:block"><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5"><tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Tháng</th><th className="px-4 py-3">Thành viên</th><th className="px-4 py-3">Nhóm thu</th><th className="px-4 py-3">Tên khoản thu</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3">Ghi chú</th><th className="px-4 py-3 text-right">Hành động</th></tr></thead><tbody>{Array.from({ length: 12 }, (_, index) => index + 1).filter(month => monthFilter === "all" || month === Number(monthFilter)).map(month => { const items = records.filter(record => record.month === month); const subtotal = items.filter(record => record.status === "Đã nhận").reduce((sum, record) => sum + record.amount, 0); return <><tr key={`m-${month}`} className="bg-emerald-50/70 text-xs font-bold text-emerald-700 dark:bg-emerald-400/10"><td className="px-4 py-2" colSpan={5}>Tháng {month}</td><td className="px-4 py-2 text-right">{money(subtotal)}</td><td className="px-4 py-2" colSpan={3}>Tổng tháng</td></tr>{items.map(record => <tr key={record.id} className="border-t border-[var(--app-border)]"><td className="px-4 py-3">{formatDateVN(record.incomeDate)}</td><td className="px-4 py-3">{record.month}</td><td className="px-4 py-3">{record.memberName}</td><td className="px-4 py-3">{record.category}</td><td className="px-4 py-3 leading-tight">{record.jobId ? record.jobName : <>Thu khác<br /><span className="text-xs font-normal text-slate-500">{record.name}</span></>}</td><td className="px-4 py-3 text-right font-bold text-emerald-500">{money(record.amount)}</td><td className="px-4 py-3">{record.status}</td><td className="px-4 py-3 text-slate-500">{record.note}</td><td className="px-4 py-3 text-right"><button onClick={() => { setEditing(record); setView("edit"); }} className="rounded-lg px-2 py-1 text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="rounded-lg px-2 py-1 text-xs font-bold text-rose-500">Xóa</button></td></tr>)}</>; })}</tbody></table></div><div className="space-y-3 p-3 md:hidden">{records.map(record => <div key={record.id} className="rounded-lg border border-[var(--app-border)] p-3"><div className="flex items-start justify-between gap-3"><div><b>{record.jobId ? record.jobName : "Thu khác"}</b>{record.jobId ? null : <p className="text-sm font-semibold text-slate-600">{record.name}</p>}<p className="mt-0.5 text-xs text-slate-400">{formatDateVN(record.incomeDate)} · {record.memberName} · {record.category}</p></div><b className="text-emerald-500">{money(record.amount)}</b></div><p className="mt-1 text-xs text-slate-400">{record.status} · {record.note}</p><div className="mt-2 flex gap-2"><button onClick={() => { setEditing(record); setView("edit"); }} className="text-xs font-bold text-emerald-600">Sửa</button><button onClick={() => void remove(record)} className="text-xs font-bold text-rose-500">Xóa</button></div></div>)}</div></Card></div>;
 }
 function IncomeRecordActionMenu({ record, activeId, setActiveId, edit, remove }: { record: IncomeRecord; activeId: string | null; setActiveId: (id: string | null) => void; edit: (record: IncomeRecord) => void; remove: (record: IncomeRecord) => void }) {
   void activeId;
@@ -2245,7 +2062,7 @@ function IncomeRecordInlineActions({ edit, remove }: { edit: () => void; remove:
     <button type="button" onClick={() => void remove()} className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button>
   </div>;
 }
-function IncomeRecordForm({ record, members: initialMembers, templates, user, back, saved, fixedJobId, fixedMemberId }: { record: IncomeRecord | null; members: { id: string; name: string }[]; templates: string[]; user?: AuthUser; back: () => void; saved: () => void; fixedJobId?: string; fixedMemberId?: string }) {
+function IncomeRecordForm({ record, members: initialMembers, templates, user, back, saved, notify, fixedJobId, fixedMemberId }: { record: IncomeRecord | null; members: { id: string; name: string }[]; templates: string[]; user?: AuthUser; back: () => void; saved: () => void; notify?: (message: string, type?: "success" | "error") => void; fixedJobId?: string; fixedMemberId?: string }) {
   const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
   const emptyRow = (): IncomeDraft => ({ memberId: fixedMemberId || user?.memberId || initialMembers[0]?.id || "", jobId: fixedJobId || "", incomeDate: today, category: "Lương", name: "", amount: "", status: "Đã nhận", note: "" });
   const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || fixedMemberId || user?.memberId || initialMembers[0]?.id || "", jobId: record.jobId || record.workId || fixedJobId || "", incomeDate: record.incomeDate || record.receivedDate || today, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
@@ -2267,28 +2084,44 @@ function IncomeRecordForm({ record, members: initialMembers, templates, user, ba
     return () => { active = false; };
   }, [isAdmin, otherMember, fixedMemberId]);
 
+  const [apiJobs, setApiJobs] = useState<MemberJob[]>([]);
+  useEffect(() => {
+    let active = true;
+    if (effectiveMemberId) {
+      fetch(`/api/member-jobs?memberId=${encodeURIComponent(effectiveMemberId)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (active && data.ok && Array.isArray(data.data)) {
+            const activeJobs = data.data.filter((j: any) => j.status === "active" || (record && record.jobId === j.id));
+            setApiJobs(activeJobs);
+          }
+        }).catch(e => console.error("[income] load jobs error", e));
+    } else {
+      setApiJobs([]);
+    }
+    return () => { active = false; };
+  }, [effectiveMemberId, record]);
+
   function patch(value: Partial<IncomeDraft>) { setDraft(current => ({ ...current, ...value })); }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const rawAmount = String(draft.amount).replace(/\D/g, "");
     const amount = Number(rawAmount);
-    if (!Number.isFinite(amount) || amount <= 0) { alert("Vui lòng nhập số tiền hợp lệ."); return; }
+    if (!Number.isFinite(amount) || amount <= 0) { notify?.("Vui l?ng nh?p s? ti?n h?p l?.", "error"); return; }
     const contentText = draft.name.trim();
-    if (!contentText) { alert("Vui lòng nhập nội dung khoản thu."); return; }
-    if (!effectiveMemberId) { alert("Chưa xác định thành viên nhận thu nhập."); return; }
+    if (!contentText) { notify?.("Vui l?ng nh?p n?i dung khoản thu.", "error"); return; }
+    if (!effectiveMemberId) { notify?.("Chưa xác định thành viên nhận thu nhập.", "error"); return; }
     
-    // Nếu dùng từ màn hình JobDetail thì giữ nguyên fixedJobId, ngược lại set null
-    const payloadJobId = fixedJobId ? fixedJobId : null;
+    const payloadJobId = fixedJobId ? fixedJobId : (draft.jobId || null);
     const payload = { memberId: effectiveMemberId, jobId: payloadJobId, category: draft.category, name: contentText, content: contentText, amount, receivedDate: draft.incomeDate, note: draft.note.trim() || null };
     
     const response = await fetch(record ? `/api/incomes?id=${encodeURIComponent(record.id)}` : "/api/incomes", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record ? payload : { rows: [payload] }) });
     const result = await readJsonSafe<{ error?: string; details?: string }>(response);
     if (!response.ok) {
-      alert((result?.error || "Không thể lưu thu nhập.") + (result?.details ? `\nLỗi: ${result.details}` : ""));
+      notify?.((result?.error || "Không thể lưu thu nhập.") + (result?.details ? ` Lỗi: ${result.details}` : ""), "error");
       return;
     }
-    alert("Đã lưu thu nhập");
     saved();
   }
 
@@ -2312,7 +2145,24 @@ function IncomeRecordForm({ record, members: initialMembers, templates, user, ba
       </select>
     </Field>
   )}
-  <Field label="Ngày nhận"><DateVNInput required value={draft.incomeDate} onChange={value => patch({ incomeDate: value })} /></Field><Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field><Field label="Nội dung khoản thu"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder={fixedJobId ? "VD: Lương CB..." : "VD: Bán đồ, được thưởng..."} /></Field><Field label="Số tiền"><input required type="text" inputMode="numeric" pattern="[0-9]*" className={inputClass} value={draft.amount} onChange={e => patch({ amount: e.target.value.replace(/\D/g, "") })} placeholder="VD: 2280000" />{amountPreview && <p className="mt-1 text-xs text-slate-400">? {amountPreview}</p>}</Field><div className="md:col-span-2"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
+  {!fixedJobId && (
+    <Field label="Nguồn thu">
+      <select required className={inputClass} value={draft.jobId || "other"} onChange={event => patch({ jobId: event.target.value === "other" ? "" : event.target.value })}>
+        <option value="" disabled>Chọn nguồn thu</option>
+        {apiJobs.map(job => (
+          <option key={job.id} value={job.id}>
+            {job.title} {job.company ? `· ${job.company}` : ""}
+          </option>
+        ))}
+        <option value="other">Thu khác</option>
+      </select>
+    </Field>
+  )}
+  <Field label="Ngày nhận"><DateVNInput required value={draft.incomeDate} onChange={value => patch({ incomeDate: value })} /></Field>
+  <Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field>
+  <Field label="Nội dung khoản thu"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder={fixedJobId ? "VD: Lương CB..." : "VD: Bán đồ, được thưởng..."} /></Field>
+  <Field label="Số tiền"><input required type="text" inputMode="numeric" pattern="[0-9]*" className={inputClass} value={draft.amount} onChange={e => patch({ amount: e.target.value.replace(/\D/g, "") })} placeholder="VD: 2280000" />{amountPreview && <p className="mt-1 text-xs text-slate-400">Khoảng {amountPreview}</p>}</Field>
+  <div className="md:col-span-2 xl:col-span-4"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
 }
 function IncomeManagement() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
@@ -2448,106 +2298,319 @@ function IncomeSourceEditor({ source, members, close, saved }: { source: IncomeS
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({ memberId: existing?.memberId || members[0]?.id || "", name: existing?.name || "", type: (existing?.type || "fixed") as IncomeSourceType, amount: String(existing?.amount || ""), frequency: (existing?.frequency || "monthly") as IncomeFrequency, receivedDate: existing?.receivedDate || existing?.startDate || today, note: existing?.note || "", active: existing?.active ?? true, createRecord: !existing });
   function set<K extends keyof typeof form>(key: K, value: typeof form[K]) { setForm(current => ({ ...current, [key]: value })); }
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    const payload = { ...form, amount: Number(form.amount), startDate: form.receivedDate };
-    const url = existing ? `/api/incomes?id=${encodeURIComponent(existing.id)}` : "/api/incomes";
-    const response = await fetch(url, { method: existing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const result = await readJsonSafe<{ error?: string }>(response);
-    if (!response.ok) { alert(result?.error || "Không thể lưu nguồn thu."); return; }
-    saved();
-  }
-  return <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/45 p-0 md:items-center md:p-6" onMouseDown={close}><form onSubmit={submit} onMouseDown={event => event.stopPropagation()} className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-lg md:rounded-3xl"><div className="mx-auto mb-4 h-1 w-12 rounded-full bg-slate-300 md:hidden" /><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">{existing ? "Sửa" : "Thêm"} nguồn thu</h2><button type="button" onClick={close} className="rounded-full px-3 py-1 text-xl text-slate-400">×</button></div><div className="space-y-4"><Field label="Thành viên"><select required className={inputClass} value={form.memberId} onChange={event => set("memberId", event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Tên nguồn thu"><input required className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Loại"><select className={inputClass} value={form.type} onChange={event => set("type", event.target.value as IncomeSourceType)}><option value="fixed">Cố định</option><option value="variable">Không cố định</option></select></Field><Field label="Số tiền"><input required min="0" type="number" className={inputClass} value={form.amount} onChange={event => set("amount", event.target.value)} /></Field><Field label="Tần suất"><select className={inputClass} value={form.frequency} onChange={event => set("frequency", event.target.value as IncomeFrequency)}>{Object.entries(frequencyLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label="Ngày nhận / ngày bắt đầu"><DateVNInput required value={form.receivedDate} onChange={value => set("receivedDate", value)} /></Field><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={event => set("active", event.target.checked)} /> Đang dùng</label>{!existing && form.type === "variable" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.createRecord} onChange={event => set("createRecord", event.target.checked)} /> Ghi nhận khoản thu này ngay</label>}</div><div className="mt-6 flex gap-3"><button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold">Hủy</button><button className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
-}
-void IncomeManagement;
-void LegacyIncomeSheetManagement;
-void OldIncomeManagement;
-void LegacyExpensePreview;
-function ExpensePreview({ data, open, t }: ListProps) {
-  const [year, setYear] = useState(String(new Date().getFullYear()));
-  const [month, setMonth] = useState("all");
-  const [category, setCategory] = useState("all");
-  const [query, setQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"list" | "chart">("list");
-  const expenseItems = data.transactions.filter(item => item.type === "expense");
-  const categories = [...new Set(expenseItems.map(item => item.category || "Khác"))].sort();
-  const transactions = expenseItems.filter(item => {
-    const parsed = parseDate(item.date);
-    const itemYear = parsed ? String(parsed.getFullYear()) : "";
-    const itemMonth = parsed ? String(parsed.getMonth() + 1) : "";
-    const text = `${item.title} ${item.category}`.toLocaleLowerCase();
-    return (!itemYear || itemYear === year) && (month === "all" || itemMonth === month) && (category === "all" || item.category === category) && (!query.trim() || text.includes(query.trim().toLocaleLowerCase()));
-  });
-  const totalExpense = transactions.reduce((sum, item) => sum + item.amount, 0);
-
-  const monthlyTotals = Array.from({ length: 12 }, (_, index) => {
-    const total = expenseItems.filter(item => {
-      const parsed = parseDate(item.date);
-      return parsed && String(parsed.getFullYear()) === year && parsed.getMonth() === index;
-    }).reduce((sum, item) => sum + item.amount, 0);
-    return { month: index + 1, total };
-  });
-  const maxMonth = Math.max(1, ...monthlyTotals.map(item => item.total));
-
-  return <div className="space-y-5">
-    <div className="mb-4 grid gap-3 md:grid-cols-[110px_140px_180px_1fr]">
-      <select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select>
-      <select className={filterClass} value={month} onChange={event => setMonth(event.target.value)}><option value="all">Tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select>
-      <select className={filterClass} value={category} onChange={event => setCategory(event.target.value)}><option value="all">Khoản chi</option>{categories.map(value => <option key={value} value={value}>{value}</option>)}</select>
-      <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm chi tiêu..." />
+  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45 p-0 md:p-4" onMouseDown={close}>
+    <div onMouseDown={e => e.stopPropagation()} className="h-full w-full max-w-lg overflow-y-auto bg-[var(--app-card)] p-6 shadow-2xl md:rounded-2xl">
+      <h2 className="text-xl font-bold">{existing ? "Sửa nguồn thu" : "Thêm nguồn thu"}</h2>
+      <div className="mt-4 grid gap-4">
+        <Field label="Tên nguồn"><input className={inputClass} value={form.name} onChange={e => set("name", e.target.value)} /></Field>
+        <Field label="Thành viên"><select className={inputClass} value={form.memberId} onChange={e => set("memberId", e.target.value)}>{members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></Field>
+        <Field label="Số tiền"><input className={inputClass} type="number" value={form.amount} onChange={e => set("amount", e.target.value)} /></Field>
+      </div>
+      <div className="mt-6 flex justify-end gap-3"><button onClick={close} className="px-4 py-2 font-bold">Hủy</button><button onClick={saved} className="rounded-xl bg-emerald-500 px-4 py-2 text-white font-bold">Lưu</button></div>
     </div>
-
-    <div className="grid grid-cols-2 gap-3 lg:max-w-xl">
-      <Card><p className="text-xs text-slate-400">Tổng chi theo lọc</p><b className="text-rose-500">{money(totalExpense)}</b></Card>
-      <Card><p className="text-xs text-slate-400">{t("income")}</p><b className="text-emerald-500">{money(data.transactions.filter(x => x.type === "income").reduce((sum, item) => sum + item.amount, 0))}</b></Card>
-    </div>
-
-    <div className="flex gap-2 border-b border-[var(--app-border)] pb-2">
-      <button onClick={() => setViewMode("list")} className={`px-4 py-2 text-sm font-bold rounded-lg ${viewMode === "list" ? "bg-slate-200 dark:bg-white/10" : "text-slate-400"}`}>Danh sách</button>
-      <button onClick={() => setViewMode("chart")} className={`px-4 py-2 text-sm font-bold rounded-lg ${viewMode === "chart" ? "bg-slate-200 dark:bg-white/10" : "text-slate-400"}`}>Biểu đồ</button>
-    </div>
-
-    {viewMode === "chart" && (
-      <Card>
-        <div className="mb-4 flex items-center justify-between"><b>Tổng chi theo 12 tháng</b></div>
-        <div className="flex h-64 w-full items-end justify-between gap-1 overflow-x-auto pb-2 md:gap-2">
-          {monthlyTotals.map(item => <div key={item.month} className="flex min-w-[30px] max-w-[60px] flex-1 flex-col items-center gap-2">
-            <div className="flex h-[240px] w-full items-end rounded-lg bg-slate-100 p-1 dark:bg-white/5">
-              <div className="w-full rounded-md bg-rose-500" style={{ height: `${Math.max(4, item.total / maxMonth * 100)}%` }} />
-            </div>
-            <span className="text-xs font-bold text-slate-400">{`T${item.month}`}</span>
-          </div>)}
-        </div>
-      </Card>
-    )}
-
-    {viewMode === "list" && (
-      <>
-        <div className="grid gap-x-4 lg:grid-cols-2">
-          {transactions.map(x => <Card key={x.id} className="mb-3 flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <b>{x.title}</b>
-              <p className="text-xs text-slate-400">{formatDateVN(x.date)} · {x.category}</p>
-            </div>
-            <b className="text-rose-500">-{money(x.amount)}</b>
-            <EditButton onClick={() => open({ kind: "transactions", item: x })} />
-          </Card>)}
-        </div>
-        {!transactions.length && <div className="p-6 text-center text-sm font-semibold text-slate-400">Chưa có dữ liệu.</div>}
-        <AddButton label={t("add")} onClick={() => open({ kind: "transactions" })} />
-      </>
-    )}
   </div>;
 }
-function LegacyExpensePreview({ data, open, t }: ListProps) {
+
+const paymentMethodLabels: Record<string, string> = { cash: "Tiền mặt", momo: "MoMo", apple_pay: "Apple Pay", bank_account: "Tài khoản", bank_card: "Thẻ", other: "Khác" };
+const expenseCategoryTree: Record<string, string[]> = {
+  "Ăn uống": ["Ăn ngoài", "Mua đồ nấu ăn", "Cà phê / nước uống"],
+  "Nhà cửa & sinh hoạt": ["Điện", "Nước", "Internet", "Sim / data", "Gas", "Rác"],
+  "Phương tiện": ["Xăng xe", "Bảo dưỡng", "Sửa xe", "Gửi xe"],
+  "Mua sắm": ["Đồ cá nhân", "Đồ gia dụng", "Điện tử"],
+  "Sức khỏe": ["Thuốc", "Khám bệnh", "Nha khoa"],
+  "Giải trí": ["Phim", "Game", "Đi chơi", "Du lịch"],
+  "Gia đình": ["Ba mẹ", "Quà tặng", "Việc nhà"],
+  "Khác": ["Khác"]
+};
+const expenseCategories = Object.keys(expenseCategoryTree);
+type ExpenseDraft = { id: string; memberId: string; date: string; category: string; subcategory: string; vendor: string; grossAmount: string; discountAmount: string; note: string; paymentMethod: import("../types").PaymentMethod; bankAccountId: string; };
+
+function ExpenseSheetManagement({ data, update, user }: { data: AppData; update: (data: AppData) => void; user: AuthUser }) {
+  const [year, setYear] = useState(String(new Date().getFullYear()));
   const [month, setMonth] = useState("all");
-  const [type, setType] = useState<Transaction["type"] | "all">("all");
-  const total = (type: "income" | "expense") => data.transactions.filter(x => x.type === type).reduce((a,x) => a+x.amount, 0);
-  const monthKey = (date: string) => { const parsed = parseDate(date); return parsed ? `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}` : date; };
-  const months = [...new Set(data.transactions.map(item => monthKey(item.date)))].sort().reverse();
-  const transactions = data.transactions.filter(item => (month === "all" || monthKey(item.date) === month) && (type === "all" || item.type === type));
-  return <><div className="grid grid-cols-2 gap-3 lg:max-w-xl"><Card><p className="text-xs text-slate-400">{t("income")}</p><b className="text-emerald-500">{money(total("income"))}</b></Card><Card><p className="text-xs text-slate-400">{t("expense")}</p><b className="text-rose-500">{money(total("expense"))}</b></Card></div><SectionTitle label={t("finance")} /><div className="mb-4 grid grid-cols-2 gap-3 md:max-w-xl"><select className={filterClass} value={month} onChange={event => setMonth(event.target.value)}><option value="all">Tất cả tháng</option>{months.map(value => <option key={value} value={value}>{value}</option>)}</select><select className={filterClass} value={type} onChange={event => setType(event.target.value as Transaction["type"] | "all")}><option value="all">Tất cả loại</option><option value="income">Thu nhập</option><option value="expense">Chi tiêu</option></select></div><div className="grid gap-x-4 lg:grid-cols-2">{transactions.map(x => <Card key={x.id} className="mb-3 flex items-center justify-between gap-2"><div className="min-w-0 flex-1"><b>{x.title}</b><p className="text-xs text-slate-400">{formatDateVN(x.date)}</p></div><b className={x.type === "income" ? "text-emerald-500" : "text-rose-500"}>{x.type === "income" ? "+" : "-"}{money(x.amount)}</b><EditButton onClick={() => open({ kind: "transactions", item: x })} /></Card>)}</div><AddButton label={t("add")} onClick={() => open({ kind: "transactions" })} /></>;
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [subcategoryFilter, setSubcategoryFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [expandedIds, setExpandedIds] = useState(new Set<string>());
+  const [editing, setEditing] = useState<Transaction | "new" | null>(null);
+  const [deleting, setDeleting] = useState<Transaction | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<Transaction | null>(null);
+
+  const yearRecords = useMemo(() => data.transactions.filter(r => String(r.type).toLowerCase() === "expense" && String(new Date(r.date || r.createdAt || "").getFullYear()) === year), [data.transactions, year]);
+  const visibleRecords = useMemo(() => yearRecords.filter(r => {
+    const parsed = parseDate(r.date || r.createdAt || "");
+    const m = parsed ? String(parsed.getMonth() + 1) : "";
+    if (month !== "all" && m !== month) return false;
+    if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
+    if (categoryFilter !== "all" && subcategoryFilter !== "all" && r.subcategory !== subcategoryFilter) return false;
+    if (query) {
+      const q = query.toLowerCase();
+      return (r.title?.toLowerCase().includes(q) || r.category.toLowerCase().includes(q) || r.subcategory?.toLowerCase().includes(q) || r.note?.toLowerCase().includes(q));
+    }
+    return true;
+  }), [yearRecords, month, categoryFilter, subcategoryFilter, query]);
+
+  const selectedMonth = month === "all" ? String(new Date().getMonth() + 1) : month;
+  const monthRecords = visibleRecords.filter(record => {
+    const parsed = parseDate(record.date || record.createdAt || "");
+    return parsed ? String(parsed.getMonth() + 1) === selectedMonth : false;
+  });
+  
+  const totalMonth = monthRecords.reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
+  const totalDiscountMonth = monthRecords.reduce((sum, record) => sum + (Number(record.discountAmount) || 0), 0);
+  const totalYear = yearRecords.reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
+  const totalDiscountYear = yearRecords.reduce((sum, record) => sum + (Number(record.discountAmount) || 0), 0);
+  
+  const byCategory = expenseCategories.map(category => ({ label: category, total: visibleRecords.filter(record => record.category === category).reduce((sum, record) => sum + (Number(record.amount) || 0), 0) })).filter(item => item.total > 0).sort((a, b) => b.total - a.total);
+  const largestCategory = byCategory[0];
+  const allSubcategories = Array.from(new Set(visibleRecords.map(r => r.subcategory || "Khác")));
+  const bySubcategory = allSubcategories.map(sub => ({ label: sub, total: visibleRecords.filter(record => (record.subcategory || "Khác") === sub).reduce((sum, record) => sum + (Number(record.amount) || 0), 0) })).filter(item => item.total > 0).sort((a, b) => b.total - a.total);
+  const largestSubcategory = bySubcategory[0];
+  
+  const monthSummaryRows = Array.from({ length: 12 }, (_, index) => {
+    const itemMonth = index + 1;
+    const monthItems = visibleRecords.filter(record => {
+      const parsed = parseDate(record.date || record.createdAt || "");
+      return parsed ? parsed.getMonth() + 1 === itemMonth : false;
+    });
+    return { month: itemMonth, items: monthItems, total: monthItems.reduce((sum, record) => sum + (Number(record.amount) || 0), 0), count: monthItems.length };
+  });
+
+  function toggle(id: string) {
+    setExpandedIds(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function remove(record: Transaction) {
+    const response = await fetch(`/api/transactions?id=${encodeURIComponent(record.id)}`, { method: "DELETE" });
+    if (!response.ok) return;
+    update({ ...data, transactions: data.transactions.filter(item => item.id !== record.id) });
+    setDeleting(null);
+  }
+
+  if (editing) {
+    return (
+      <ExpenseForm
+        record={editing === "new" ? null : editing}
+        members={data.members}
+        user={user}
+        close={() => setEditing(null)}
+        saved={(record) => {
+          update({ ...data, transactions: [record, ...data.transactions.filter(item => item.id !== record.id)] });
+          setEditing(null);
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className={`grid gap-3 ${categoryFilter === "all" ? "md:grid-cols-[90px_100px_140px_minmax(180px,1fr)_auto]" : "md:grid-cols-[90px_100px_140px_140px_minmax(140px,1fr)_auto]"}`}>
+        <select className={filterClass} value={year} onChange={event => setYear(event.target.value)}>{Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}</select>
+        <select className={filterClass} value={month} onChange={event => setMonth(event.target.value)}><option value="all">Tháng</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select>
+        <select className={filterClass} value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setSubcategoryFilter("all"); }}><option value="all" hidden>Khoản chi</option><optgroup label="Khoản chi"><option value="all">Tất cả</option>{expenseCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}</optgroup></select>
+        {categoryFilter !== "all" && <select className={filterClass} value={subcategoryFilter} onChange={event => setSubcategoryFilter(event.target.value)}><option value="all" hidden>Loại chi tiết</option><optgroup label="Loại chi tiết"><option value="all">Tất cả</option>{(expenseCategoryTree[categoryFilter] || []).map(sub => <option key={sub} value={sub}>{sub}</option>)}</optgroup></select>}
+        <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm nội dung chi, khoản chi, ghi chú..." />
+        <button onClick={() => setEditing("new")} className="rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white">Thêm khoản chi</button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card><p className="text-xs text-slate-400">{"Tổng chi năm"}</p><b className="font-semibold text-rose-500">{money(totalYear)}</b>{totalDiscountYear > 0 && <p className="mt-0.5 text-[10px] font-semibold text-emerald-500">Đã giảm: {money(totalDiscountYear)}</p>}</Card>
+        <Card><p className="text-xs text-slate-400">{"Tổng chi tháng"} {selectedMonth}</p><b className="font-semibold text-slate-900 dark:text-slate-100">{money(totalMonth)}</b>{totalDiscountMonth > 0 && <p className="mt-0.5 text-[10px] font-semibold text-emerald-500">Đã giảm: {money(totalDiscountMonth)}</p>}</Card>
+        <Card><p className="text-xs text-slate-400">Khoản chi lớn nhất</p><b className="font-semibold text-slate-900 dark:text-slate-100">{largestCategory ? `${largestCategory.label} (${money(largestCategory.total)})` : "Chưa có"}</b></Card>
+        <Card><p className="text-xs text-slate-400">Loại chi tiết lớn nhất</p><b className="font-semibold text-rose-500">{largestSubcategory ? `${largestSubcategory.label} (${money(largestSubcategory.total)})` : "Chưa có"}</b></Card>
+      </div>
+
+      <Card className="overflow-visible p-0">
+          <div className="border-b border-[var(--app-border)] px-4 py-3"><b className="font-semibold text-slate-800 dark:text-slate-100">{"Danh sách theo tháng"}</b></div>
+          <div className="divide-y divide-[var(--app-border)]">
+          {monthSummaryRows.map(row => {
+            const expanded = expandedIds.has(`month-${row.month}`);
+            return <div key={row.month} className="px-4 py-2.5">
+              <button type="button" onClick={() => toggle(`month-${row.month}`)} className="grid w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-white/5 sm:grid-cols-[1fr_120px_100px_32px]">
+                <b className="font-semibold text-slate-800 dark:text-slate-100">{"Tháng"} {row.month}</b>
+                <span className="font-bold text-rose-500 sm:text-right">{money(row.total)}</span>
+                <span className="text-sm font-medium text-slate-500 sm:text-right">{row.count} {"khoản"}</span>
+                <span className="grid size-8 place-items-center rounded-lg text-slate-500" aria-hidden><svg viewBox="0 0 24 24" className={`size-4 fill-none stroke-current stroke-2 transition-transform ${expanded ? "rotate-180" : ""}`} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg></span>
+              </button>
+              {expanded && <div className="mt-1 divide-y divide-[var(--app-border)]">
+                {row.items.length > 1 && (() => {
+                  const grouped: Record<string, Record<string, number>> = {};
+                  row.items.forEach(r => {
+                    const c = r.category || "Khác";
+                    const s = r.subcategory || "Khác";
+                    if (!grouped[c]) grouped[c] = {};
+                    grouped[c][s] = (grouped[c][s] || 0) + (Number(r.amount) || 0);
+                  });
+                  return <div className="bg-slate-50 p-3 dark:bg-white/5 text-sm rounded-lg mb-2">
+                    {Object.entries(grouped).map(([cat, subcats]) => {
+                      const subcatEntries = Object.entries(subcats);
+                      return <div key={cat} className="mb-2 last:mb-0">
+                        <p className="font-semibold text-slate-800 dark:text-slate-100">{cat}: {money(Object.values(subcats).reduce((a, b) => a + b, 0))}</p>
+                        {subcatEntries.length > 1 && <ul className="ml-4 mt-1 space-y-0.5 text-slate-500 text-xs">
+                          {subcatEntries.map(([sub, amount]) => <li key={sub}>- {sub}: {money(amount)}</li>)}
+                        </ul>}
+                      </div>;
+                    })}
+                  </div>;
+                })()}
+                {row.items.length === 0 ? <div className="p-4 text-center text-sm font-medium text-slate-500">Chưa có khoản nào trong tháng này.</div> : row.items.map(record => {
+                  const menuOpen = menuId === record.id;
+                  const pm = paymentMethodLabels[record.paymentMethod || "cash"] || "Tiền mặt";
+                  return <div key={record.id} className="group relative flex flex-col gap-1 border-b border-[var(--app-border)] px-3 py-3 hover:bg-slate-50 dark:hover:bg-white/5 sm:flex-row sm:items-center sm:gap-3 sm:border-b-0 sm:py-2">
+                    <div className="flex items-start justify-between sm:contents">
+                      <div className="min-w-0 flex-1 sm:hidden">
+                        <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100" title={record.title || "Khác"}>{record.title || "Khác"}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">{formatDateVN(record.date || record.createdAt || "")} · {record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</div>
+                      </div>
+                      <div className="hidden w-[75px] shrink-0 text-xs font-medium text-slate-500 sm:block">{formatDateVN(record.date || record.createdAt || "")}</div>
+                      <div className="hidden w-[120px] shrink-0 truncate text-xs font-semibold text-slate-600 dark:text-slate-400 sm:block sm:w-[160px]" title={`${record.category}${record.subcategory ? ` / ${record.subcategory}` : ""}`}>{record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</div>
+                      <div className="hidden min-w-0 flex-1 truncate text-sm font-medium text-slate-900 dark:text-slate-100 sm:block" title={record.title || "Khác"}>{record.title || "Khác"}</div>
+                      <div className="hidden w-[90px] shrink-0 truncate text-xs font-medium text-slate-400 sm:block" title={pm}>{pm}</div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div className="text-sm font-bold text-rose-500">{money(record.amount)}</div>
+                        <div className="relative shrink-0 sm:ml-2">
+                          <button type="button" onClick={() => setMenuId(menuOpen ? null : record.id)} className="grid size-8 place-items-center rounded-lg text-lg font-semibold text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">...</button>
+                          {menuOpen && <div className="absolute right-0 top-10 z-30 w-36 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl">
+                            <button className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setMenuId(null); setDetail(record); }}>Xem chi tiết</button>
+                            <button className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setMenuId(null); setEditing(record); }}>Sửa</button>
+                            <button className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5" onClick={() => { setMenuId(null); setDeleting(record); }}>Xóa</button>
+                          </div>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>;
+                })}
+              </div>}
+            </div>;
+          })}
+        </div>
+      </Card>
+
+      {detail && <ExpenseDetail record={detail} close={() => setDetail(null)} edit={() => { setDetail(null); setEditing(detail); }} remove={() => { setDetail(null); setDeleting(detail); }} />}
+      {deleting && <ExpenseDeleteDialog record={deleting} close={() => setDeleting(null)} confirm={() => void remove(deleting)} />}
+    </div>
+  );
 }
+
+function ExpenseForm({ record, members, user, close, saved }: { record: Transaction | null; members: Member[]; user: AuthUser; close: () => void; saved: (record: Transaction) => void }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [draft, setDraft] = useState<ExpenseDraft>(() => {
+    const cat = record?.category || expenseCategories[0];
+    const subcat = record?.subcategory || expenseCategoryTree[cat]?.[0] || "Khác";
+    const gross = String(record?.grossAmount || record?.amount || "");
+    const discount = String(record?.discountAmount || "0");
+    return { id: record?.id || crypto.randomUUID(), memberId: record?.memberId || members[0]?.id || "", date: record?.date || today, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod: record?.paymentMethod || "cash", bankAccountId: record?.bankAccountId || "" };
+  });
+  const grossValue = Number(String(draft.grossAmount).replace(/\D/g, "") || 0);
+  const discountValue = Number(String(draft.discountAmount).replace(/\D/g, "") || 0);
+  const totalAmount = grossValue - discountValue;
+  const isError = discountValue > grossValue;
+  const bankAccountsState = useState<BankAccount[]>([]);
+  const bankAccounts = bankAccountsState[0];
+  const setBankAccounts = bankAccountsState[1];
+  
+  useEffect(() => {
+    const targetMemberId = user.role === "full_access" ? draft.memberId : user.memberId;
+    if (targetMemberId) {
+      fetch(`/api/bank-accounts?memberId=${targetMemberId}`).then(async res => {
+        const json = await res.json().catch(() => null);
+        const rows = Array.isArray(json)
+          ? json
+          : Array.isArray(json?.data)
+            ? json.data
+            : Array.isArray(json?.rows)
+              ? json.rows
+              : [];
+        setBankAccounts(rows);
+      }).catch(() => setBankAccounts([]));
+    }
+  }, [user.role, user.memberId, draft.memberId]);
+
+  function patch(value: Partial<ExpenseDraft>) { setDraft(current => ({ ...current, ...value })); }
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (isError || totalAmount < 0) return;
+    const finalBankAccountId = ["cash", "other"].includes(draft.paymentMethod) ? undefined : draft.bankAccountId || undefined;
+    const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: grossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, bankAccountId: finalBankAccountId };
+    const response = await fetch("/api/transactions", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
+    if (!response.ok) return;
+    const savedRecord = await response.json();
+    savedRecord.amount = Number(savedRecord.amount);
+    saved(savedRecord);
+  }
+  
+  const paymentMethods = [
+    { value: "cash", label: "Tiền mặt" },
+    { value: "momo", label: "MoMo" },
+    { value: "apple_pay", label: "Apple Pay" },
+    { value: "bank_account", label: "Tài khoản ngân hàng" },
+    { value: "bank_card", label: "Thẻ ngân hàng / Thẻ tín dụng" },
+    { value: "other", label: "Khác" },
+  ];
+
+  return <div className="space-y-5">
+    <button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">{"← Quay lại bảng chi tiêu"}</button>
+    <div><h2 className="text-2xl font-bold">{record ? "Sửa khoản chi" : "Thêm khoản chi"}</h2><p className="mt-1 text-sm text-slate-400">{"Mỗi khoản chi là một phiếu chi. Nhập nhanh chi tiết vào ghi chú nếu cần."}</p></div>
+    <form onSubmit={submit} className="space-y-4">
+      <Card><div className="grid gap-3 md:grid-cols-2">
+        <Field label="Ngày chi"><DateVNInput required value={draft.date} onChange={value => patch({ date: value })} /></Field>
+        <Field label="Khoản chi"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value, subcategory: expenseCategoryTree[event.target.value]?.[0] || "Khác" })}>{expenseCategories.map(category => <option key={category}>{category}</option>)}</select></Field>
+        <Field label="Loại chi tiết"><select className={inputClass} value={draft.subcategory} onChange={event => patch({ subcategory: event.target.value })}>{(expenseCategoryTree[draft.category] || ["Khác"]).map(sub => <option key={sub}>{sub}</option>)}</select></Field>
+        <Field label="Nội dung chi"><input required className={inputClass} value={draft.vendor} onChange={event => patch({ vendor: event.target.value })} placeholder="Ví dụ: Đi chợ, Thanh toán tiền điện..." /></Field>
+        <Field label="Giá gốc"><input required className={inputClass} value={draft.grossAmount} onChange={event => patch({ grossAmount: event.target.value.replace(/\D/g, "") })} /></Field>
+        <Field label="Giảm giá"><input className={inputClass} value={draft.discountAmount} onChange={event => patch({ discountAmount: event.target.value.replace(/\D/g, "") })} placeholder="0" /></Field>
+        <Field label="Thực trả"><div className={`flex h-11 w-full items-center rounded-xl bg-slate-50 px-3 font-semibold ${isError || totalAmount < 0 ? "text-rose-500" : "text-emerald-600"} dark:bg-white/5`}>{money(totalAmount)}{isError && " (Lỗi: Giảm giá > Giá gốc)"}</div></Field>
+        <Field label="Phương thức thanh toán"><select className={inputClass} value={draft.paymentMethod} onChange={event => {
+          const paymentMethod = event.target.value as import("../types").PaymentMethod;
+          if (!["bank_account", "bank_card"].includes(paymentMethod)) {
+            patch({ paymentMethod, bankAccountId: "" });
+          } else {
+            patch({ paymentMethod });
+          }
+        }}>{paymentMethods.map(pm => <option key={pm.value} value={pm.value}>{pm.label}</option>)}</select></Field>
+        {["bank_account", "bank_card"].includes(draft.paymentMethod) && (() => {
+          const safeBankAccounts = Array.isArray(bankAccounts) ? bankAccounts : [];
+          return <Field label="Tài khoản / Thẻ liên kết">
+            {safeBankAccounts.length === 0 ? <select className={inputClass} disabled><option>Chưa có thẻ/tài khoản. Vào Hồ sơ thành viên → Thẻ ngân hàng để thêm.</option></select> : <select className={inputClass} value={draft.bankAccountId} onChange={event => patch({ bankAccountId: event.target.value })}><option value="">Không liên kết</option>{safeBankAccounts.map(b => <option key={b.id} value={b.id}>{b.bankName} - {b.accountHolder || b.productName} (*{b.cardNumber ? b.cardNumber.slice(-4) : b.accountNumber ? b.accountNumber.slice(-4) : "???"})</option>)}</select>}
+          </Field>
+        })()}
+        <div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} placeholder="Coopmart: rau 30k, thịt 120k, sữa 70k" /></Field></div>
+      </div></Card>
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-rose-500 px-6 py-3 text-sm font-bold text-white">Lưu phiếu chi</button></div>
+    </form>
+  </div>;
+}
+
+function ExpenseDetail({ record, close, edit, remove }: { record: Transaction; close: () => void; edit: () => void; remove: () => void }) {
+  const [showId, setShowId] = useState(false);
+  const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
+  
+  useEffect(() => {
+    if (record.bankAccountId) {
+      fetch(`/api/bank-accounts?memberId=${record.memberId}`).then(r => r.json()).then(data => {
+        if (Array.isArray(data)) {
+          const acc = data.find(b => b.id === record.bankAccountId);
+          if (acc) setBankAccount(acc);
+        }
+      }).catch(() => {});
+    }
+  }, [record.bankAccountId, record.memberId]);
+
+  const paymentMethodLabels: Record<string, string> = { cash: "Tiền mặt", momo: "MoMo", apple_pay: "Apple Pay", bank_account: "Tài khoản ngân hàng", bank_card: "Thẻ ngân hàng / Thẻ tín dụng", other: "Khác" };
+
+  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45 p-0 md:p-4" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="flex h-full w-full max-w-lg flex-col overflow-hidden bg-[var(--app-card)] shadow-2xl md:rounded-2xl"><div className="flex shrink-0 items-center justify-between p-5 pb-4"><h3 className="text-lg font-bold">Chi tiết phiếu chi</h3><button onClick={close} className="grid size-9 place-items-center rounded-full border border-[var(--app-border)]">×</button></div><div className="flex-1 overflow-y-auto p-5 pt-0"><div className="grid gap-3 text-sm"><AccountDetail label="Ngày chi" value={formatDateVN(record.date)} /><AccountDetail label="Khoản chi" value={record.category} /><AccountDetail label="Loại chi tiết" value={record.subcategory || "Khác"} /><AccountDetail label="Nội dung chi" value={record.title || "Khác"} /><AccountDetail label="Phương thức" value={paymentMethodLabels[record.paymentMethod || "cash"] || "Tiền mặt"} />{bankAccount && <AccountDetail label="Tài khoản / Thẻ" value={`${bankAccount.bankName} - ${bankAccount.accountHolder || bankAccount.productName}`} />}<AccountDetail label="Giá gốc" value={money(record.grossAmount || record.amount)} />{Number(record.discountAmount) > 0 && <AccountDetail label="Giảm giá" value={money(record.discountAmount || 0)} />}<AccountDetail label="Thực trả" value={money(record.amount)} /><div className="rounded-xl border border-[var(--app-border)] p-4"><p className="text-xs font-bold uppercase text-slate-400">Ghi chú</p><p className="mt-1 font-semibold whitespace-pre-wrap">{record.note || "Không có"}</p></div><button onClick={() => setShowId(!showId)} className="mt-2 text-left text-xs font-semibold text-slate-400">ID giao dịch (Nhấn để {showId ? "ẩn" : "hiện"})</button>{showId && <div className="rounded-xl bg-slate-50 p-4 dark:bg-white/5"><code className="break-all text-xs text-slate-500">{record.id}</code></div>}</div></div><div className="flex shrink-0 gap-3 border-t border-[var(--app-border)] p-5"><button onClick={remove} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button><div className="flex-1"></div><button onClick={close} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5">Đóng</button><button onClick={edit} className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-700">Sửa</button></div></div></div>;
+}
+
+function ExpenseDeleteDialog({ record, close, confirm }: { record: Transaction; close: () => void; confirm: () => void }) {
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-5 shadow-2xl"><h3 className="text-lg font-bold">Xóa phiếu chi này?</h3><div className="mt-4 rounded-xl border border-[var(--app-border)] p-4"><b>{record.title}</b><p className="mt-1 text-sm font-bold text-rose-500">{money(record.amount)}</p></div><div className="mt-5 flex justify-end gap-3"><button onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">Hủy</button><button onClick={confirm} className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white">Xóa</button></div></div></div>;
+}
+
 const bankNames = ["BIDV", "Vietcombank", "Techcombank", "MB", "VPBank", "ACB", "TPBank", "Sacombank", "VIB", "VietinBank", "Agribank", "MoMo", "ZaloPay", "Khác"];
 const bankCardTypes: BankCardType[] = ["Tài khoản nhận lương", "Tài khoản ngân hàng", "ATM nội địa", "Debit", "Credit Visa", "Credit Mastercard", "Credit JCB", "Ví điện tử"];
 const bankNetworks = ["NAPAS", "Visa", "Mastercard", "JCB", "Khác"] as const;
@@ -2746,7 +2809,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
       </div>
       {error && <p className="text-sm text-rose-500">{error}</p>}
       {loading ? <BankCardsSkeleton view={view} /> : filtered.length ? view === "list" ? <BankAccountList accounts={filtered} detail={openDetail} edit={openEdit} remove={remove} canEdit={canEdit} /> : <BankCardGrid accounts={filtered} detail={openDetail} edit={openEdit} remove={remove} canEdit={canEdit} /> : <Card className="p-8 text-center"><p className="font-semibold">Thành viên này chưa có thẻ ngân hàng.</p>{canEdit && <button onClick={openCreate} className="mt-4 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm thẻ</button>}</Card>}
-    </div>
+  </div>
   );
 }
 function MemberBankRawNotes({ member, user }: { member: Member; user: AuthUser }) {
@@ -2946,13 +3009,13 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
             <Field label="Tên chủ tài khoản">
               <input required className={inputClass} value={form.accountHolder} onChange={event => set("accountHolder", event.target.value)} />
             </Field>
-            <Field label="Số tài khoản">
-              <input className={inputClass} value={form.accountNumber} onChange={event => set("accountNumber", event.target.value)} />
+            <Field label="Số cuối tài khoản (4 số)">
+              <input maxLength={4} className={inputClass} value={form.accountNumber} onChange={event => set("accountNumber", event.target.value.replace(/\D/g, ""))} placeholder="Ví dụ: 1234" />
             </Field>
-            <Field label="Số thẻ">
-              <input className={inputClass} value={form.cardNumber} onChange={event => set("cardNumber", event.target.value)} />
+            <Field label="Số cuối thẻ (4 số)">
+              <input maxLength={4} className={inputClass} value={form.cardNumber} onChange={event => set("cardNumber", event.target.value.replace(/\D/g, ""))} placeholder="Ví dụ: 1234" />
             </Field>
-            <Field label="Loại thẻ">
+            <Field label="Loại thẻ/tài khoản">
               <select className={inputClass} value={form.cardType} onChange={event => { set("cardType", event.target.value); set("accountType", event.target.value); }}>
                 {bankCardTypes.map(type => <option key={type}>{type}</option>)}
               </select>
@@ -3058,7 +3121,7 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
             <p className="rounded-xl bg-indigo-50 px-4 py-3 text-xs font-semibold text-indigo-600 md:col-span-2">💡 Dù trả đúng hạn, vẫn cần theo dõi phí thường niên, lãi suất, phí giao dịch nước ngoài và phí rút tiền mặt.</p>
 
             <div className="md:col-span-2">
-              <Field label="Ghi chú biểu phí">
+              <Field label="Ghi chú">
                 <textarea rows={2} className={inputClass} value={fees.feeNote} onChange={event => updateFee("feeNote", event.target.value)} placeholder="Mốc miễn phí có thể thay đổi..." />
               </Field>
             </div>
@@ -3097,7 +3160,7 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
                     <input className={inputClass} type="number" value={benefit.minTransactionAmount} onChange={event => setBenefit(benefit.id, "minTransactionAmount", Number(event.target.value))} />
                   </Field>
                   <div className="md:col-span-2">
-                    <Field label="Ghi chú điều kiện">
+                    <Field label="Ghi chú">
                       <textarea rows={2} className={inputClass} value={benefit.conditionNote} onChange={event => setBenefit(benefit.id, "conditionNote", event.target.value)} />
                     </Field>
                   </div>
@@ -3282,7 +3345,7 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
       <form onSubmit={submit} onMouseDown={event => event.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-3xl md:rounded-3xl">
         {formContent}
       </form>
-    </div>
+  </div>
   );
 }
 export function BankAccountDetail({ account, memberName: owner, close, loading = false, inline = false, edit, remove, onUpdateAccount }: { account: BankAccount; memberName: string; close: () => void; loading?: boolean; inline?: boolean; edit?: () => void; remove?: () => void; onUpdateAccount?: (acc: BankAccount) => void }) {
@@ -3594,7 +3657,7 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
       <div onMouseDown={event => event.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-3xl md:rounded-3xl">
         {content}
       </div>
-    </div>
+  </div>
   );
 }
 function EventRow({ event, edit }: { event: EventItem; edit?: () => void }) { const date = parseDate(event.date); return <Card className="mb-3 flex items-center gap-3"><Circle color={event.color}>{date ? String(date.getDate()).padStart(2, "0") : event.date}</Circle><div className="min-w-0 flex-1"><b>{event.title}</b><p className="text-xs text-slate-400">{formatDateVN(event.date)} · {event.time} · {event.type === "birthday" ? "Sinh nhật" : event.type === "medical" ? "Khám bệnh" : event.type === "school" ? "Học tập" : "Gia đình"}</p></div>{edit && <EditButton onClick={edit} />}</Card>; }
@@ -3603,7 +3666,7 @@ function ComingSoonModule({ title }: { title: string }) { return <Card className
 function Notes({ data, open, t }: ListProps) { const [query, setQuery] = useState(""); const notes = data.notes.filter(note => note.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())); return <><input className={`${filterClass} mb-4`} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm theo tiêu đề ghi chú" /><div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{notes.map(x => <Card key={x.id}><b>{x.important ? "★ " : ""}{x.title}</b>{x.tag && <p className="mt-1 text-xs text-rose-400">#{x.tag}</p>}<p className="mt-2 text-sm text-slate-500 dark:text-slate-300">{x.content}</p><div className="mt-3 flex items-center justify-between"><p className="text-[10px] text-slate-400">{x.updatedAt}</p><EditButton onClick={() => open({ kind: "notes", item: x })} /></div></Card>)}</div><AddButton label={t("add")} onClick={() => open({ kind: "notes" })} /></>; }
 
 const formLabels: Record<EntityKind, string> = { members: "thành viên", tasks: "công việc", transactions: "giao dịch", events: "sự kiện", notes: "ghi chú" };
-const inputClass = "w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-background)] px-3 py-3 text-sm outline-none focus:border-rose-400";
+const inputClass = "w-full min-w-0 max-w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-background)] px-3 py-3 text-sm outline-none focus:border-rose-400";
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   if (label === "Avatar URL" || label === "Avatar (URL ảnh)") return null;
   return <label className="block"><span className="mb-1 block text-xs font-bold text-slate-500 dark:text-slate-300">{label}</span>{children}</label>;
@@ -3647,7 +3710,7 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
       <div className="space-y-4">
         {editor.kind === "members" && <><Field label="Họ tên"><input required disabled={actor.role === "self_only"} className={inputClass} value={form.name} onChange={e => set("name", e.target.value)} /></Field><Field label="Biệt danh / nickname"><input className={inputClass} value={form.nickname} onChange={e => set("nickname", e.target.value)} /></Field><BirthdaySelect disabled={actor.role === "self_only"} value={form.birthday} onChange={value => set("birthday", value)} /><Field label="Giới tính"><select disabled={actor.role === "self_only"} className={inputClass} value={form.gender} onChange={e => set("gender", e.target.value)}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Số điện thoại"><input type="tel" className={inputClass} value={form.phone} onChange={e => set("phone", e.target.value)} /></Field><Field label="Avatar (URL ảnh)"><input className={inputClass} value={form.avatar} onChange={e => set("avatar", e.target.value)} placeholder="https://... hoặc data:image/..." /></Field><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.notes} onChange={e => set("notes", e.target.value)} /></Field></>}
         {editor.kind === "tasks" && <><Field label="Tên công việc"><input required className={inputClass} value={form.title} onChange={e => set("title", e.target.value)} /></Field><MemberSelect members={members} value={form.memberId} set={value => set("memberId", value)} required /><Field label="Hạn chót"><DateVNInput required value={form.dueDate} onChange={value => set("dueDate", value)} /></Field><Field label="Mức ưu tiên"><select className={inputClass} value={form.priority} onChange={e => set("priority", e.target.value)}><option value="low">Thấp</option><option value="normal">Bình thường</option><option value="high">Cao</option></select></Field><Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={e => set("status", e.target.value)}><option value="todo">Chờ làm</option><option value="doing">Đang làm</option><option value="done">Hoàn thành</option></select></Field></>}
-        {editor.kind === "transactions" && <><Field label="Nội dung"><input required className={inputClass} value={form.title} onChange={e => set("title", e.target.value)} /></Field><Field label="Số tiền"><input required min="0" type="number" className={inputClass} value={form.amount} onChange={e => set("amount", e.target.value)} /></Field><Field label="Loại"><select className={inputClass} value={form.type} onChange={e => set("type", e.target.value)}><option value="expense">Chi</option><option value="income">Thu</option></select></Field><Field label="Danh mục"><select className={inputClass} value={form.category} onChange={e => set("category", e.target.value)}>{["Ăn uống","Điện nước","Học tập","Y tế","Mua sắm","Di chuyển","Khác"].map(category => <option key={category}>{category}</option>)}</select></Field><MemberSelect members={members} value={form.memberId} set={value => set("memberId", value)} /><Field label="Ngày chi"><DateVNInput required value={form.date} onChange={value => set("date", value)} /></Field></>}
+        {editor.kind === "transactions" && <><Field label="Nội dung"><input required className={inputClass} value={form.title} onChange={e => set("title", e.target.value)} /></Field><Field label="Số tiền"><input required min="0" type="number" className={inputClass} value={form.amount} onChange={e => set("amount", e.target.value)} /></Field><Field label="Loại"><select className={inputClass} value={form.type} onChange={e => set("type", e.target.value)}><option value="expense">Chi</option><option value="income">Thu</option></select></Field><Field label="Khoản chi"><select className={inputClass} value={form.category} onChange={e => set("category", e.target.value)}>{expenseCategories.map(category => <option key={category}>{category}</option>)}</select></Field><MemberSelect members={members} value={form.memberId} set={value => set("memberId", value)} /><Field label="Ngày chi"><DateVNInput required value={form.date} onChange={value => set("date", value)} /></Field></>}
         {editor.kind === "events" && <><Field label="Tên sự kiện"><input required className={inputClass} value={form.title} onChange={e => set("title", e.target.value)} /></Field><Field label="Loại sự kiện"><select className={inputClass} value={form.type} onChange={e => set("type", e.target.value)}><option value="family">Gia đình</option><option value="birthday">Sinh nhật</option><option value="medical">Khám bệnh</option><option value="school">Học tập / họp phụ huynh</option></select></Field><MemberSelect members={members} value={form.memberId} set={value => set("memberId", value)} /><Field label="Ngày"><DateVNInput required value={form.date} onChange={value => set("date", value)} /></Field><Field label="Giờ"><input required type="time" className={inputClass} value={form.time} onChange={e => set("time", e.target.value)} /></Field><Field label="Màu"><input type="color" className={`${inputClass} h-12`} value={form.color} onChange={e => set("color", e.target.value)} /></Field></>}
         {editor.kind === "notes" && <><Field label="Tiêu đề"><input required className={inputClass} value={form.title} onChange={e => set("title", e.target.value)} /></Field><Field label="Loại ghi chú"><select className={inputClass} value={form.kind} onChange={e => set("kind", e.target.value)}><option value="general">Ghi chú chung</option><option value="member">Theo thành viên</option></select></Field>{form.kind === "member" && <MemberSelect members={members} value={form.memberId} set={value => set("memberId", value)} required />}<Field label="Tag"><input className={inputClass} value={form.tag} onChange={e => set("tag", e.target.value)} placeholder="Ví dụ: sức khỏe" /></Field><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.important === "true"} onChange={e => set("important", String(e.target.checked))} /> Ghi chú quan trọng</label><Field label="Nội dung"><textarea required rows={5} className={inputClass} value={form.content} onChange={e => set("content", e.target.value)} /></Field></>}
       </div>

@@ -127,7 +127,18 @@ export async function DELETE(request: NextRequest) {
     const current = await pool.query("SELECT member_id FROM member_jobs WHERE id=$1", [id]);
     if (!current.rows[0]) return NextResponse.json({ ok: false, error: "Khong tim thay cong viec." }, { status: 404 });
     if (!await canAccessMember(String(current.rows[0].member_id), actor.id, actor.role, actor.memberId)) return NextResponse.json({ ok: false, error: "Khong co quyen." }, { status: 403 });
-    await pool.query("DELETE FROM member_jobs WHERE id=$1", [id]);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("UPDATE income_records SET job_id = NULL, work_id = NULL WHERE job_id=$1 OR work_id=$1", [id]);
+      await client.query("DELETE FROM member_jobs WHERE id=$1", [id]);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
     return NextResponse.json({ ok: true, data: { deleted: true } });
   } catch (error) {
     console.error("[api/member-jobs] DELETE failed", error);

@@ -3,7 +3,7 @@ import { getSessionUser, requireSession } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import type { IncomeCategory } from "@/types";
 
-const categories = new Set(["Lương", "Thưởng", "Khác"]);
+const categories = new Set(["Lương", "Thưởng", "Tiền lễ", "Khác"]);
 
 function text(value: unknown) {
   return String(value || "").trim();

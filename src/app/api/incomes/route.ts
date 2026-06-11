@@ -5,7 +5,7 @@ import { pool } from "@/lib/db";
 import { fetchIncomeData, normalizeYear, toIncomeRecord } from "@/lib/incomes";
 import type { IncomeCategory, IncomeStatus } from "@/types";
 
-const categories = new Set(["Lương", "Thưởng", "Tồn tháng trước", "Bán đồ", "Khác"]);
+const categories = new Set(["Lương", "Thưởng", "Tiền lễ", "Khác"]);
 const statuses = new Set(["Đã nhận", "Chưa nhận"]);
 
 function text(value: unknown) {
@@ -165,6 +165,26 @@ export async function DELETE(request: NextRequest) {
   if (!await requireSession()) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ ok: false, error: "Thiếu id." }, { status: 400 });
-  await pool.query("DELETE FROM income_records WHERE id = $1", [id]);
-  return NextResponse.json({ ok: true, data: { deleted: true } });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const deleted = await client.query("DELETE FROM income_records WHERE id = $1 RETURNING id", [id]);
+    if (!deleted.rows[0]) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ ok: false, error: "Không tìm thấy dòng thu nhập." }, { status: 404 });
+    }
+    const remaining = await client.query("SELECT id FROM income_records WHERE id = $1", [id]);
+    if (remaining.rows[0]) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ ok: false, error: "Không thể xác nhận xóa khoản thu." }, { status: 500 });
+    }
+    await client.query("COMMIT");
+    return NextResponse.json({ ok: true, data: { deleted: true, id } });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("[DELETE /api/incomes]", error);
+    return NextResponse.json({ ok: false, error: "Không thể xóa khoản thu.", details: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  } finally {
+    client.release();
+  }
 }

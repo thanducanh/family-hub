@@ -12,7 +12,7 @@ export type IncomeRecordRow = {
   note: string; createdAt: string; updatedAt: string;
 };
 
-const categories: IncomeCategory[] = ["Lương", "Thưởng", "Khác"];
+const categories: IncomeCategory[] = ["Lương", "Thưởng", "Tiền lễ", "Khác"];
 const statuses: IncomeStatus[] = ["Đã nhận", "Chưa nhận"];
 const validTypes = new Set(["fixed", "variable"]);
 const validFrequencies = new Set(["monthly", "weekly", "yearly", "one_time", "custom"]);
@@ -128,7 +128,11 @@ function toMemberJob(row: Record<string, unknown>): MemberJob {
 export async function fetchIncomeData(year: number) {
   try {
     const result = await pool.query(
-      `SELECT * FROM income_records ORDER BY COALESCE(received_date, income_date) ASC, created_at ASC`
+      `SELECT r.*, m.name AS member_name, CONCAT_WS(' · ', NULLIF(j.title, ''), NULLIF(j.company, '')) AS job_name
+       FROM income_records r
+       LEFT JOIN members m ON m.id = r.member_id
+       LEFT JOIN member_jobs j ON j.id = COALESCE(r.job_id, r.work_id)
+       ORDER BY COALESCE(r.received_date, r.income_date) ASC, r.created_at ASC`
     );
 
     const allRows = result.rows.map(toIncomeRecord);
@@ -146,15 +150,17 @@ export async function fetchIncomeData(year: number) {
 
     // Tính yearlySummaries (mảng rỗng vì không dùng bảng đó nữa)
     const yearlySummaries: IncomeYearlySummaryRow[] = [];
-
+    const jobsResult = await pool.query('SELECT * FROM member_jobs ORDER BY start_year DESC NULLS LAST, created_at DESC');
+    const jobs = jobsResult.rows.map(toMemberJob);
+    const membersResult = await pool.query("SELECT id, name FROM members WHERE deleted_at IS NULL ORDER BY name ASC");
     return {
-      members: [],
+      members: membersResult.rows.map(row => ({ id: String(row.id), name: String(row.name || "") })),
       sources: [],
       records,
       allRecords: records,
       yearlySummaries,
       yearlyComparison,
-      jobs: []
+      jobs
     };
   } catch (error) {
     console.error("fetchIncomeData error:", error);

@@ -7,7 +7,7 @@ export type Collection = "members" | "tasks" | "transactions" | "events" | "note
 const columns: Record<Collection, string[]> = {
   members: ["id", "name", "nickname", "birthday", "gender", "role", "phone", "avatar", "notes", "color"],
   tasks: ["id", "title", "member_id", "assignee", "due", "due_date_ui", "priority", "status"],
-  transactions: ["id", "title", "member_id", "amount", "type", "category", "date", "bank_account_id", "estimated_cashback", "actual_cashback"],
+  transactions: ["id", "title", "member_id", "amount", "gross_amount", "discount_amount", "type", "category", "subcategory", "date", "note", "bank_account_id", "estimated_cashback", "actual_cashback", "payment_method"],
   events: ["id", "title", "member_id", "type", "date", "time", "color", "event_date"],
   notes: ["id", "title", "member_id", "kind", "important", "tag", "content", "updated_at"],
 };
@@ -16,7 +16,7 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
   if (collection === "notes") return { ...item, member_id: item.memberId || null, updated_at: item.updatedAt };
   if (collection === "members") return { ...item, birthday: toDatabaseDate(item.birthday) };
   if (collection === "tasks") return { ...item, member_id: item.memberId || null, due_date_ui: toDatabaseDate(item.dueDate) };
-  if (collection === "transactions") return { ...item, member_id: item.memberId || null, date: toDatabaseDate(item.date), bank_account_id: item.bankAccountId || null, estimated_cashback: item.estimatedCashback || 0, actual_cashback: item.actualCashback || 0 };
+  if (collection === "transactions") return { ...item, member_id: item.memberId || null, gross_amount: item.grossAmount || item.amount, discount_amount: item.discountAmount || 0, date: toDatabaseDate(item.date), bank_account_id: item.bankAccountId || null, estimated_cashback: item.estimatedCashback || 0, actual_cashback: item.actualCashback || 0, payment_method: item.paymentMethod || "cash" };
   if (collection === "events") {
     const date = toDatabaseDate(item.date);
     return { ...item, member_id: item.memberId || null, date, event_date: date ? `${date}T${item.time || "00:00"}:00` : null };
@@ -33,8 +33,8 @@ function fromDb(collection: Collection, item: Record<string, unknown>) {
     return { ...rest, memberId: member_id || "", dueDate: due_date_ui || "" };
   }
   if (collection === "transactions") {
-    const { member_id, bank_account_id, estimated_cashback, actual_cashback, ...rest } = item;
-    return { ...rest, memberId: member_id || "", bankAccountId: bank_account_id || "", estimatedCashback: Number(estimated_cashback || 0), actualCashback: Number(actual_cashback || 0) };
+    const { member_id, bank_account_id, gross_amount, discount_amount, estimated_cashback, actual_cashback, created_at, payment_method, ...rest } = item;
+    return { ...rest, memberId: member_id || "", grossAmount: Number(gross_amount || rest.amount || 0), discountAmount: Number(discount_amount || 0), bankAccountId: bank_account_id || "", estimatedCashback: Number(estimated_cashback || 0), actualCashback: Number(actual_cashback || 0), createdAt: created_at, paymentMethod: payment_method || "cash" };
   }
   if (collection === "events") {
     const { event_date, member_id, ...rest } = item;
@@ -57,7 +57,8 @@ export function collectionHandlers(collection: Collection) {
   return {
     GET: async () => {
       if (!await requireSession()) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-      const result = await pool.query(`SELECT ${fields.join(", ")} FROM ${collection} ORDER BY id`);
+      const selectFields = collection === "transactions" ? [...fields, "created_at"] : fields;
+      const result = await pool.query(`SELECT ${selectFields.join(", ")} FROM ${collection} ORDER BY id`);
       return NextResponse.json(result.rows.map(row => fromDb(collection, row)));
     },
     POST: async (request: NextRequest) => {
