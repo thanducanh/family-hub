@@ -33,8 +33,9 @@ function fromDb(collection: Collection, item: Record<string, unknown>) {
     return { ...rest, memberId: member_id || "", dueDate: due_date_ui || "" };
   }
   if (collection === "transactions") {
-    const { member_id, bank_account_id, gross_amount, discount_amount, estimated_cashback, actual_cashback, created_at, payment_method, ...rest } = item;
-    return { ...rest, memberId: member_id || "", grossAmount: Number(gross_amount || rest.amount || 0), discountAmount: Number(discount_amount || 0), bankAccountId: bank_account_id || "", estimatedCashback: Number(estimated_cashback || 0), actualCashback: Number(actual_cashback || 0), createdAt: created_at, paymentMethod: payment_method || "cash" };
+    const { member_id, bank_account_id, gross_amount, discount_amount, estimated_cashback, actual_cashback, created_at, payment_method, category, ...rest } = item as any;
+    const mappedCategory = category === "Nhà cửa & sinh hoạt" ? "Sinh hoạt" : category;
+    return { ...rest, category: mappedCategory, memberId: member_id || "", grossAmount: Number(gross_amount || rest.amount || 0), discountAmount: Number(discount_amount || 0), bankAccountId: bank_account_id || "", estimatedCashback: Number(estimated_cashback || 0), actualCashback: Number(actual_cashback || 0), createdAt: created_at, paymentMethod: payment_method || "cash" };
   }
   if (collection === "events") {
     const { event_date, member_id, ...rest } = item;

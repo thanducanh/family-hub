@@ -2314,7 +2314,7 @@ function IncomeSourceEditor({ source, members, close, saved }: { source: IncomeS
 const paymentMethodLabels: Record<string, string> = { cash: "Tiền mặt", momo: "MoMo", apple_pay: "Apple Pay", bank_account: "Tài khoản", bank_card: "Thẻ", other: "Khác" };
 const expenseCategoryTree: Record<string, string[]> = {
   "Ăn uống": ["Ăn ngoài", "Mua đồ nấu ăn", "Cà phê / nước uống"],
-  "Nhà cửa & sinh hoạt": ["Điện", "Nước", "Internet", "Sim / data", "Gas", "Rác"],
+  "Sinh hoạt": ["Điện", "Nước", "Internet", "Sim / Data", "Gas", "Rác"],
   "Phương tiện": ["Xăng xe", "Bảo dưỡng", "Sửa xe", "Gửi xe"],
   "Mua sắm": ["Đồ cá nhân", "Đồ gia dụng", "Điện tử"],
   "Sức khỏe": ["Thuốc", "Khám bệnh", "Nha khoa"],
@@ -2439,26 +2439,6 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
                 <span className="grid size-8 place-items-center rounded-lg text-slate-500" aria-hidden><svg viewBox="0 0 24 24" className={`size-4 fill-none stroke-current stroke-2 transition-transform ${expanded ? "rotate-180" : ""}`} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg></span>
               </button>
               {expanded && <div className="mt-1 divide-y divide-[var(--app-border)]">
-                {row.items.length > 1 && (() => {
-                  const grouped: Record<string, Record<string, number>> = {};
-                  row.items.forEach(r => {
-                    const c = r.category || "Khác";
-                    const s = r.subcategory || "Khác";
-                    if (!grouped[c]) grouped[c] = {};
-                    grouped[c][s] = (grouped[c][s] || 0) + (Number(r.amount) || 0);
-                  });
-                  return <div className="bg-slate-50 p-3 dark:bg-white/5 text-sm rounded-lg mb-2">
-                    {Object.entries(grouped).map(([cat, subcats]) => {
-                      const subcatEntries = Object.entries(subcats);
-                      return <div key={cat} className="mb-2 last:mb-0">
-                        <p className="font-semibold text-slate-800 dark:text-slate-100">{cat}: {money(Object.values(subcats).reduce((a, b) => a + b, 0))}</p>
-                        {subcatEntries.length > 1 && <ul className="ml-4 mt-1 space-y-0.5 text-slate-500 text-xs">
-                          {subcatEntries.map(([sub, amount]) => <li key={sub}>- {sub}: {money(amount)}</li>)}
-                        </ul>}
-                      </div>;
-                    })}
-                  </div>;
-                })()}
                 {row.items.length === 0 ? <div className="p-4 text-center text-sm font-medium text-slate-500">Chưa có khoản nào trong tháng này.</div> : row.items.map(record => {
                   const menuOpen = menuId === record.id;
                   const pm = paymentMethodLabels[record.paymentMethod || "cash"] || "Tiền mặt";
