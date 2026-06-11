@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS expense_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  expense_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  item_name TEXT NOT NULL DEFAULT '',
+  quantity NUMERIC NOT NULL DEFAULT 1,
+  unit_price NUMERIC NOT NULL DEFAULT 0,
+  amount NUMERIC NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_expense_items_expense_id ON expense_items(expense_id);
