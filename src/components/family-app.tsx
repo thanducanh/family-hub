@@ -2420,8 +2420,8 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card><p className="text-xs text-slate-400">{"Tổng chi năm"}</p><b className="font-semibold text-rose-500">{money(totalYear)}</b>{totalDiscountYear > 0 && <p className="mt-0.5 text-[10px] font-semibold text-emerald-500">Đã giảm: {money(totalDiscountYear)}</p>}</Card>
-        <Card><p className="text-xs text-slate-400">{"Tổng chi tháng"} {selectedMonth}</p><b className="font-semibold text-slate-900 dark:text-slate-100">{money(totalMonth)}</b>{totalDiscountMonth > 0 && <p className="mt-0.5 text-[10px] font-semibold text-emerald-500">Đã giảm: {money(totalDiscountMonth)}</p>}</Card>
+        <Card><p className="text-xs text-slate-400">{"Tổng chi năm"}</p><b className="font-semibold text-rose-500">{money(totalYear)}</b>{totalDiscountYear > 0 && <p className="mt-0.5 text-[10px] font-semibold text-emerald-500">Tiết kiệm: {money(totalDiscountYear)}</p>}</Card>
+        <Card><p className="text-xs text-slate-400">{"Tổng chi tháng"} {selectedMonth}</p><b className="font-semibold text-slate-900 dark:text-slate-100">{money(totalMonth)}</b>{totalDiscountMonth > 0 && <p className="mt-0.5 text-[10px] font-semibold text-emerald-500">Tiết kiệm: {money(totalDiscountMonth)}</p>}</Card>
         <Card><p className="text-xs text-slate-400">Khoản chi lớn nhất</p><b className="font-semibold text-slate-900 dark:text-slate-100">{largestCategory ? `${largestCategory.label} (${money(largestCategory.total)})` : "Chưa có"}</b></Card>
         <Card><p className="text-xs text-slate-400">Loại chi tiết lớn nhất</p><b className="font-semibold text-rose-500">{largestSubcategory ? `${largestSubcategory.label} (${money(largestSubcategory.total)})` : "Chưa có"}</b></Card>
       </div>
