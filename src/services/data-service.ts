@@ -210,7 +210,10 @@ function normalizeBirthday(value: unknown) {
 
 function normalizeTransaction(transaction: Partial<Transaction> & Omit<Transaction, "category">): Transaction {
   const amount = Number(transaction.amount);
-  return { ...transaction, amount: Number.isFinite(amount) ? amount : 0, memberId: transaction.memberId || "", category: transaction.category || "Khác" };
+  const paymentAccountId = transaction.paymentAccountId || transaction.payment_account_id || transaction.bankAccountId || transaction.bank_account_id || "";
+  const paymentMethod = transaction.paymentMethod || transaction.payment_method;
+  const transactionTime = transaction.transactionTime || transaction.transaction_time || "";
+  return { ...transaction, amount: Number.isFinite(amount) ? amount : 0, memberId: transaction.memberId || "", category: transaction.category || "Khác", bankAccountId: paymentAccountId, bank_account_id: paymentAccountId, paymentAccountId, payment_account_id: paymentAccountId, paymentMethod, payment_method: paymentMethod, transactionTime, transaction_time: transactionTime };
 }
 function normalizeTask(task: Partial<Task> & Pick<Task, "id" | "title" | "assignee" | "due" | "status">): Task {
   return { ...task, memberId: task.memberId || "", dueDate: task.dueDate || "", priority: task.priority || "normal" };

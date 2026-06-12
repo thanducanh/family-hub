@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from "recharts";
 import { TimeTreeCalendar } from "@/components/timetree-calendar";
+import { useUI } from "@/components/ui-context";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
@@ -21,6 +22,7 @@ export interface AuthUser { id: string; username: string; displayName: string; a
 type ManagedUser = AuthUser & { email: string; active: boolean; isSystem: boolean; createdAt: string; updatedAt: string };
 type ProfileUser = ManagedUser & { member?: Member };
 type PasswordResetRequest = { id: string; userId: string; usernameOrEmail: string; status: string; requestedAt: string; username: string; displayName: string; role: UserRole };
+type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }> };
 const icons: Record<Screen | "plus" | "check", React.ReactNode> = { dashboard: <HomeIcon />, members: <UsersIcon />, tasks: <CheckListIcon />, finance: <WalletIcon />, chat: <ChatIcon />, calendar: <CalendarIcon />, notes: <NotesIcon />, settings: <SettingsIcon />, notifications: <BellIcon />, plus: "+", check: "✓" };
 const vnDateFormatter = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 const vnMoneyFormatter = new Intl.NumberFormat("vi-VN");
@@ -109,6 +111,7 @@ function Avatar({ member, size = "size-10" }: { member: Member; size?: string })
 }
 function AvatarEditor({ member, editable, onChange }: { member: Member; editable: boolean; onChange: (avatar: string) => void }) {
   const [open, setOpen] = useState(false);
+  const { toast } = useUI();
   function upload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -130,7 +133,7 @@ function AvatarEditor({ member, editable, onChange }: { member: Member; editable
         const ctx = canvas.getContext("2d");
         if (ctx) ctx.drawImage(img, 0, 0, width, height);
         const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
-        if (dataUrl.length > 900000) { alert("Ảnh quá lớn, vui lòng chọn ảnh nhỏ hơn."); setOpen(false); return; }
+        if (dataUrl.length > 900000) { toast("Ảnh quá lớn, vui lòng chọn ảnh nhỏ hơn.", "error"); setOpen(false); return; }
         onChange(dataUrl); setOpen(false);
       };
       img.src = result;
@@ -159,6 +162,7 @@ function isDueToday(task: Task, now = new Date()) { const due = parseDate(task.d
 function memberName(members: Member[], id: string) { const member = members.find(item => item.id === id); return member ? member.nickname || member.name : ""; }
 
 export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
+  const ui = useUI();
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
   const [data, setData] = useState<AppData | null>(null);
   const [screen, setScreen] = useState<Screen>("dashboard");
@@ -172,6 +176,8 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarPreferenceLoaded, setSidebarPreferenceLoaded] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installDismissed, setInstallDismissed] = useState(false);
   const t = translator(language);
 
   useEffect(() => {
@@ -200,6 +206,22 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   }, [user]);
   useEffect(() => {
     if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then(registration => registration.update());
+  }, []);
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as any).standalone;
+    setInstallDismissed(standalone || localStorage.getItem("pwaInstallDismissed") === "true");
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+      if (!standalone && localStorage.getItem("pwaInstallDismissed") !== "true") setInstallDismissed(false);
+    };
+    const onInstalled = () => { setInstallPrompt(null); setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); };
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
   }, []);
   useEffect(() => {
     if (!preferencesLoaded) return;
@@ -239,10 +261,11 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     update({ ...data!, [kind]: nextItems });
     setEditor(null);
   }
-  function deleteItem(kind: EntityKind, id: string) {
-    if (!confirm("Bạn có chắc muốn xóa mục này?")) return;
+  async function deleteItem(kind: EntityKind, id: string) {
+    if (!await ui.confirm("Xóa mục này?", "Bạn có chắc muốn xóa mục này?")) return;
     update({ ...data!, [kind]: (data![kind] as EntityItem[]).filter(item => item.id !== id) });
     setEditor(null);
+    ui.toast("Đã xóa thành công");
   }
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -292,6 +315,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
         </div>
       </div>
     </header>
+    <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
     <section className={`mx-auto px-5 py-5 md:pb-8 ${screen === "calendar" ? "max-w-none md:px-4" : "max-w-7xl md:px-8"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className="mb-5 hidden md:block"><h1 className="text-2xl font-bold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     <Nav screen={screen} go={go} t={t} />
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
@@ -563,6 +587,7 @@ function UserEditor({ user, close, saved, presetMemberId = "" }: { user: Managed
 }
 
 function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUser, refreshed }: { account: ManagedUser | null; member: Member; actor: AuthUser; canManage: boolean; isCurrent: boolean; savedUser: (user: AuthUser) => void; refreshed: () => void }) {
+  const ui = useUI();
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [editType, setEditType] = useState<'none' | 'account' | 'password'>('none');
@@ -638,7 +663,7 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
   }
 
   async function deleteAccount() {
-    if (!account || !canManage || account.isSystem || !confirm(`Xác nhận xóa liên kết tài khoản ${account.username}?`)) return;
+    if (!account || !canManage || account.isSystem || !await ui.confirm("Xóa liên kết tài khoản?", `Xác nhận xóa liên kết tài khoản ${account.username}?`)) return;
     const response = await fetch(`/api/users?id=${account.id}`, { method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
     if (!response.ok) return setError(result?.error || "Không thể xóa tài khoản.");
@@ -1459,6 +1484,7 @@ function jobYearRange(job: MemberJob) {
   return `${job.startYear || "?"} - ${job.status === "active" ? "Nay" : job.endYear || "?"}`;
 }
 function MemberWorkHistory({ member, user }: { member: Member; user: AuthUser }) {
+  const ui = useUI();
   const canEdit = user.role === "full_access" || user.memberId === member.id;
   const [jobs, setJobs] = useState<MemberJob[]>([]);
   const [records, setRecords] = useState<IncomeRecord[]>([]);
@@ -1481,12 +1507,13 @@ function MemberWorkHistory({ member, user }: { member: Member; user: AuthUser })
   }, [member.id, year]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   async function remove(job: MemberJob) {
-    if (!confirm(`Xóa công việc ${job.title}?`)) return;
+    if (!await ui.confirm("Xóa công việc?", `Xóa công việc ${job.title}?`)) return;
     const response = await fetch(`/api/member-jobs?id=${encodeURIComponent(job.id)}`, { method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
-    if (!response.ok) return alert(result?.error || "Không thể xóa công việc.");
+    if (!response.ok) return ui.toast(result?.error || "Không thể xóa công việc.", "error");
     setJobs(current => current.filter(item => item.id !== job.id));
     if (viewing?.id === job.id) setViewing(null);
+    ui.toast("Đã xóa công việc");
   }
   const yearOptions = Array.from({ length: 9 }, (_, index) => String(new Date().getFullYear() - 4 + index));
   const totalYear = jobs.reduce((sum, job) => sum + jobYearTotal(job, records), 0);
@@ -1765,12 +1792,12 @@ function Finance({ data, open, t, user, update }: FinanceProps) {
   const [tab, setTab] = useState<"overview" | "income" | "expense" | "savings" | "investment">("overview");
   return (
     <>
-      <div className="mb-4 inline-flex flex-wrap gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1 text-sm font-bold">
-        <button onClick={() => setTab("overview")} className={`rounded-lg px-4 py-2 ${tab === "overview" ? "bg-indigo-500 text-white" : "text-slate-500"}`}>Tổng quan</button>
-        <button onClick={() => setTab("income")} className={`rounded-lg px-4 py-2 ${tab === "income" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Thu nhập</button>
-        <button onClick={() => setTab("expense")} className={`rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button>
-        <button onClick={() => setTab("savings")} className={`rounded-lg px-4 py-2 ${tab === "savings" ? "bg-blue-500 text-white" : "text-slate-500"}`}>Tiết kiệm</button>
-        <button onClick={() => setTab("investment")} className={`rounded-lg px-4 py-2 ${tab === "investment" ? "bg-purple-500 text-white" : "text-slate-500"}`}>Đầu tư</button>
+      <div className="mb-4 flex max-w-full gap-2 overflow-x-auto rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1 text-sm font-bold [-webkit-overflow-scrolling:touch] md:inline-flex">
+        <button onClick={() => setTab("overview")} className={`shrink-0 rounded-lg px-4 py-2 ${tab === "overview" ? "bg-indigo-500 text-white" : "text-slate-500"}`}>Tổng quan</button>
+        <button onClick={() => setTab("income")} className={`shrink-0 rounded-lg px-4 py-2 ${tab === "income" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Thu nhập</button>
+        <button onClick={() => setTab("expense")} className={`shrink-0 rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button>
+        <button onClick={() => setTab("savings")} className={`shrink-0 rounded-lg px-4 py-2 ${tab === "savings" ? "bg-blue-500 text-white" : "text-slate-500"}`}>Tiết kiệm</button>
+        <button onClick={() => setTab("investment")} className={`shrink-0 rounded-lg px-4 py-2 ${tab === "investment" ? "bg-purple-500 text-white" : "text-slate-500"}`}>Đầu tư</button>
       </div>
       {tab === "overview" && <FinanceOverview />}
       {tab === "income" && <IncomeSheetManagement user={user} />}
@@ -1779,6 +1806,31 @@ function Finance({ data, open, t, user, update }: FinanceProps) {
       {tab === "investment" && <InvestmentSheet />}
     </>
   );
+}
+
+function InstallPromptBanner({ promptEvent, dismissed, onDismiss }: { promptEvent: BeforeInstallPromptEvent | null; dismissed: boolean; onDismiss: () => void }) {
+  const [ios, setIos] = useState(false);
+  useEffect(() => {
+    const ua = navigator.userAgent.toLowerCase();
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as any).standalone;
+    setIos(/iphone|ipad|ipod/.test(ua) && !standalone);
+  }, []);
+  if (dismissed || (!promptEvent && !ios)) return null;
+  async function install() {
+    if (!promptEvent) return;
+    await promptEvent.prompt();
+    await promptEvent.userChoice.catch(() => null);
+    onDismiss();
+  }
+  return <div className="mx-auto mt-3 w-[calc(100%-2rem)] max-w-7xl rounded-2xl border border-indigo-100 bg-[#EEF2FF] px-4 py-3 text-sm font-semibold text-[#4F46E5] shadow-sm md:mt-4 md:w-[calc(100%-4rem)]">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <span>{ios ? "Cài Family Hub: mở Chia sẻ → Thêm vào Màn hình chính." : "Cài đặt ứng dụng Family Hub để dùng nhanh trên điện thoại."}</span>
+      <div className="flex shrink-0 gap-2">
+        {promptEvent && <button type="button" onClick={() => void install()} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white">Cài đặt ứng dụng</button>}
+        <button type="button" onClick={onDismiss} className="rounded-xl px-3 py-2 text-xs font-bold text-indigo-500 hover:bg-white/60">Để sau</button>
+      </div>
+    </div>
+  </div>;
 }
 
 function InvestmentSheet() {
@@ -1905,6 +1957,7 @@ function SavingsSheet() {
   const [error, setError] = useState<string | null>(null);
   const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
   const [query, setQuery] = useState("");
+  const [expandedMonths, setExpandedMonths] = useState<Set<number>>(() => new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1947,6 +2000,28 @@ function SavingsSheet() {
   const totalFiltered = filteredRecords.reduce((sum, r) => sum + (r.type === 'withdraw' ? -Number(r.amount || 0) : Number(r.amount || 0)), 0);
 
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
+  const monthSummaryRows = months.map(month => {
+    const items = filteredRecords.filter(record => Number(record.month) === month).sort(sortRecordsAsc);
+    return {
+      month,
+      items,
+      total: items.reduce((sum, record) => sum + (record.type === "withdraw" ? -Number(record.amount || 0) : Number(record.amount || 0)), 0),
+      count: items.length,
+    };
+  });
+  function toggleMonth(month: number) {
+    setExpandedMonths(current => {
+      const next = new Set(current);
+      if (next.has(month)) next.delete(month);
+      else next.add(month);
+      return next;
+    });
+  }
+  function savingsRecordDate(record: any) {
+    const value = record.date || record.savingDate || record.saving_date || record.createdAt || record.created_at || "";
+    if (value) return formatDateVN(value);
+    return `${String(record.month || "").padStart(2, "0")}/${record.year || yearStr}`;
+  }
 
   return (
     <div className="space-y-5">
@@ -1974,36 +2049,45 @@ function SavingsSheet() {
       )}
 
       {!error && (
-        <div className="space-y-4">
+        <Card className="overflow-visible p-0">
+          <div className="border-b border-[var(--app-border)] px-4 py-3">
+            <b className="font-semibold text-slate-800 dark:text-slate-100">Danh sách theo tháng</b>
+          </div>
           {loading && <div className="text-center text-sm text-slate-400 py-4">Đang tải dữ liệu...</div>}
-          {!loading && months.map(m => {
-            const monthRecords = filteredRecords.filter(r => Number(r.month) === m);
-            return (
-              <Card key={m} className="p-0 overflow-hidden">
-                <div className="bg-slate-50 dark:bg-white/5 border-b border-[var(--app-border)] p-3 px-4 font-bold text-sm">
-                  Tháng {m}
-                </div>
-                {monthRecords.length > 0 ? (
-                  <div className="divide-y divide-[var(--app-border)]">
-                    {monthRecords.map(item => (
-                      <div key={item.id} className="p-4 flex flex-wrap items-center justify-between gap-3 text-sm hover:bg-slate-50 dark:hover:bg-white/5 transition">
-                        <div>
-                          <p className="font-semibold text-slate-700 dark:text-slate-200">{item.description || "Chưa có nội dung"}</p>
-                          <p className="mt-1 text-xs font-medium text-slate-400">{item.holder || "Không rõ"} · {item.type} {item.note && `· ${item.note}`}</p>
-                        </div>
-                        <div className={`font-bold ${item.type === 'withdraw' ? 'text-rose-500' : 'text-blue-500'}`}>
-                          {item.type === 'withdraw' ? '-' : '+'}{money(item.amount)}
-                        </div>
+          {!loading && (
+            <div className="divide-y divide-[var(--app-border)]">
+              {monthSummaryRows.map(row => {
+                const expanded = expandedMonths.has(row.month);
+                return (
+                  <div key={row.month} className="px-4 py-2.5">
+                    <button type="button" onClick={() => toggleMonth(row.month)} className="grid w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-white/5 sm:grid-cols-[1fr_120px_100px_32px]">
+                      <b className="font-semibold text-slate-800 dark:text-slate-100">Tháng {row.month}</b>
+                      <span className={`font-bold sm:text-right ${row.total < 0 ? "text-rose-500" : "text-blue-500"}`}>{money(row.total)}</span>
+                      <span className="text-sm font-medium text-slate-500 sm:text-right">{row.count} khoản</span>
+                      <span className="grid size-8 place-items-center rounded-lg text-slate-500" aria-hidden><svg viewBox="0 0 24 24" className={`size-4 fill-none stroke-current stroke-2 transition-transform ${expanded ? "rotate-180" : ""}`} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg></span>
+                    </button>
+                    {expanded && (
+                      <div className="mt-1 divide-y divide-[var(--app-border)]">
+                        {row.items.length === 0 ? (
+                          <div className="p-4 text-center text-sm font-medium text-slate-500">Chưa có khoản nào trong tháng này.</div>
+                        ) : row.items.map(item => (
+                          <div key={item.id} className="group relative flex flex-col gap-1 px-3 py-3 hover:bg-slate-50 dark:hover:bg-white/5 sm:flex-row sm:items-center sm:gap-3 sm:py-2">
+                            <div className="w-[90px] shrink-0 text-xs font-medium text-slate-500">{savingsRecordDate(item)}</div>
+                            <div className="w-[110px] shrink-0 truncate text-xs font-semibold text-slate-600 dark:text-slate-400">{item.type || "monthly"}</div>
+                            <div className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900 dark:text-slate-100" title={item.description || item.note || "Chưa có nội dung"}>{item.description || "Chưa có nội dung"}</div>
+                            <div className="w-[120px] shrink-0 truncate text-xs font-medium text-slate-400" title={item.holder || "Không rõ"}>{item.holder || "Không rõ"}</div>
+                            <div className={`w-[110px] shrink-0 text-right text-sm font-bold ${item.type === "withdraw" ? "text-rose-500" : "text-blue-500"}`}>{item.type === "withdraw" ? "-" : "+"}{money(Number(item.amount || 0))}</div>
+                            <button type="button" className="grid size-8 shrink-0 place-items-center rounded-lg text-lg font-semibold text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">...</button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                ) : (
-                  <div className="p-4 text-center text-sm font-medium text-slate-400">Không có giao dịch tiết kiệm</div>
-                )}
-              </Card>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
       )}
     </div>
   );
@@ -2286,6 +2370,7 @@ function IncomeDeleteDialog({ record, close, confirm }: { record: IncomeRecord; 
 }
 
 function YearlyIncomeForm({ record, back, saved }: { record: IncomeYearlySummaryRow | null; back: () => void; saved: () => void }) {
+  const ui = useUI();
   const currentYear = new Date().getFullYear();
   type YearlyDraft = { id?: string; year: number; category: IncomeCategory; name: string; amount: string; note: string };
   const emptyRow = (): YearlyDraft => ({ year: currentYear - 1, category: "Lương", name: "Tổng lương năm", amount: "", note: "" });
@@ -2296,11 +2381,11 @@ function YearlyIncomeForm({ record, back, saved }: { record: IncomeYearlySummary
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const rawAmount = String(draft.amount).replace(/\D/g, "");
-    if (!rawAmount) { alert("Vui lòng nhập số tiền hợp lệ."); return; }
+    if (!rawAmount) { ui.toast("Vui lòng nhập số tiền hợp lệ.", "error"); return; }
     const payload = { ...draft, amount: Number(rawAmount) };
     const response = await fetch(record ? `/api/incomes-yearly?id=${encodeURIComponent(record.id)}` : "/api/incomes-yearly", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record ? payload : { rows: [payload] }) });
     const result = await readJsonSafe<{ error?: string }>(response);
-    if (!response.ok) { alert(result?.error || "Không thể lưu thu nhập."); return; }
+    if (!response.ok) { ui.toast(result?.error || "Không thể lưu thu nhập.", "error"); return; }
     saved();
   }
   
@@ -2345,6 +2430,7 @@ function YearlyIncomeForm({ record, back, saved }: { record: IncomeYearlySummary
 }
 
 function LegacyIncomeSheetManagement() {
+  const ui = useUI();
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [monthFilter, setMonthFilter] = useState("all");
   const [memberFilter, setMemberFilter] = useState("all");
@@ -2357,7 +2443,7 @@ function LegacyIncomeSheetManagement() {
     const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
     const result = await readJsonSafe<{ data?: IncomeApiData; error?: string }>(response);
     if (response.ok && result?.data) setIncomeData(result.data);
-    else alert(result?.error || "Không thể tải dữ liệu thu nhập.");
+    else ui.toast(result?.error || "Không thể tải dữ liệu thu nhập.", "error");
     setLoading(false);
   }, [year]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
@@ -2367,9 +2453,9 @@ function LegacyIncomeSheetManagement() {
   const totalYear = monthlyTotals.reduce((sum, item) => sum + item.total, 0);
   const maxMonth = Math.max(1, ...monthlyTotals.map(item => item.total));
   async function remove(record: IncomeRecord) {
-    if (!confirm(`Xóa dòng thu "${record.name}"?`)) return;
+    if (!await ui.confirm("Xóa dòng thu?", `Xóa dòng thu "${record.name}"?`)) return;
     const response = await fetch(`/api/incomes?id=${encodeURIComponent(record.id)}`, { method: "DELETE" });
-    if (!response.ok) alert("Không thể xóa dòng thu nhập.");
+    if (!response.ok) ui.toast("Không thể xóa dòng thu nhập.", "error");
     void load();
   }
   function exportExcel() {
@@ -2505,6 +2591,7 @@ function IncomeRecordForm({ record, members: initialMembers, templates, user, ba
   <div className="md:col-span-2 xl:col-span-4"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
 }
 function IncomeManagement() {
+  const ui = useUI();
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [memberFilter, setMemberFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState<IncomeSourceType | "all">("all");
@@ -2518,7 +2605,7 @@ function IncomeManagement() {
     const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
     const result = await readJsonSafe<{ data?: IncomeApiData; error?: string }>(response);
     if (response.ok && result?.data) setIncomeData(result.data);
-    else alert(result?.error || "Không thể tải dữ liệu thu nhập.");
+    else ui.toast(result?.error || "Không thể tải dữ liệu thu nhập.", "error");
     setLoading(false);
   }, [year]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
@@ -2540,11 +2627,11 @@ function IncomeManagement() {
     });
   }
   async function remove(source: IncomeSource) {
-    if (!confirm(`Xóa nguồn thu "${source.name}"?`)) return;
+    if (!await ui.confirm("Xóa nguồn thu?", `Xóa nguồn thu "${source.name}"?`)) return;
     const response = await fetch(`/api/incomes?id=${encodeURIComponent(source.id)}`, { method: "DELETE" });
     if (!response.ok) {
       const result = await readJsonSafe<{ error?: string }>(response);
-      alert(result?.error || "Không thể xóa nguồn thu.");
+      ui.toast(result?.error || "Không thể xóa nguồn thu.", "error");
       return;
     }
     setOpenMenu("");
@@ -2564,6 +2651,7 @@ function IncomeManagement() {
   </div>;
 }
 function IncomeSourceFullPage({ source, members, back, saved }: { source: IncomeSource | "new"; members: { id: string; name: string }[]; back: () => void; saved: () => void }) {
+  const ui = useUI();
   const existing = source !== "new" ? source : null;
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({ memberId: existing?.memberId || members[0]?.id || "", name: existing?.name || "", type: (existing?.type || "fixed") as IncomeSourceType, amount: String(existing?.amount || ""), frequency: (existing?.frequency || "monthly") as IncomeFrequency, receivedDate: existing?.receivedDate || existing?.startDate || today, note: existing?.note || "", active: existing?.active ?? true, createRecord: !existing });
@@ -2574,7 +2662,7 @@ function IncomeSourceFullPage({ source, members, back, saved }: { source: Income
     const url = existing ? `/api/incomes?id=${encodeURIComponent(existing.id)}` : "/api/incomes";
     const response = await fetch(url, { method: existing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const result = await readJsonSafe<{ error?: string }>(response);
-    if (!response.ok) { alert(result?.error || "Không thể lưu nguồn thu."); return; }
+    if (!response.ok) { ui.toast(result?.error || "Không thể lưu nguồn thu.", "error"); return; }
     saved();
   }
   return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại danh sách thu nhập</button><div><h2 className="text-2xl font-bold">{existing ? "Sửa nguồn thu" : "Thêm nguồn thu"}</h2><p className="mt-1 text-sm text-slate-400">Nhập nhanh và giữ liên kết với thành viên.</p></div><form onSubmit={submit} className="space-y-5"><Card><div className="grid gap-4 md:grid-cols-2"><Field label="Thành viên"><select required className={inputClass} value={form.memberId} onChange={event => set("memberId", event.target.value)}>{members.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}</select></Field><Field label="Tên nguồn thu"><input required className={inputClass} value={form.name} onChange={event => set("name", event.target.value)} /></Field><Field label="Loại"><select className={inputClass} value={form.type} onChange={event => set("type", event.target.value as IncomeSourceType)}><option value="fixed">Cố định</option><option value="variable">Không có định</option></select></Field><Field label="Số tiền"><input required min="0" type="number" className={inputClass} value={form.amount} onChange={event => set("amount", event.target.value)} /></Field><Field label="Tần suất"><select className={inputClass} value={form.frequency} onChange={event => set("frequency", event.target.value as IncomeFrequency)}>{Object.entries(frequencyLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field><Field label="Ngày nhận / ngày bắt đầu"><DateVNInput required value={form.receivedDate} onChange={value => set("receivedDate", value)} /></Field><div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={4} className={inputClass} value={form.note} onChange={event => set("note", event.target.value)} /></Field></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={event => set("active", event.target.checked)} /> Đang dùng</label>{!existing && form.type === "variable" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.createRecord} onChange={event => set("createRecord", event.target.checked)} /> Ghi nhận khoản thu này ngay</label>}</div></Card><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
@@ -2583,6 +2671,7 @@ function IncomeSourceFullPageDetail({ source, back, edit, remove }: { source: In
   return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại danh sách thu nhập</button><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-bold">{source.name}</h2><p className="mt-1 text-sm text-slate-400">{source.memberName} · {incomeTypeLabel[source.type]} · {source.active ? "Đang dùng" : "Đã tắt"}</p></div><div className="flex gap-2"><button onClick={edit} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-white">Sửa</button><button onClick={remove} className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-bold text-rose-500">Xóa</button></div></div><div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4"><Card><p className="text-xs text-slate-400">Số tiền</p><b className="text-emerald-500">{money(source.amount)}</b></Card><Card><p className="text-xs text-slate-400">Tần suất</p><b>{frequencyLabel[source.frequency]}</b></Card><Card><p className="text-xs text-slate-400">Ngày nhận</p><b>{source.receivedDate || source.startDate || "Chưa cập nhật"}</b></Card><Card><p className="text-xs text-slate-400">Trạng thái</p><b>{source.active ? "Đang dùng" : "Đã tắt"}</b></Card></div><Card><b>Ghi chú</b><p className="mt-2 text-sm text-slate-500 dark:text-slate-300">{source.note || "Không có ghi chú."}</p></Card></div>;
 }
 function OldIncomeManagement() {
+  const ui = useUI();
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [memberFilter, setMemberFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState<IncomeSourceType | "all">("all");
@@ -2596,7 +2685,7 @@ function OldIncomeManagement() {
     const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
     const result = await readJsonSafe<{ data?: IncomeApiData; error?: string }>(response);
     if (response.ok && result?.data) setIncomeData(result.data);
-    else alert(result?.error || "Không thể tải dữ liệu thu nhập.");
+    else ui.toast(result?.error || "Không thể tải dữ liệu thu nhập.", "error");
     setLoading(false);
   }, [year]);
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
@@ -2615,11 +2704,11 @@ function OldIncomeManagement() {
     });
   }
   async function remove(source: IncomeSource) {
-    if (!confirm(`Xóa nguồn thu "${source.name}"?`)) return;
+    if (!await ui.confirm("Xóa nguồn thu?", `Xóa nguồn thu "${source.name}"?`)) return;
     const response = await fetch(`/api/incomes?id=${encodeURIComponent(source.id)}`, { method: "DELETE" });
     if (!response.ok) {
       const result = await readJsonSafe<{ error?: string }>(response);
-      alert(result?.error || "Không thể xóa nguồn thu.");
+      ui.toast(result?.error || "Không thể xóa nguồn thu.", "error");
       return;
     }
     void load();
@@ -2651,7 +2740,7 @@ function IncomeSourceEditor({ source, members, close, saved }: { source: IncomeS
   </div>;
 }
 
-const paymentMethodLabels: Record<string, string> = { cash: "Tiền mặt", momo: "MoMo", apple_pay: "Apple Pay", bank_account: "Tài khoản", bank_card: "Thẻ", other: "Khác" };
+const paymentMethodLabels: Record<string, string> = { cash: "Tiền mặt", transfer: "Chuyển khoản", bank_account: "Tài khoản", card: "Thẻ", bank_card: "Thẻ", credit_card: "Thẻ tín dụng", apple_pay: "Apple Pay", momo: "MoMo", other: "Khác" };
 const expenseCategoryTree: Record<string, string[]> = {
   "Ăn uống": ["Ăn ngoài", "Mua đồ nấu ăn", "Cà phê / nước uống"],
   "Sinh hoạt": ["Điện", "Nước", "Internet", "Sim / Data", "Gas", "Rác"],
@@ -2663,9 +2752,34 @@ const expenseCategoryTree: Record<string, string[]> = {
   "Khác": ["Khác"]
 };
 const expenseCategories = Object.keys(expenseCategoryTree);
-type ExpenseDraft = { id: string; memberId: string; date: string; category: string; subcategory: string; vendor: string; grossAmount: string; discountAmount: string; note: string; paymentMethod: import("../types").PaymentMethod; bankAccountId: string; };
+type ExpenseDraft = { id: string; memberId: string; date: string; transactionTime: string; category: string; subcategory: string; vendor: string; grossAmount: string; discountAmount: string; note: string; paymentMethod: import("../types").PaymentMethod; paymentAccountId: string; };
+
+const currentTimeValue = () => new Date().toTimeString().slice(0, 5);
+const normalizeTimeValue = (value: unknown) => String(value || "").slice(0, 5);
+const timeFromTimestamp = (value: unknown) => {
+  const date = new Date(String(value || ""));
+  return Number.isNaN(date.getTime()) ? "" : date.toTimeString().slice(0, 5);
+};
+const getExpenseDateTime = (r: any) => {
+  const date = r.date || r.expense_date || r.created_at || r.createdAt || "";
+  const time = r.transactionTime || r.transaction_time || timeFromTimestamp(r.created_at || r.createdAt);
+  const isoDate = /^\d{4}-\d{2}-\d{2}/.test(String(date)) ? String(date).slice(0, 10) : "";
+  const fallback = isoDate || (r.created_at || r.createdAt ? new Date(r.created_at || r.createdAt).toISOString().slice(0, 10) : "");
+  return new Date(`${fallback || "1970-01-01"}T${time || "00:00:00"}`).getTime();
+};
+const sortExpensesAsc = (a: any, b: any) => {
+  const da = getExpenseDateTime(a);
+  const db = getExpenseDateTime(b);
+  if (da !== db) return da - db;
+  return new Date(a.created_at || a.createdAt || 0).getTime() - new Date(b.created_at || b.createdAt || 0).getTime();
+};
+const formatExpenseDateTime = (record: Transaction) => {
+  const time = normalizeTimeValue(record.transactionTime || record.transaction_time) || timeFromTimestamp(record.createdAt || record.created_at);
+  return `${formatDateVN(record.date || record.createdAt || record.created_at || "")}${time ? ` · ${time}` : ""}`;
+};
 
 function ExpenseSheetManagement({ data, update, user }: { data: AppData; update: (data: AppData) => void; user: AuthUser }) {
+  const ui = useUI();
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [month, setMonth] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -2676,6 +2790,38 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
   const [deleting, setDeleting] = useState<Transaction | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Transaction | null>(null);
+  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch("/api/bank-accounts", { cache: "no-store" }).then(async response => {
+      const json = await response.json().catch(() => null);
+      const rows = Array.isArray(json)
+        ? json
+        : Array.isArray(json?.data)
+          ? json.data
+          : Array.isArray(json?.rows)
+            ? json.rows
+            : [];
+      setBankAccounts(rows);
+    }).catch(() => setBankAccounts([]));
+  }, []);
+
+  function getPaymentAccountId(record: Transaction) {
+    return record.paymentAccountId || record.payment_account_id || record.bankAccountId || record.bank_account_id || "";
+  }
+
+  function getExpensePaymentLabel(record: Transaction) {
+    const paymentMethod = record.paymentMethod || record.payment_method || "";
+    const accountId = getPaymentAccountId(record);
+    const account = accountId ? bankAccounts.find(item => String(item.id) === String(accountId)) : null;
+    if (account) {
+      const bankName = account.bankName || account.bank_name || account.bank || "";
+      const last4 = account.last4 || account.last_4 || String(account.accountNumber || account.account_number || account.cardNumber || account.card_number || "").slice(-4);
+      return [bankName, last4 ? `****${last4}` : ""].filter(Boolean).join(" · ");
+    }
+    if (paymentMethod) return paymentMethodLabels[paymentMethod] || paymentMethod;
+    return "Không rõ";
+  }
 
   const yearRecords = useMemo(() => data.transactions.filter(r => String(r.type).toLowerCase() === "expense" && String(new Date(r.date || r.createdAt || "").getFullYear()) === year), [data.transactions, year]);
   const visibleRecords = useMemo(() => yearRecords.filter(r => {
@@ -2689,7 +2835,7 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
       return (r.title?.toLowerCase().includes(q) || r.category.toLowerCase().includes(q) || r.subcategory?.toLowerCase().includes(q) || r.note?.toLowerCase().includes(q));
     }
     return true;
-  }).sort(sortRecordsAsc), [yearRecords, month, categoryFilter, subcategoryFilter, query]);
+  }).sort(sortExpensesAsc), [yearRecords, month, categoryFilter, subcategoryFilter, query]);
 
   const selectedMonth = month === "all" ? String(new Date().getMonth() + 1) : month;
   const monthRecords = visibleRecords.filter(record => {
@@ -2728,9 +2874,13 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
 
   async function remove(record: Transaction) {
     const response = await fetch(`/api/transactions?id=${encodeURIComponent(record.id)}`, { method: "DELETE" });
-    if (!response.ok) return;
+    if (!response.ok) {
+      ui.toast("Không thể xóa khoản chi.", "error");
+      return;
+    }
     update({ ...data, transactions: data.transactions.filter(item => item.id !== record.id) });
     setDeleting(null);
+    ui.toast("Đã xóa khoản chi");
   }
 
   if (editing) {
@@ -2743,6 +2893,7 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
         saved={(record) => {
           update({ ...data, transactions: [record, ...data.transactions.filter(item => item.id !== record.id)] });
           setEditing(null);
+          ui.toast(editing === "new" ? "Đã thêm khoản chi" : "Đã cập nhật khoản chi");
         }}
       />
     );
@@ -2781,20 +2932,20 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
               {expanded && <div className="mt-1 divide-y divide-[var(--app-border)]">
                 {row.items.length === 0 ? <div className="p-4 text-center text-sm font-medium text-slate-500">Chưa có khoản nào trong tháng này.</div> : row.items.map(record => {
                   const menuOpen = menuId === record.id;
-                  const pm = paymentMethodLabels[record.paymentMethod || "cash"] || "Tiền mặt";
-                  return <div key={record.id} className="group relative flex flex-col gap-1 border-b border-[var(--app-border)] px-3 py-3 hover:bg-slate-50 dark:hover:bg-white/5 sm:flex-row sm:items-center sm:gap-3 sm:border-b-0 sm:py-2">
+                  const pm = getExpensePaymentLabel(record);
+                  return <div key={record.id} className="group relative border-b border-[var(--app-border)] px-3 py-3 hover:bg-slate-50 dark:hover:bg-white/5 sm:grid sm:grid-cols-[120px_180px_1fr_160px_140px_40px] sm:items-center sm:gap-0 sm:border-b-0 sm:py-2">
                     <div className="flex items-start justify-between sm:contents">
                       <div className="min-w-0 flex-1 sm:hidden">
                         <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100" title={record.title || "Khác"}>{record.title || "Khác"}</div>
-                        <div className="mt-0.5 text-xs text-slate-500">{formatDateVN(record.date || record.createdAt || "")} · {record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</div>
+                        <div className="mt-0.5 text-xs text-slate-500">{formatExpenseDateTime(record)} · {record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</div>
                       </div>
-                      <div className="hidden w-[75px] shrink-0 text-xs font-medium text-slate-500 sm:block">{formatDateVN(record.date || record.createdAt || "")}</div>
-                      <div className="hidden w-[120px] shrink-0 truncate text-xs font-semibold text-slate-600 dark:text-slate-400 sm:block sm:w-[160px]" title={`${record.category}${record.subcategory ? ` / ${record.subcategory}` : ""}`}>{record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</div>
-                      <div className="hidden min-w-0 flex-1 truncate text-sm font-medium text-slate-900 dark:text-slate-100 sm:block" title={record.title || "Khác"}>{record.title || "Khác"}</div>
-                      <div className="hidden w-[90px] shrink-0 truncate text-xs font-medium text-slate-400 sm:block" title={pm}>{pm}</div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <div className="text-sm font-bold text-rose-500">{money(record.amount)}</div>
-                        <div className="relative shrink-0 sm:ml-2">
+                      <div className="hidden min-w-0 truncate pr-3 text-xs font-medium text-slate-500 sm:block">{formatExpenseDateTime(record)}</div>
+                      <div className="hidden min-w-0 truncate pr-3 text-xs font-semibold text-slate-600 dark:text-slate-400 sm:block" title={`${record.category}${record.subcategory ? ` / ${record.subcategory}` : ""}`}>{record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</div>
+                      <div className="hidden min-w-0 truncate pr-3 text-sm font-medium text-slate-900 dark:text-slate-100 sm:block" title={record.title || "Khác"}>{record.title || "Khác"}</div>
+                      <div className="hidden min-w-0 truncate pr-3 text-left text-xs font-medium text-slate-500 sm:block" title={pm}>{pm}</div>
+                      <div className="flex shrink-0 items-center gap-2 sm:contents">
+                        <div className="text-sm font-bold text-rose-500 sm:text-right">{money(record.amount)}</div>
+                        <div className="relative shrink-0 sm:grid sm:w-10 sm:place-items-center">
                           <button type="button" onClick={() => setMenuId(menuOpen ? null : record.id)} className="grid size-8 place-items-center rounded-lg text-lg font-semibold text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">...</button>
                           {menuOpen && <div className="absolute right-0 top-10 z-30 w-36 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl">
                             <button className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setMenuId(null); setDetail(record); }}>Xem chi tiết</button>
@@ -2819,35 +2970,101 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
 }
 
 function ExpenseForm({ record, members, user, close, saved }: { record: Transaction | null; members: Member[]; user: AuthUser; close: () => void; saved: (record: Transaction) => void }) {
+  const ui = useUI();
   const today = new Date().toISOString().slice(0, 10);
   const [draft, setDraft] = useState<ExpenseDraft>(() => {
     const cat = record?.category || expenseCategories[0];
     const subcat = record?.subcategory || expenseCategoryTree[cat]?.[0] || "Khác";
     const gross = String(record?.grossAmount || record?.amount || "");
     const discount = String(record?.discountAmount || "0");
-    return { id: record?.id || crypto.randomUUID(), memberId: record?.memberId || members[0]?.id || "", date: record?.date || today, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod: record?.paymentMethod || "cash", bankAccountId: record?.bankAccountId || "" };
+    const paymentMethod = record?.paymentMethod || record?.payment_method || "cash";
+    const paymentAccountId = record?.paymentAccountId || record?.payment_account_id || record?.bankAccountId || record?.bank_account_id || "";
+    const transactionTime = normalizeTimeValue(record?.transactionTime || record?.transaction_time) || timeFromTimestamp(record?.createdAt || record?.created_at) || currentTimeValue();
+    return { id: record?.id || crypto.randomUUID(), memberId: record?.memberId || user.memberId || user.member?.id || members[0]?.id || "", date: record?.date || today, transactionTime, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod, paymentAccountId };
   });
   const grossValue = Number(String(draft.grossAmount).replace(/\D/g, "") || 0);
   const discountValue = Number(String(draft.discountAmount).replace(/\D/g, "") || 0);
   const totalAmount = grossValue - discountValue;
   const isError = discountValue > grossValue;
-  const bankAccountsState = useState<BankAccount[]>([]);
+  const bankAccountsState = useState<any[]>([]);
   const bankAccounts = bankAccountsState[0];
   const setBankAccounts = bankAccountsState[1];
-  
-  const normalizeBankAccount = (a: any) => ({
-    ...a,
-    accountType: a.accountType || a.account_type || a.type,
-    cardType: a.cardType || a.card_type || a.accountType || a.account_type || a.type,
-    cardNetwork: a.cardNetwork || a.card_network,
-    memberId: a.memberId || a.member_id,
-    last4: a.last4 || a.last_4,
-  });
 
   useEffect(() => {
-    const targetMemberId = user.role === "full_access" ? (draft.memberId || user.memberId || members[0]?.id) : user.memberId;
-    if (targetMemberId) {
-      fetch(`/api/bank-accounts?memberId=${targetMemberId}`).then(async res => {
+    if (!record) return;
+    console.log("ExpenseForm edit payment debug", {
+      record_payment_method: record.payment_method,
+      record_payment_account_id: record.payment_account_id,
+      draft_paymentMethod: draft.paymentMethod,
+      draft_paymentAccountId: draft.paymentAccountId,
+    });
+  }, [record, draft.paymentMethod, draft.paymentAccountId]);
+  
+  const normalizeExpenseAccountType = (value: unknown) => {
+    const text = String(value || "").trim().toLowerCase();
+    if (["bank_account", "tai khoan ngan hang", "tài khoản ngân hàng"].includes(text)) return "bank_account";
+    if (["debit_card", "atm", "debit", "the ghi no / atm", "thẻ ghi nợ / atm", "the ghi no", "thẻ ghi nợ"].includes(text)) return text === "atm" ? "atm" : "debit_card";
+    if (["credit_card", "credit", "the tin dung", "thẻ tín dụng"].includes(text)) return "credit_card";
+    if (["wallet", "momo", "vi dien tu", "ví điện tử"].includes(text)) return text === "momo" ? "momo" : "wallet";
+    return text;
+  };
+
+  const normalizeBankAccount = (a: any) => {
+    const rawType = a.accountType || a.account_type || a.type || a.cardType || a.card_type || "";
+    const accountType = normalizeExpenseAccountType(rawType);
+    const displayCardType =
+      a.cardType || a.card_type ||
+      (accountType === "credit_card" ? "Thẻ tín dụng" :
+        accountType === "debit_card" || accountType === "atm" || accountType === "debit" ? "Thẻ ghi nợ / ATM" :
+          accountType === "wallet" || accountType === "momo" ? "Ví điện tử" :
+            "Tài khoản ngân hàng");
+    return {
+      ...a,
+      id: a.id,
+      memberId: a.memberId || a.member_id,
+      bankName: a.bankName || a.bank_name || a.bank || "",
+      accountType,
+      cardType: displayCardType,
+      cardNetwork: a.cardNetwork || a.card_network || "",
+      last4: a.last4 || a.last_4 || "",
+      accountHolderName: a.accountHolderName || a.account_holder_name || "",
+      accountHolder: a.accountHolder || a.account_holder || a.accountHolderName || a.account_holder_name || "",
+      productName: a.productName || a.product_name || "",
+      status: a.status || "active",
+    };
+  };
+
+  useEffect(() => {
+    const currentMemberId = draft.memberId || user.memberId || user.member?.id || "";
+    const url = currentMemberId ? `/api/bank-accounts?memberId=${encodeURIComponent(currentMemberId)}` : "/api/bank-accounts";
+    fetch(url).then(async res => {
+      const json = await res.json().catch(() => null);
+      if ((!res.ok || !json?.ok) && currentMemberId) {
+        const fallback = await fetch("/api/bank-accounts", { cache: "no-store" }).then(async fallbackRes => fallbackRes.json().catch(() => null)).catch(() => null);
+        const fallbackRows = Array.isArray(fallback)
+          ? fallback
+          : Array.isArray(fallback?.data)
+            ? fallback.data
+            : Array.isArray(fallback?.rows)
+              ? fallback.rows
+              : [];
+        setBankAccounts(fallbackRows.map(normalizeBankAccount));
+        return;
+      }
+      const rows = Array.isArray(json)
+        ? json
+        : Array.isArray(json?.data)
+          ? json.data
+          : Array.isArray(json?.rows)
+            ? json.rows
+            : [];
+      setBankAccounts(rows.map(normalizeBankAccount));
+    }).catch(() => {
+      if (!currentMemberId) {
+        setBankAccounts([]);
+        return;
+      }
+      fetch("/api/bank-accounts", { cache: "no-store" }).then(async res => {
         const json = await res.json().catch(() => null);
         const rows = Array.isArray(json)
           ? json
@@ -2858,17 +3075,25 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
               : [];
         setBankAccounts(rows.map(normalizeBankAccount));
       }).catch(() => setBankAccounts([]));
-    }
-  }, [user.role, user.memberId, draft.memberId, members]);
+    });
+  }, [user.memberId, user.member?.id, draft.memberId]);
 
   function patch(value: Partial<ExpenseDraft>) { setDraft(current => ({ ...current, ...value })); }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (isError || totalAmount < 0) return;
-    const finalBankAccountId = ["cash", "other"].includes(draft.paymentMethod) ? undefined : draft.bankAccountId || undefined;
-    const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: grossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, bankAccountId: finalBankAccountId };
+    if (isError || totalAmount < 0) {
+      ui.toast("Giảm giá không được lớn hơn giá gốc.", "error");
+      return;
+    }
+    const existingPaymentAccountId = record?.paymentAccountId || record?.payment_account_id || record?.bankAccountId || record?.bank_account_id || "";
+    const finalPaymentAccountId = ["cash", "other"].includes(draft.paymentMethod) ? "" : (draft.paymentAccountId || existingPaymentAccountId || "");
+    const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, transactionTime: draft.transactionTime, transaction_time: draft.transactionTime, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: grossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, payment_method: draft.paymentMethod, paymentAccountId: finalPaymentAccountId || undefined, payment_account_id: finalPaymentAccountId || undefined, bankAccountId: finalPaymentAccountId || undefined, bank_account_id: finalPaymentAccountId || undefined };
     const response = await fetch("/api/transactions", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
-    if (!response.ok) return;
+    if (!response.ok) {
+      const result = await readJsonSafe<{ error?: string }>(response);
+      ui.toast(result?.error || "Không thể lưu khoản chi.", "error");
+      return;
+    }
     const savedRecord = await response.json();
     savedRecord.amount = Number(savedRecord.amount);
     saved(savedRecord);
@@ -2880,7 +3105,8 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
     { value: "momo", label: "MoMo" },
     { value: "apple_pay", label: "Apple Pay" },
     { value: "bank_account", label: "Tài khoản ngân hàng" },
-    { value: "bank_card", label: "Thẻ ngân hàng / Thẻ tín dụng" },
+    { value: "card", label: "Thẻ" },
+    { value: "credit_card", label: "Thẻ tín dụng" },
     { value: "other", label: "Khác" },
   ];
 
@@ -2890,6 +3116,7 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
     <form onSubmit={submit} className="space-y-4">
       <Card><div className="grid gap-3 md:grid-cols-2">
         <Field label="Ngày chi"><DateVNInput required value={draft.date} onChange={value => patch({ date: value })} /></Field>
+        <Field label="Giờ chi"><input required type="time" className={inputClass} value={draft.transactionTime} onChange={event => patch({ transactionTime: event.target.value })} /></Field>
         <Field label="Khoản chi"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value, subcategory: expenseCategoryTree[event.target.value]?.[0] || "Khác" })}>{expenseCategories.map(category => <option key={category}>{category}</option>)}</select></Field>
         <Field label="Loại chi tiết"><select className={inputClass} value={draft.subcategory} onChange={event => patch({ subcategory: event.target.value })}>{(expenseCategoryTree[draft.category] || ["Khác"]).map(sub => <option key={sub}>{sub}</option>)}</select></Field>
         <Field label="Nội dung chi"><input required className={inputClass} value={draft.vendor} onChange={event => patch({ vendor: event.target.value })} placeholder="Ví dụ: Đi chợ, Thanh toán tiền điện..." /></Field>
@@ -2898,38 +3125,38 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
         <Field label="Thực trả"><div className={`flex h-11 w-full items-center rounded-xl bg-slate-50 px-3 font-semibold ${isError || totalAmount < 0 ? "text-rose-500" : "text-emerald-600"} dark:bg-white/5`}>{money(totalAmount)}{isError && " (Lỗi: Giảm giá > Giá gốc)"}</div></Field>
         <Field label="Phương thức thanh toán"><select className={inputClass} value={draft.paymentMethod} onChange={event => {
           const paymentMethod = event.target.value as import("../types").PaymentMethod;
-          if (!["transfer", "bank_account", "bank_card", "card", "momo", "apple_pay"].includes(paymentMethod)) {
-            patch({ paymentMethod, bankAccountId: "" });
+          if (!["transfer", "bank_account", "bank_card", "card", "credit_card", "momo", "apple_pay"].includes(paymentMethod)) {
+            patch({ paymentMethod, paymentAccountId: "" });
           } else {
             patch({ paymentMethod });
           }
         }}>{paymentMethods.map(pm => <option key={pm.value} value={pm.value}>{pm.label}</option>)}</select></Field>
-        {["transfer", "bank_account", "bank_card", "card", "momo", "apple_pay"].includes(draft.paymentMethod) && (() => {
+        {["transfer", "bank_account", "bank_card", "card", "credit_card", "momo", "apple_pay"].includes(draft.paymentMethod) && (() => {
           let safeBankAccounts = Array.isArray(bankAccounts) ? bankAccounts : [];
           if (draft.paymentMethod === "transfer" || draft.paymentMethod === "bank_account") {
             safeBankAccounts = safeBankAccounts.filter(b => {
-              const cardTypeText = String(b.cardType || "");
-              return ["Tài khoản ngân hàng", "Thẻ ghi nợ / ATM", "Thẻ ghi nợ", "debit_card", "bank_account"].includes(cardTypeText);
+              const accountType = normalizeExpenseAccountType((b as any).accountType);
+              return ["bank_account", "debit_card", "atm", "debit"].includes(accountType);
             });
-          } else if (draft.paymentMethod === "bank_card" || draft.paymentMethod === "card") {
+          } else if (draft.paymentMethod === "bank_card" || draft.paymentMethod === "card" || draft.paymentMethod === "credit_card") {
             safeBankAccounts = safeBankAccounts.filter(b => {
-              const cardTypeText = String(b.cardType || "");
-              return ["Thẻ tín dụng", "Thẻ ghi nợ / ATM", "Thẻ ghi nợ", "debit_card", "credit_card"].includes(cardTypeText);
+              const accountType = normalizeExpenseAccountType((b as any).accountType);
+              return ["debit_card", "credit_card", "atm", "debit", "credit"].includes(accountType);
             });
           } else if (draft.paymentMethod === "momo") {
             safeBankAccounts = safeBankAccounts.filter(b => {
-              const cardTypeText = String(b.cardType || "");
+              const accountType = normalizeExpenseAccountType((b as any).accountType);
               const bankNameText = String(b.bankName || "");
-              return ["Ví điện tử", "momo"].includes(cardTypeText) || ["MoMo", "Momo"].includes(bankNameText);
+              return ["wallet", "momo", ""].includes(accountType) || ["MoMo", "Momo"].includes(bankNameText);
             });
           } else if (draft.paymentMethod === "apple_pay") {
             safeBankAccounts = safeBankAccounts.filter(b => {
-              const cardTypeText = String(b.cardType || "");
-              return ["Thẻ tín dụng", "Thẻ ghi nợ / ATM", "Thẻ ghi nợ", "debit_card", "credit_card"].includes(cardTypeText);
+              const accountType = normalizeExpenseAccountType((b as any).accountType);
+              return ["debit_card", "credit_card", "atm", "debit", "credit"].includes(accountType);
             });
           }
           return <Field label="Tài khoản / Thẻ liên kết">
-            {safeBankAccounts.length === 0 ? <select className={inputClass} disabled><option>Chưa có thẻ/tài khoản phù hợp. Vào Hồ sơ thành viên → Thẻ ngân hàng để thêm.</option></select> : <select className={inputClass} value={draft.bankAccountId} onChange={event => patch({ bankAccountId: event.target.value })}><option value="">Không liên kết</option>{safeBankAccounts.map(b => <option key={b.id} value={b.id}>{getCardDisplayName(b)}</option>)}</select>}
+            {safeBankAccounts.length === 0 ? <select className={inputClass} disabled><option>Chưa có thẻ/tài khoản phù hợp. Vào Hồ sơ thành viên → Thẻ ngân hàng để thêm.</option></select> : <select className={inputClass} value={draft.paymentAccountId} onChange={event => patch({ paymentAccountId: event.target.value })}><option value="">Không liên kết</option>{safeBankAccounts.map(b => <option key={b.id} value={b.id}>{getCardDisplayName(b)}</option>)}</select>}
           </Field>
         })()}
         <div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} placeholder="Coopmart: rau 30k, thịt 120k, sữa 70k" /></Field></div>
@@ -2942,21 +3169,21 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
 function ExpenseDetail({ record, close, edit, remove }: { record: Transaction; close: () => void; edit: () => void; remove: () => void }) {
   const [showId, setShowId] = useState(false);
   const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
+  const paymentAccountId = record.paymentAccountId || record.payment_account_id || record.bankAccountId || record.bank_account_id || "";
   
   useEffect(() => {
-    if (record.bankAccountId) {
+    if (paymentAccountId) {
       fetch(`/api/bank-accounts?memberId=${record.memberId}`).then(r => r.json()).then(data => {
-        if (Array.isArray(data)) {
-          const acc = data.find(b => b.id === record.bankAccountId);
-          if (acc) setBankAccount(acc);
-        }
+        const rows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.rows) ? data.rows : [];
+        const acc = rows.find((b: any) => String(b.id) === String(paymentAccountId));
+        if (acc) setBankAccount(acc);
       }).catch(() => {});
     }
-  }, [record.bankAccountId, record.memberId]);
+  }, [paymentAccountId, record.memberId]);
 
-  const paymentMethodLabels: Record<string, string> = { cash: "Tiền mặt", transfer: "Chuyển khoản", momo: "MoMo", apple_pay: "Apple Pay", bank_account: "Tài khoản ngân hàng", bank_card: "Thẻ ngân hàng / Thẻ tín dụng", other: "Khác" };
+  const paymentMethodLabels: Record<string, string> = { cash: "Tiền mặt", transfer: "Chuyển khoản", bank_account: "Tài khoản", card: "Thẻ", bank_card: "Thẻ", credit_card: "Thẻ tín dụng", apple_pay: "Apple Pay", momo: "MoMo", other: "Khác" };
 
-  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45 p-0 md:p-4" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="flex h-full w-full max-w-lg flex-col overflow-hidden bg-[var(--app-card)] shadow-2xl md:rounded-2xl"><div className="flex shrink-0 items-center justify-between p-5 pb-4"><h3 className="text-lg font-bold">Chi tiết phiếu chi</h3><button onClick={close} className="grid size-9 place-items-center rounded-full border border-[var(--app-border)]">×</button></div><div className="flex-1 overflow-y-auto p-5 pt-0"><div className="grid gap-3 text-sm"><AccountDetail label="Ngày chi" value={formatDateVN(record.date)} /><AccountDetail label="Khoản chi" value={record.category} /><AccountDetail label="Loại chi tiết" value={record.subcategory || "Khác"} /><AccountDetail label="Nội dung chi" value={record.title || "Khác"} /><AccountDetail label="Phương thức" value={paymentMethodLabels[record.paymentMethod || "cash"] || "Tiền mặt"} />{bankAccount && <AccountDetail label="Tài khoản / Thẻ" value={`${bankAccount.bankName} - ${bankAccount.accountHolder || bankAccount.productName}`} />}<AccountDetail label="Giá gốc" value={money(record.grossAmount || record.amount)} />{Number(record.discountAmount) > 0 && <AccountDetail label="Giảm giá" value={money(record.discountAmount || 0)} />}<AccountDetail label="Thực trả" value={money(record.amount)} /><div className="rounded-xl border border-[var(--app-border)] p-4"><p className="text-xs font-bold uppercase text-slate-400">Ghi chú</p><p className="mt-1 font-semibold whitespace-pre-wrap">{record.note || "Không có"}</p></div><button onClick={() => setShowId(!showId)} className="mt-2 text-left text-xs font-semibold text-slate-400">ID giao dịch (Nhấn để {showId ? "ẩn" : "hiện"})</button>{showId && <div className="rounded-xl bg-slate-50 p-4 dark:bg-white/5"><code className="break-all text-xs text-slate-500">{record.id}</code></div>}</div></div><div className="flex shrink-0 gap-3 border-t border-[var(--app-border)] p-5"><button onClick={remove} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button><div className="flex-1"></div><button onClick={close} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5">Đóng</button><button onClick={edit} className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-700">Sửa</button></div></div></div>;
+  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45 p-0 md:p-4" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="flex h-full w-full max-w-lg flex-col overflow-hidden bg-[var(--app-card)] shadow-2xl md:rounded-2xl"><div className="flex shrink-0 items-center justify-between p-5 pb-4"><h3 className="text-lg font-bold">Chi tiết phiếu chi</h3><button onClick={close} className="grid size-9 place-items-center rounded-full border border-[var(--app-border)]">×</button></div><div className="flex-1 overflow-y-auto p-5 pt-0"><div className="grid gap-3 text-sm"><AccountDetail label="Ngày chi" value={formatDateVN(record.date)} /><AccountDetail label="Khoản chi" value={record.category} /><AccountDetail label="Loại chi tiết" value={record.subcategory || "Khác"} /><AccountDetail label="Nội dung chi" value={record.title || "Khác"} /><AccountDetail label="Phương thức" value={paymentMethodLabels[record.paymentMethod || record.payment_method || "cash"] || "Tiền mặt"} />{bankAccount && <AccountDetail label="Tài khoản / Thẻ" value={`${bankAccount.bankName} - ${bankAccount.accountHolder || bankAccount.productName}`} />}<AccountDetail label="Giá gốc" value={money(record.grossAmount || record.amount)} />{Number(record.discountAmount) > 0 && <AccountDetail label="Giảm giá" value={money(record.discountAmount || 0)} />}<AccountDetail label="Thực trả" value={money(record.amount)} /><div className="rounded-xl border border-[var(--app-border)] p-4"><p className="text-xs font-bold uppercase text-slate-400">Ghi chú</p><p className="mt-1 font-semibold whitespace-pre-wrap">{record.note || "Không có"}</p></div><button onClick={() => setShowId(!showId)} className="mt-2 text-left text-xs font-semibold text-slate-400">ID giao dịch (Nhấn để {showId ? "ẩn" : "hiện"})</button>{showId && <div className="rounded-xl bg-slate-50 p-4 dark:bg-white/5"><code className="break-all text-xs text-slate-500">{record.id}</code></div>}</div></div><div className="flex shrink-0 gap-3 border-t border-[var(--app-border)] p-5"><button onClick={remove} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button><div className="flex-1"></div><button onClick={close} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5">Đóng</button><button onClick={edit} className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-700">Sửa</button></div></div></div>;
 }
 
 function ExpenseDeleteDialog({ record, close, confirm }: { record: Transaction; close: () => void; confirm: () => void }) {
@@ -2984,6 +3211,7 @@ function getCardDisplayName(b: BankAccount) {
 }
 function bankProgress(account: BankAccount) { const spent = 0, target = account.annualFeeWaiverTarget || 0, missing = Math.max(0, target - spent); return { spent, target, missing, label: target ? `Đã chi ${money(spent)} / ${money(target)} để miễn phí thường niên` : "Không có điều kiện miễn phí" }; }
 function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }) {
+  const ui = useUI();
   const canEdit = user.role === "full_access" || user.memberId === member.id;
   const [accounts, setAccounts] = useState<BankAccount[]>(() => bankCardsByMemberCache.get(member.id) || []);
   const [view, setView] = useState<"list" | "card">("list");
@@ -3081,14 +3309,15 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
       setSubView("list");
       setSelectedCard(null);
     }
+    ui.toast("Đã lưu thẻ ngân hàng");
   };
 
   async function remove(account: BankAccount) {
-    if (!confirm(`Xóa thẻ/tài khoản ${account.bankName}?`)) return false;
+    if (!await ui.confirm("Xóa thẻ/tài khoản?", `Xóa thẻ/tài khoản ${account.bankName}?`)) return false;
     const response = await fetch(`/api/bank-accounts/${account.id}`, { method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
     if (!response.ok) {
-      alert(result?.error || "Không thể xóa thẻ ngân hàng.");
+      ui.toast(result?.error || "Không thể xóa thẻ ngân hàng.", "error");
       return false;
     }
     setAccounts(current => {
@@ -3101,6 +3330,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
       delete copy[account.id];
       return copy;
     });
+    ui.toast("Đã xóa thẻ ngân hàng");
     return true;
   }
 
@@ -3171,6 +3401,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
   );
 }
 function MemberBankRawNotes({ member, user }: { member: Member; user: AuthUser }) {
+  const ui = useUI();
   const canEdit = user.role === "full_access" || user.memberId === member.id;
   const emptyNote = (): BankRawNote => ({ id: "", memberId: member.id, bankAccountId: "", title: "", bankName: "BIDV", contentType: "Ưu đãi", rawText: "", effectiveDate: "", expiryDate: "", note: "" });
   const [notes, setNotes] = useState<BankRawNote[]>([]);
@@ -3191,15 +3422,17 @@ function MemberBankRawNotes({ member, user }: { member: Member; user: AuthUser }
   async function save(note: BankRawNote) {
     const response = await fetch(note.id ? `/api/bank-raw-notes/${note.id}` : "/api/bank-raw-notes", { method: note.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(note) });
     const result = await readJsonSafe<{ error?: string; data?: BankRawNote }>(response);
-    if (!response.ok || !result?.data) return alert(result?.error || "Không thể lưu nội dung gốc.");
+    if (!response.ok || !result?.data) return ui.toast(result?.error || "Không thể lưu nội dung gốc.", "error");
     setNotes(current => current.some(item => item.id === result.data!.id) ? current.map(item => item.id === result.data!.id ? result.data! : item) : [result.data!, ...current]);
     setEditing(null);
+    ui.toast("Đã lưu nội dung gốc");
   }
   async function remove(note: BankRawNote) {
-    if (!confirm(`Xóa nội dung "${note.title}"?`)) return;
+    if (!await ui.confirm("Xóa nội dung gốc?", `Xóa nội dung "${note.title}"?`)) return;
     const response = await fetch(`/api/bank-raw-notes/${note.id}`, { method: "DELETE" });
-    if (!response.ok) return alert("Không thể xóa nội dung gốc.");
+    if (!response.ok) return ui.toast("Không thể xóa nội dung gốc.", "error");
     setNotes(current => current.filter(item => item.id !== note.id));
+    ui.toast("Đã xóa nội dung gốc");
   }
   const accountLabel = (id: string) => { const account = accounts.find(item => item.id === id); return account ? account.productName || account.bankName : "Không gắn thẻ"; };
   return <div className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">Nội dung gốc ngân hàng</h3><p className="mt-1 text-sm text-slate-400">Lưu điều khoản, email, nội dung PDF hoặc website ngân hàng.</p></div>{canEdit && <button onClick={() => setEditing(emptyNote())} className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm nội dung</button>}</div>{error && <p className="text-sm text-rose-500">{error}</p>}{notes.length ? <div className="grid gap-3">{notes.map(note => <Card key={note.id} className="p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><b>{note.title}</b><span className="rounded-full bg-[#EEF2FF] px-2 py-1 text-xs font-bold text-[#4F46E5]">{note.contentType}</span></div><p className="mt-1 text-sm font-semibold text-slate-500">{note.bankName || "Chưa chọn ngân hàng"} · {accountLabel(note.bankAccountId)}</p><p className="mt-2 line-clamp-2 text-sm text-slate-400">{note.rawText}</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setViewing(note)} className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-600">Xem</button>{canEdit && <button onClick={() => setEditing(note)} className="rounded-lg border border-[var(--app-border)] px-3 py-2 text-xs font-bold">Sửa</button>}{canEdit && <button onClick={() => remove(note)} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-500">Xóa</button>}</div></div></Card>)}</div> : <Card className="p-8 text-center"><p className="font-semibold">Chưa có nội dung gốc ngân hàng.</p>{canEdit && <button onClick={() => setEditing(emptyNote())} className="mt-4 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm nội dung</button>}</Card>}{editing && <BankRawNoteSheet note={editing} accounts={accounts} close={() => setEditing(null)} save={save} />}{viewing && <BankRawNoteViewer note={viewing} close={() => setViewing(null)} extract={() => { setViewing(null); setExtracting(viewing); }} />}{extracting && <BankManualExtractSheet note={extracting} close={() => setExtracting(null)} />}</div>;
@@ -3302,6 +3535,7 @@ export function serializeFees(fees: CardFees): string {
 }
 
 export function BankAccountSheet({ account, members, close, saved, inline = false }: { account: BankAccount; members: Member[]; close: () => void; saved: (account: BankAccount) => void; inline?: boolean }) {
+  const ui = useUI();
   const [form, setForm] = useState<BankAccount>({ ...emptyBankForm(account.memberId), ...account, benefits: account.benefits || [] });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -3343,7 +3577,12 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
     try {
       const response = await fetch(account.id ? `/api/bank-accounts/${account.id}` : "/api/bank-accounts", { method: account.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
       const result = await readJsonSafe<{ ok?: boolean; data?: BankAccount; error?: string }>(response);
-      if (!response.ok || !result?.data) return setError(result?.error || "Không thể lưu thẻ ngân hàng.");
+      if (!response.ok || !result?.data) {
+        const message = result?.error || "Không thể lưu thẻ ngân hàng.";
+        setError(message);
+        ui.toast(message, "error");
+        return;
+      }
       saved(result.data);
     } finally {
       setSaving(false);
@@ -3738,6 +3977,7 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
   );
 }
 export function BankAccountDetail({ account, memberName: owner, close, loading = false, inline = false, edit, remove, onUpdateAccount }: { account: BankAccount; memberName: string; close: () => void; loading?: boolean; inline?: boolean; edit?: () => void; remove?: () => void; onUpdateAccount?: (acc: BankAccount) => void }) {
+  const ui = useUI();
   const [showFull, setShowFull] = useState(false);
   const progress = bankProgress(account);
   const fees = parseFees(account.note || "", account.productName || "");
@@ -3995,7 +4235,7 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
                               onUpdateAccount(result.data);
                             }
                           } else {
-                            alert("Không thể cập nhật trạng thái ưu đãi.");
+                            ui.toast("Không thể cập nhật trạng thái ưu đãi.", "error");
                           }
                         }}
                         className="mt-3 w-full rounded-lg bg-emerald-500 py-1.5 text-center text-xs font-bold text-white hover:bg-emerald-600 transition-colors"
@@ -4104,6 +4344,7 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
 }
 
 function Settings({ user, onLogout, openProfile, openChangePassword, language, setLanguage, theme, setTheme, updateData, t }: { user: AuthUser; onLogout: () => void; openProfile: () => void; openChangePassword: () => void; language: Language; setLanguage: (x: Language) => void; theme: Theme; setTheme: (x: Theme) => void; updateData: (data: AppData) => void; t: ReturnType<typeof translator> }) {
+  const ui = useUI();
   const [systemStatus, setSystemStatus] = useState<SystemStatus>(dataService.getStatus());
   const [checking, setChecking] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -4134,17 +4375,18 @@ function Settings({ user, onLogout, openProfile, openChangePassword, language, s
   async function importData(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || !confirm("Import sẽ ghi đè toàn bộ dữ liệu hiện tại. Bạn có muốn tiếp tục?")) return;
-    try { updateData(dataService.importData(await file.text())); alert("Đã import dữ liệu thành công."); }
-    catch (error) { alert(error instanceof Error ? error.message : "Không thể đọc file JSON."); }
+    if (!file || !await ui.confirm("Import dữ liệu?", "Import sẽ ghi đè toàn bộ dữ liệu hiện tại. Bạn có muốn tiếp tục?")) return;
+    try { updateData(dataService.importData(await file.text())); ui.toast("Đã import dữ liệu thành công."); }
+    catch (error) { ui.toast(error instanceof Error ? error.message : "Không thể đọc file JSON.", "error"); }
   }
-  function resetData() {
-    if (!confirm("Reset sẽ xóa dữ liệu hiện tại và khôi phục dữ liệu mặc định. Bạn có muốn tiếp tục?")) return;
+  async function resetData() {
+    if (!await ui.confirm("Reset dữ liệu?", "Reset sẽ xóa dữ liệu hiện tại và khôi phục dữ liệu mặc định. Bạn có muốn tiếp tục?")) return;
     updateData(dataService.reset());
+    ui.toast("Đã reset dữ liệu.");
   }
-  async function resetPassword(target: ManagedUser) { const password = prompt(`Nhập mật khẩu mới cho ${target.username} (ít nhất 6 ký tự):`); if (!password || !confirm(`Reset mật khẩu cho ${target.username}?`)) return; const response = await fetch("/api/users/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: target.id, password }) }); const result = await readJsonSafe<{ error?: string }>(response); alert(response.ok ? "Đã reset mật khẩu." : result?.error || "Không thể reset mật khẩu."); void loadUsers(); }
-  async function handleResetRequest(request: PasswordResetRequest) { const password = prompt(`Nhập mật khẩu tạm mới cho ${request.username} (ít nhất 6 ký tự):`); if (!password || !confirm(`Đặt mật khẩu tạm cho ${request.username}?`)) return; const response = await fetch("/api/users/password-reset-requests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: request.id, password }) }); const result = await readJsonSafe<{ error?: string }>(response); alert(response.ok ? "Đã đặt mật khẩu tạm. User phải đổi mật khẩu sau khi đăng nhập." : result?.error || "Không thể đặt mật khẩu tạm."); void loadResetRequests(); void loadUsers(); }
-  async function deleteUser(target: ManagedUser) { if (!confirm(`Xóa tài khoản ${target.username}?`)) return; const response = await fetch(`/api/users?id=${target.id}`, { method: "DELETE" }); const result = await readJsonSafe<{ error?: string }>(response); alert(response.ok ? "Đã xóa tài khoản." : result?.error || "Không thể xóa tài khoản."); void loadUsers(); }
+  async function resetPassword(target: ManagedUser) { const password = prompt(`Nhập mật khẩu mới cho ${target.username} (ít nhất 6 ký tự):`); if (!password || !await ui.confirm("Reset mật khẩu?", `Reset mật khẩu cho ${target.username}?`)) return; const response = await fetch("/api/users/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: target.id, password }) }); const result = await readJsonSafe<{ error?: string }>(response); ui.toast(response.ok ? "Đã reset mật khẩu." : result?.error || "Không thể reset mật khẩu.", response.ok ? "success" : "error"); void loadUsers(); }
+  async function handleResetRequest(request: PasswordResetRequest) { const password = prompt(`Nhập mật khẩu tạm mới cho ${request.username} (ít nhất 6 ký tự):`); if (!password || !await ui.confirm("Đặt mật khẩu tạm?", `Đặt mật khẩu tạm cho ${request.username}?`)) return; const response = await fetch("/api/users/password-reset-requests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: request.id, password }) }); const result = await readJsonSafe<{ error?: string }>(response); ui.toast(response.ok ? "Đã đặt mật khẩu tạm. User phải đổi mật khẩu sau khi đăng nhập." : result?.error || "Không thể đặt mật khẩu tạm.", response.ok ? "success" : "error"); void loadResetRequests(); void loadUsers(); }
+  async function deleteUser(target: ManagedUser) { if (!await ui.confirm("Xóa tài khoản?", `Xóa tài khoản ${target.username}?`)) return; const response = await fetch(`/api/users?id=${target.id}`, { method: "DELETE" }); const result = await readJsonSafe<{ error?: string }>(response); ui.toast(response.ok ? "Đã xóa tài khoản." : result?.error || "Không thể xóa tài khoản.", response.ok ? "success" : "error"); void loadUsers(); }
   return <div className="max-w-2xl">{user.mustChangePassword && <Card className="mb-4 border-orange-200 bg-orange-50 dark:bg-orange-400/10"><b className="text-orange-600">Bạn đang dùng mật khẩu mặc định hoặc mật khẩu vừa được reset.</b><p className="mt-1 text-sm text-slate-500 dark:text-slate-300">Hãy đổi mật khẩu để bảo vệ tài khoản.</p><button onClick={openChangePassword} className="mt-3 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white">Đổi mật khẩu</button></Card>}<SectionTitle label="Tài khoản" /><Card className="flex items-center gap-3"><div className="min-w-0 flex-1"><b>{user.displayName}</b><p className="text-xs text-slate-400">{accessLabel(user.role)}</p></div><button onClick={openProfile} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-bold text-rose-500">Hồ sơ cá nhân</button><button onClick={onLogout} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-bold text-rose-500">Đăng xuất</button></Card>{user.role === "full_access" && <><SectionTitle label="Yêu cầu đặt lại mật khẩu" /><div className="space-y-3">{resetRequests.length ? resetRequests.map(request => <Card key={request.id} className="flex items-center justify-between gap-3"><div className="min-w-0"><b>{request.displayName}</b><p className="text-xs text-slate-400">{request.username} · {accessLabel(request.role)}</p><p className="mt-1 text-xs text-slate-400">{new Date(request.requestedAt).toLocaleString("vi-VN")}</p></div><button onClick={() => handleResetRequest(request)} className="rounded-xl bg-orange-500 px-3 py-2 text-xs font-bold text-white">Đặt mật khẩu tạm</button></Card>) : <Card className="text-sm text-slate-400">Không có yêu cầu đang chờ.</Card>}</div><SectionTitle label="Quản lý tài khoản" action="Thêm user" onClick={() => setEditingUser("new")} /><div className="space-y-3">{users.map(account => <Card key={account.id} className="flex items-center justify-between gap-3"><div className="min-w-0"><b>{account.displayName}</b><p className="text-xs text-slate-400">{account.username} · {accessLabel(account.role)} · {account.active ? "Đang hoạt động" : "Đã tắt"}</p></div><div className="flex gap-1"><EditButton onClick={() => setEditingUser(account)} /><button onClick={() => resetPassword(account)} className="rounded-xl px-2 py-2 text-xs font-bold text-orange-500">Reset</button>{!account.isSystem && <button onClick={() => deleteUser(account)} className="rounded-xl px-2 py-2 text-xs font-bold text-red-500">Xóa</button>}</div></Card>)}</div>{editingUser && <UserEditor user={editingUser} close={() => setEditingUser(null)} saved={() => { setEditingUser(null); void loadUsers(); }} />}</>}<SectionTitle label={t("language")} /><Card><select className="w-full bg-transparent outline-none" value={language} onChange={e => setLanguage(e.target.value as Language)}><option value="vi">Tiếng Việt</option><option value="en">English</option><option value="ja">日本語</option></select></Card><SectionTitle label={t("appearance")} /><Card className="flex gap-2">{(["light","dark","system"] as Theme[]).map(x => <button key={x} onClick={() => setTheme(x)} className={`flex-1 rounded-xl px-2 py-3 text-xs font-bold ${theme===x ? "bg-rose-400 text-white" : "bg-rose-50 text-slate-500 dark:bg-white/10 dark:text-slate-200"}`}>{t(x)}</button>)}</Card>
   <SectionTitle label="Sao lưu dữ liệu" /><Card className="space-y-3"><p className="text-sm text-slate-500 dark:text-slate-300">Xuất file JSON để lưu trữ hoặc import để khôi phục dữ liệu trên thiết bị này.</p><button onClick={exportData} className="w-full rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white">Export file JSON</button><label className="block w-full cursor-pointer rounded-xl border border-rose-300 px-4 py-3 text-center text-sm font-bold text-rose-500">Import file JSON<input type="file" accept="application/json,.json" className="hidden" onChange={importData} /></label><button onClick={resetData} className="w-full rounded-xl border border-red-200 px-4 py-3 text-sm font-bold text-red-500">Reset về dữ liệu mặc định</button></Card>
   <SectionTitle label="Trạng thái hệ thống" /><Card className="space-y-3"><div className="flex items-center justify-between gap-3"><div><b>{systemStatus.source === "nas" ? "PostgreSQL NAS" : "localStorage fallback"}</b><p className="mt-1 text-xs text-slate-400">{systemStatus.message}</p></div><span className={`size-3 shrink-0 rounded-full ${systemStatus.source === "nas" ? "bg-emerald-400" : "bg-orange-400"}`} /></div><p className="text-xs text-slate-400">Đồng bộ cuối: {systemStatus.lastSyncedAt ? new Date(systemStatus.lastSyncedAt).toLocaleString("vi-VN") : "Chưa có"}</p>{systemStatus.counts && <div className="grid grid-cols-2 gap-2 rounded-xl bg-rose-50 p-3 text-xs dark:bg-white/5"><span>Thành viên: <b>{systemStatus.counts.members}</b></span><span>Công việc: <b>{systemStatus.counts.tasks}</b></span><span>Thu chi: <b>{systemStatus.counts.transactions}</b></span><span>Sự kiện: <b>{systemStatus.counts.events}</b></span><span>Ghi chú: <b>{systemStatus.counts.notes}</b></span></div>}<button disabled={checking} onClick={checkConnection} className="w-full rounded-xl border border-rose-300 px-4 py-3 text-sm font-bold text-rose-500 disabled:opacity-50">{checking ? "Đang kiểm tra..." : "Kiểm tra kết nối database"}</button><button disabled={syncing} onClick={syncToNas} className="w-full rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{syncing ? "Đang đồng bộ..." : "Đồng bộ dữ liệu localStorage lên NAS"}</button></Card>

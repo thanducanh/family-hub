@@ -48,7 +48,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
       
       {/* AppToast */}
       {toastMessage && (
-        <div className="fixed left-1/2 top-4 z-[9999] -translate-x-1/2 rounded-xl px-6 py-3 font-semibold text-white shadow-xl animate-in fade-in slide-in-from-top-5 duration-300"
+        <div className="fixed left-1/2 top-4 z-[9999] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 rounded-xl px-4 py-3 text-center text-sm font-semibold text-white shadow-xl animate-in fade-in slide-in-from-top-5 duration-300 sm:w-auto sm:px-6"
              style={{ backgroundColor: toastMessage.type === "success" ? "#10b981" : "#f43f5e" }}>
           {toastMessage.message}
         </div>
@@ -57,7 +57,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
       {/* ConfirmDialog */}
       {confirmDialog && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900 sm:p-6">
             <h3 className="mb-2 text-xl font-bold">{confirmDialog.title}</h3>
             <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3">

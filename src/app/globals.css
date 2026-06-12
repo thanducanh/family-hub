@@ -55,7 +55,8 @@ html.dark {
   --app-border: rgba(255, 255, 255, 0.1);
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--app-background); color: var(--app-foreground); }
+body { margin: 0; overflow-x: hidden; background: var(--app-background); color: var(--app-foreground); }
+* { min-width: 0; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 

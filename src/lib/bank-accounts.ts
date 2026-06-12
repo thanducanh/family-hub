@@ -124,6 +124,10 @@ export async function ensureBankAccountsTable() {
   await pool.query("CREATE INDEX IF NOT EXISTS idx_card_rewards_member_id ON card_rewards(member_id)");
   await pool.query("CREATE INDEX IF NOT EXISTS idx_card_rewards_bank_account_id ON card_rewards(bank_account_id)");
   await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS bank_account_id UUID REFERENCES bank_accounts(id) ON DELETE SET NULL");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'cash'");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS payment_account_id UUID REFERENCES bank_accounts(id) ON DELETE SET NULL");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transaction_time TIME");
+  await pool.query("UPDATE transactions SET payment_account_id = bank_account_id WHERE payment_account_id IS NULL AND bank_account_id IS NOT NULL");
   await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS estimated_cashback NUMERIC NOT NULL DEFAULT 0");
   await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS actual_cashback NUMERIC NOT NULL DEFAULT 0");
 }
@@ -312,6 +316,11 @@ async function insertReward(bankAccountId: string, reward: BankCardReward) {
 }
 
 function normalizeCardType(value: unknown): BankCardType {
+  const text = String(value || "").trim().toLowerCase();
+  if (["credit_card", "credit", "the tin dung", "thẻ tín dụng"].includes(text)) return "Thẻ tín dụng";
+  if (["debit_card", "debit", "atm", "the ghi no", "thẻ ghi nợ", "the ghi no / atm", "thẻ ghi nợ / atm"].includes(text)) return "Thẻ ghi nợ / ATM";
+  if (["wallet", "momo", "vi dien tu", "ví điện tử"].includes(text)) return "Ví điện tử";
+  if (["bank_account", "tai khoan ngan hang", "tài khoản ngân hàng"].includes(text)) return "Tài khoản ngân hàng";
   return cardTypes.includes(value as BankCardType) ? value as BankCardType : "Tài khoản ngân hàng";
 }
 function normalizeNetwork(value: unknown): BankCardNetwork {
