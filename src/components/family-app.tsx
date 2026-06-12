@@ -9,7 +9,7 @@ import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
-import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, Language, Member, MemberJob, MemberJobStatus, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
+import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberJob, MemberJobStatus, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
 import * as XLSX from "xlsx";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
@@ -1582,17 +1582,28 @@ function Tasks({ data, update, open, t }: TaskProps) {
 function FinanceOverview() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
   const [chartMode, setChartMode] = useState<"income" | "expense" | "compare" | "savings">("compare");
 
   const load = useCallback(async () => {
     setLoading(true);
-    const response = await fetch(`/api/finance-overview?year=${yearStr}`, { cache: "no-store" });
-    const result = await readJsonSafe<any>(response);
-    if (response.ok) {
-      setData(result?.data || result || {});
+    setError(null);
+    try {
+      const response = await fetch(`/api/finance-overview?year=${yearStr}`, { cache: "no-store" });
+      const result = await readJsonSafe<any>(response);
+      if (response.ok) {
+        setData(result?.data || result || {});
+      } else {
+        setData({});
+        setError(result?.error || "Không thể tải tổng quan thu chi.");
+      }
+    } catch {
+      setData({});
+      setError("Lỗi kết nối. Vui lòng thử lại.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [yearStr]);
 
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
@@ -1610,8 +1621,6 @@ function FinanceOverview() {
 
   const currentCash = Number(overviewPayload.currentCash || 0);
   const settings = overviewPayload.settings || null;
-
-  if (!Array.isArray(monthlyData)) return [];
 
   const totalIncome = monthlyData.reduce((sum: number, d: any) => sum + (d.income || 0), 0);
   const totalExpense = monthlyData.reduce((sum: number, d: any) => sum + (d.expense || 0), 0);
@@ -1632,6 +1641,13 @@ function FinanceOverview() {
           {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
         </select>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-center">
+          <p className="font-semibold text-rose-600">{error}</p>
+          <button onClick={() => void load()} className="mt-4 rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700">Làm mới</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <Card><p className="text-xs text-slate-400">Tổng thu năm</p><b className="text-emerald-500">{money(totalIncome)}</b></Card>
@@ -1671,54 +1687,10 @@ function FinanceOverview() {
           {!monthlyData.length && !loading && <div className="w-full text-center text-sm text-slate-400">Chưa có dữ liệu.</div>}
         </div>
       </Card>
-  </div>
-  );
-}
 
-function Finance({ data, open, t, user, update }: FinanceProps) {
-  const [tab, setTab] = useState<"overview" | "income" | "expense" | "savings">("overview");
-  return (
-    <>
-      <div className="mb-4 inline-flex flex-wrap gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1 text-sm font-bold">
-        <button onClick={() => setTab("overview")} className={`rounded-lg px-4 py-2 ${tab === "overview" ? "bg-indigo-500 text-white" : "text-slate-500"}`}>Tổng quan</button>
-        <button onClick={() => setTab("income")} className={`rounded-lg px-4 py-2 ${tab === "income" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Thu nhập</button>
-        <button onClick={() => setTab("expense")} className={`rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button>
-        <button onClick={() => setTab("savings")} className={`rounded-lg px-4 py-2 ${tab === "savings" ? "bg-blue-500 text-white" : "text-slate-500"}`}>Tiết kiệm</button>
-      </div>
-      {tab === "overview" && <FinanceOverview />}
-      {tab === "income" && <IncomeSheetManagement user={user} />}
-      {tab === "expense" && <ExpenseSheetManagement data={data} update={update} user={user} />}
-      {tab === "savings" && <SavingsSheet />}
-    </>
-  );
-}
-
-function SavingsSheet() {
-  const [data, setData] = useState<{ month: number; income: number; expense: number }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const response = await fetch(`/api/finance-overview?year=${yearStr}`, { cache: "no-store" });
-    const result = await readJsonSafe<{ data?: { month: number; income: number; expense: number }[] }>(response);
-    if (response.ok && result?.data) setData(result.data);
-    setLoading(false);
-  }, [yearStr]);
-
-  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
-
-  return (
-    <div className="space-y-5">
-      <div className="flex gap-3">
-        <select className={filterClass} value={yearStr} onChange={event => setYearStr(event.target.value)}>
-          {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
-        </select>
-      </div>
       <Card className="overflow-hidden p-0">
-        <div className="flex items-center justify-between border-b border-[var(--app-border)] p-4">
-          <b>Bảng tiết kiệm {yearStr}</b>
-          {loading && <span className="text-xs text-slate-400">Đang tải...</span>}
+        <div className="border-b border-[var(--app-border)] p-4">
+          <b>Dòng tiền tháng</b>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
@@ -1727,33 +1699,312 @@ function SavingsSheet() {
                 <th className="px-4 py-3">Tháng</th>
                 <th className="px-4 py-3 text-right">Thu nhập</th>
                 <th className="px-4 py-3 text-right">Chi tiêu</th>
-                <th className="px-4 py-3 text-right">Tiết kiệm</th>
-                <th className="px-4 py-3 text-right">Tỷ lệ</th>
+                <th className="px-4 py-3 text-right">Dư sau chi</th>
+                <th className="px-4 py-3 text-right">Tiết kiệm chuyển</th>
+                <th className="px-4 py-3 text-right">Đầu tư ròng</th>
+                <th className="px-4 py-3 text-right">Còn lại tháng</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--app-border)]">
-              {data.map(item => {
-                const itemSavings = item.income - item.expense;
-                const savingsRate = item.income > 0 ? ((itemSavings / item.income) * 100).toFixed(1) + "%" : "N/A";
+              {monthlyData.map((item: any) => {
+                const income = item.income || 0;
+                const expense = item.expense || 0;
+                const savingsTransferred = item.savingsTransferred || 0;
+                const netInvestment = item.netInvestment || 0;
+                const duSauChi = income - expense;
+                const conLai = duSauChi - savingsTransferred + netInvestment;
                 return (
                   <tr key={item.month} className="hover:bg-slate-50 dark:hover:bg-white/5">
                     <td className="px-4 py-3 font-semibold">Tháng {item.month}</td>
-                    <td className="px-4 py-3 text-right text-emerald-500">{money(item.income)}</td>
-                    <td className="px-4 py-3 text-right text-rose-500">{money(item.expense)}</td>
-                    <td className="px-4 py-3 text-right font-bold">
-                      <div className="flex items-center justify-end gap-2">
-                        {itemSavings < 0 && <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">Chi vượt thu</span>}
-                        <span className={itemSavings >= 0 ? "text-blue-500" : "text-orange-500"}>{money(itemSavings)}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-slate-500">{savingsRate}</td>
+                    <td className="px-4 py-3 text-right text-emerald-500">{money(income)}</td>
+                    <td className="px-4 py-3 text-right text-rose-500">{money(expense)}</td>
+                    <td className="px-4 py-3 text-right font-medium">{money(duSauChi)}</td>
+                    <td className="px-4 py-3 text-right text-blue-500">{money(savingsTransferred)}</td>
+                    <td className="px-4 py-3 text-right text-purple-500">{money(netInvestment)}</td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-700 dark:text-slate-200">{money(conLai)}</td>
                   </tr>
                 );
               })}
+              {!monthlyData.length && !loading && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-400">Chưa có dữ liệu.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </Card>
+  </div>
+  );
+}
+
+const getRecordTime = (r: any) => new Date(
+  r.date ||
+  r.received_date ||
+  r.expense_date ||
+  r.trade_date ||
+  r.created_at ||
+  r.incomeDate ||
+  r.receivedDate ||
+  r.expenseDate ||
+  r.tradeDate ||
+  r.createdAt ||
+  (r.year && r.month ? `${r.year}-${String(r.month).padStart(2, "0")}-01` : "") ||
+  r.created_at ||
+  0
+).getTime();
+
+const sortRecordsAsc = (a: any, b: any) => {
+  const da = getRecordTime(a);
+  const db = getRecordTime(b);
+  if (da !== db) return da - db;
+  return new Date(a.createdAt || a.created_at || 0).getTime() - new Date(b.createdAt || b.created_at || 0).getTime();
+};
+
+function Finance({ data, open, t, user, update }: FinanceProps) {
+  const [tab, setTab] = useState<"overview" | "income" | "expense" | "savings" | "investment">("overview");
+  return (
+    <>
+      <div className="mb-4 inline-flex flex-wrap gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1 text-sm font-bold">
+        <button onClick={() => setTab("overview")} className={`rounded-lg px-4 py-2 ${tab === "overview" ? "bg-indigo-500 text-white" : "text-slate-500"}`}>Tổng quan</button>
+        <button onClick={() => setTab("income")} className={`rounded-lg px-4 py-2 ${tab === "income" ? "bg-emerald-500 text-white" : "text-slate-500"}`}>Thu nhập</button>
+        <button onClick={() => setTab("expense")} className={`rounded-lg px-4 py-2 ${tab === "expense" ? "bg-rose-500 text-white" : "text-slate-500"}`}>Chi tiêu</button>
+        <button onClick={() => setTab("savings")} className={`rounded-lg px-4 py-2 ${tab === "savings" ? "bg-blue-500 text-white" : "text-slate-500"}`}>Tiết kiệm</button>
+        <button onClick={() => setTab("investment")} className={`rounded-lg px-4 py-2 ${tab === "investment" ? "bg-purple-500 text-white" : "text-slate-500"}`}>Đầu tư</button>
+      </div>
+      {tab === "overview" && <FinanceOverview />}
+      {tab === "income" && <IncomeSheetManagement user={user} />}
+      {tab === "expense" && <ExpenseSheetManagement data={data} update={update} user={user} />}
+      {tab === "savings" && <SavingsSheet />}
+      {tab === "investment" && <InvestmentSheet />}
+    </>
+  );
+}
+
+function InvestmentSheet() {
+  const [data, setData] = useState<InvestmentTransaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
+  const [query, setQuery] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/investments", { cache: "no-store" });
+      const result = await readJsonSafe<any>(response);
+      if (!response.ok) {
+        setData([]);
+        setError(result?.error || "Không thể tải dữ liệu đầu tư.");
+      } else {
+        const payload = result || {};
+        const investmentRecords = Array.isArray(result)
+          ? result
+          : Array.isArray(payload.data)
+            ? payload.data
+            : Array.isArray(payload.records)
+              ? payload.records
+              : [];
+        setData(investmentRecords);
+      }
+    } catch {
+      setData([]);
+      setError("Lỗi kết nối. Vui lòng thử lại.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const records = data.filter(record => {
+    const recordYear = new Date(record.tradeDate || record.createdAt || 0).getFullYear();
+    const haystack = `${record.stockCode || ""} ${record.action || ""} ${record.note || ""}`.toLocaleLowerCase();
+    return String(recordYear) === yearStr && (!normalizedQuery || haystack.includes(normalizedQuery));
+  }).sort(sortRecordsAsc);
+  const totalBuy = records.filter(record => record.action === "buy").reduce((sum, record) => sum + Number(record.quantity || 0) * Number(record.price || 0) + Number(record.fee || 0), 0);
+  const totalSell = records.filter(record => record.action === "sell").reduce((sum, record) => sum + Number(record.quantity || 0) * Number(record.price || 0) - Number(record.fee || 0), 0);
+  const netInvestment = totalBuy - totalSell;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <select className={filterClass} value={yearStr} onChange={event => setYearStr(event.target.value)}>
+            {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
+          </select>
+          <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm mã cổ phiếu..." />
+        </div>
+        <button className="rounded-xl bg-purple-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-purple-700 transition">+ Thêm đầu tư</button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card><p className="text-xs font-semibold text-slate-400">Tổng mua</p><b className="mt-1 block text-xl text-purple-500">{money(totalBuy)}</b></Card>
+        <Card><p className="text-xs font-semibold text-slate-400">Tổng bán</p><b className="mt-1 block text-xl text-emerald-500">{money(totalSell)}</b></Card>
+        <Card><p className="text-xs font-semibold text-slate-400">Đầu tư ròng</p><b className="mt-1 block text-xl text-slate-700 dark:text-slate-200">{money(netInvestment)}</b></Card>
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-center">
+          <p className="font-semibold text-rose-600">{error}</p>
+          <button onClick={() => void load()} className="mt-4 rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700">Làm mới</button>
+        </div>
+      )}
+
+      {!error && (
+        <Card className="overflow-hidden p-0">
+          <div className="flex items-center justify-between border-b border-[var(--app-border)] p-4">
+            <b>Danh sách đầu tư</b>
+            {loading && <span className="text-xs text-slate-400">Đang tải...</span>}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-400 dark:bg-white/5">
+                <tr>
+                  <th className="px-4 py-3">Ngày</th>
+                  <th className="px-4 py-3">Mã</th>
+                  <th className="px-4 py-3">Loại</th>
+                  <th className="px-4 py-3 text-right">Số lượng</th>
+                  <th className="px-4 py-3 text-right">Giá</th>
+                  <th className="px-4 py-3 text-right">Phí</th>
+                  <th className="px-4 py-3 text-right">Giá trị</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--app-border)]">
+                {records.map(record => {
+                  const value = Number(record.quantity || 0) * Number(record.price || 0) + (record.action === "buy" ? Number(record.fee || 0) : -Number(record.fee || 0));
+                  return (
+                    <tr key={record.id} className="hover:bg-slate-50 dark:hover:bg-white/5">
+                      <td className="px-4 py-3">{formatDateVN(record.tradeDate)}</td>
+                      <td className="px-4 py-3 font-semibold">{record.stockCode}</td>
+                      <td className="px-4 py-3">{record.action === "buy" ? "Mua" : "Bán"}</td>
+                      <td className="px-4 py-3 text-right">{Number(record.quantity || 0).toLocaleString("vi-VN")}</td>
+                      <td className="px-4 py-3 text-right">{money(Number(record.price || 0))}</td>
+                      <td className="px-4 py-3 text-right">{money(Number(record.fee || 0))}</td>
+                      <td className={`px-4 py-3 text-right font-bold ${record.action === "buy" ? "text-purple-500" : "text-emerald-500"}`}>{money(value)}</td>
+                    </tr>
+                  );
+                })}
+                {!loading && records.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-400">Chưa có giao dịch đầu tư.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function SavingsSheet() {
+  const [data, setData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
+  const [query, setQuery] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/savings-records`, { cache: "no-store" });
+      const result = await readJsonSafe<any>(response);
+      if (!response.ok) {
+        setError(result?.error || "Không thể tải dữ liệu tiết kiệm.");
+        setData([]);
+      } else {
+        const payload = result || {};
+        const savingsRecords = Array.isArray(result)
+          ? result
+          : Array.isArray(payload.data)
+            ? payload.data
+            : Array.isArray(payload.records)
+              ? payload.records
+              : [];
+        setData(savingsRecords);
+      }
+    } catch (err) {
+      setData([]);
+      setError("Lỗi kết nối. Vui lòng thử lại.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+
+  const yearRecords = data.filter(r => String(r.year) === yearStr);
+  const filteredRecords = yearRecords.filter(r => {
+    const q = query.toLowerCase();
+    return !q || (r.description?.toLowerCase().includes(q) || r.note?.toLowerCase().includes(q) || r.holder?.toLowerCase().includes(q));
+  }).sort(sortRecordsAsc);
+
+  const totalAllTime = data.reduce((sum, r) => sum + (r.type === 'withdraw' ? -Number(r.amount || 0) : Number(r.amount || 0)), 0);
+  const totalYear = yearRecords.reduce((sum, r) => sum + (r.type === 'withdraw' ? -Number(r.amount || 0) : Number(r.amount || 0)), 0);
+  const totalFiltered = filteredRecords.reduce((sum, r) => sum + (r.type === 'withdraw' ? -Number(r.amount || 0) : Number(r.amount || 0)), 0);
+
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <select className={filterClass} value={yearStr} onChange={event => setYearStr(event.target.value)}>
+            {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
+          </select>
+          <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm khoản tiết kiệm..." />
+        </div>
+        <button className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 transition">+ Thêm tiết kiệm</button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card><p className="text-xs font-semibold text-slate-400">Tiết kiệm hiện có</p><b className="mt-1 block text-xl text-blue-500">{money(totalAllTime)}</b></Card>
+        <Card><p className="text-xs font-semibold text-slate-400">Tiết kiệm năm {yearStr}</p><b className="mt-1 block text-xl text-emerald-500">{money(totalYear)}</b></Card>
+        <Card><p className="text-xs font-semibold text-slate-400">Khoản đang lọc</p><b className="mt-1 block text-xl text-slate-700 dark:text-slate-200">{money(totalFiltered)}</b></Card>
+      </div>
+
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-center">
+          <p className="font-semibold text-rose-600">{error}</p>
+          <button onClick={() => void load()} className="mt-4 rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700">Làm mới</button>
+        </div>
+      )}
+
+      {!error && (
+        <div className="space-y-4">
+          {loading && <div className="text-center text-sm text-slate-400 py-4">Đang tải dữ liệu...</div>}
+          {!loading && months.map(m => {
+            const monthRecords = filteredRecords.filter(r => Number(r.month) === m);
+            return (
+              <Card key={m} className="p-0 overflow-hidden">
+                <div className="bg-slate-50 dark:bg-white/5 border-b border-[var(--app-border)] p-3 px-4 font-bold text-sm">
+                  Tháng {m}
+                </div>
+                {monthRecords.length > 0 ? (
+                  <div className="divide-y divide-[var(--app-border)]">
+                    {monthRecords.map(item => (
+                      <div key={item.id} className="p-4 flex flex-wrap items-center justify-between gap-3 text-sm hover:bg-slate-50 dark:hover:bg-white/5 transition">
+                        <div>
+                          <p className="font-semibold text-slate-700 dark:text-slate-200">{item.description || "Chưa có nội dung"}</p>
+                          <p className="mt-1 text-xs font-medium text-slate-400">{item.holder || "Không rõ"} · {item.type} {item.note && `· ${item.note}`}</p>
+                        </div>
+                        <div className={`font-bold ${item.type === 'withdraw' ? 'text-rose-500' : 'text-blue-500'}`}>
+                          {item.type === 'withdraw' ? '-' : '+'}{money(item.amount)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-4 text-center text-sm font-medium text-slate-400">Không có giao dịch tiết kiệm</div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1948,7 +2199,7 @@ function IncomeSheetManagement({ user }: { user: AuthUser }) {
     const jobText = incomeJobShortLabel(record) + " " + incomeJobFullLabel(record) + " " + incomeJobCompany(record);
     const haystack = (record.name + " " + record.note + " " + (record.memberName || "") + " " + jobText).toLocaleLowerCase();
     return (monthFilter === "all" || record.month === Number(monthFilter)) && (!normalizedQuery || haystack.includes(normalizedQuery));
-  }).sort((a, b) => new Date(b.incomeDate || b.receivedDate).getTime() - new Date(a.incomeDate || a.receivedDate).getTime());
+  }).sort(sortRecordsAsc);
 
   const receivedRecords = sourceFilteredRecords.filter(isReceivedIncome);
   const currentYearSummaries = sourceFilter === "all" ? (incomeData?.yearlySummaries || []).filter(item => String(item.year) === year) : [];
@@ -2438,7 +2689,7 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
       return (r.title?.toLowerCase().includes(q) || r.category.toLowerCase().includes(q) || r.subcategory?.toLowerCase().includes(q) || r.note?.toLowerCase().includes(q));
     }
     return true;
-  }), [yearRecords, month, categoryFilter, subcategoryFilter, query]);
+  }).sort(sortRecordsAsc), [yearRecords, month, categoryFilter, subcategoryFilter, query]);
 
   const selectedMonth = month === "all" ? String(new Date().getMonth() + 1) : month;
   const monthRecords = visibleRecords.filter(record => {
@@ -2584,8 +2835,17 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
   const bankAccounts = bankAccountsState[0];
   const setBankAccounts = bankAccountsState[1];
   
+  const normalizeBankAccount = (a: any) => ({
+    ...a,
+    accountType: a.accountType || a.account_type || a.type,
+    cardType: a.cardType || a.card_type || a.accountType || a.account_type || a.type,
+    cardNetwork: a.cardNetwork || a.card_network,
+    memberId: a.memberId || a.member_id,
+    last4: a.last4 || a.last_4,
+  });
+
   useEffect(() => {
-    const targetMemberId = user.role === "full_access" ? draft.memberId : user.memberId;
+    const targetMemberId = user.role === "full_access" ? (draft.memberId || user.memberId || members[0]?.id) : user.memberId;
     if (targetMemberId) {
       fetch(`/api/bank-accounts?memberId=${targetMemberId}`).then(async res => {
         const json = await res.json().catch(() => null);
@@ -2596,10 +2856,10 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
             : Array.isArray(json?.rows)
               ? json.rows
               : [];
-        setBankAccounts(rows);
+        setBankAccounts(rows.map(normalizeBankAccount));
       }).catch(() => setBankAccounts([]));
     }
-  }, [user.role, user.memberId, draft.memberId]);
+  }, [user.role, user.memberId, draft.memberId, members]);
 
   function patch(value: Partial<ExpenseDraft>) { setDraft(current => ({ ...current, ...value })); }
   async function submit(event: React.FormEvent) {
@@ -2647,11 +2907,26 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
         {["transfer", "bank_account", "bank_card", "card", "momo", "apple_pay"].includes(draft.paymentMethod) && (() => {
           let safeBankAccounts = Array.isArray(bankAccounts) ? bankAccounts : [];
           if (draft.paymentMethod === "transfer" || draft.paymentMethod === "bank_account") {
-            safeBankAccounts = safeBankAccounts.filter(b => b.cardType === "Tài khoản ngân hàng" || b.cardType === "Thẻ ghi nợ / ATM");
+            safeBankAccounts = safeBankAccounts.filter(b => {
+              const cardTypeText = String(b.cardType || "");
+              return ["Tài khoản ngân hàng", "Thẻ ghi nợ / ATM", "Thẻ ghi nợ", "debit_card", "bank_account"].includes(cardTypeText);
+            });
           } else if (draft.paymentMethod === "bank_card" || draft.paymentMethod === "card") {
-            safeBankAccounts = safeBankAccounts.filter(b => b.cardType === "Thẻ tín dụng" || b.cardType === "Thẻ ghi nợ / ATM");
+            safeBankAccounts = safeBankAccounts.filter(b => {
+              const cardTypeText = String(b.cardType || "");
+              return ["Thẻ tín dụng", "Thẻ ghi nợ / ATM", "Thẻ ghi nợ", "debit_card", "credit_card"].includes(cardTypeText);
+            });
           } else if (draft.paymentMethod === "momo") {
-            safeBankAccounts = safeBankAccounts.filter(b => b.cardType === "Ví điện tử" && b.bankName === "MoMo");
+            safeBankAccounts = safeBankAccounts.filter(b => {
+              const cardTypeText = String(b.cardType || "");
+              const bankNameText = String(b.bankName || "");
+              return ["Ví điện tử", "momo"].includes(cardTypeText) || ["MoMo", "Momo"].includes(bankNameText);
+            });
+          } else if (draft.paymentMethod === "apple_pay") {
+            safeBankAccounts = safeBankAccounts.filter(b => {
+              const cardTypeText = String(b.cardType || "");
+              return ["Thẻ tín dụng", "Thẻ ghi nợ / ATM", "Thẻ ghi nợ", "debit_card", "credit_card"].includes(cardTypeText);
+            });
           }
           return <Field label="Tài khoản / Thẻ liên kết">
             {safeBankAccounts.length === 0 ? <select className={inputClass} disabled><option>Chưa có thẻ/tài khoản phù hợp. Vào Hồ sơ thành viên → Thẻ ngân hàng để thêm.</option></select> : <select className={inputClass} value={draft.bankAccountId} onChange={event => patch({ bankAccountId: event.target.value })}><option value="">Không liên kết</option>{safeBankAccounts.map(b => <option key={b.id} value={b.id}>{getCardDisplayName(b)}</option>)}</select>}
@@ -3466,8 +3741,6 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
   const [showFull, setShowFull] = useState(false);
   const progress = bankProgress(account);
   const fees = parseFees(account.note || "", account.productName || "");
-  const [openYear, setOpenYear] = useState(fees.openYear || "");
-  const [checkYear, setCheckYear] = useState(fees.checkYear || String(new Date().getFullYear()));
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -3576,47 +3849,44 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
 
             <div className="rounded-xl border border-[var(--app-border)] p-3 text-sm space-y-3 bg-[var(--app-card)] flex flex-col justify-between">
               <div>
-                <h4 className="text-xs font-bold text-slate-500 mb-2">Tra cứu phí theo năm</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-1">Năm mở thẻ</label>
-                    <input 
-                      type="number" 
-                      className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-background)] px-2 py-1.5 text-xs outline-none" 
-                      value={openYear} 
-                      onChange={e => setOpenYear(e.target.value)} 
-                      placeholder="Ví dụ: 2025"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-1">Năm kiểm tra</label>
-                    <input 
-                      type="number" 
-                      className="w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-background)] px-2 py-1.5 text-xs outline-none" 
-                      value={checkYear} 
-                      onChange={e => setCheckYear(e.target.value)} 
-                      placeholder="Ví dụ: 2026"
-                    />
-                  </div>
-                </div>
-                
+                <h4 className="text-xs font-bold text-slate-500 mb-2">Tự động kiểm tra phí thường niên</h4>
                 {(() => {
-                  const openYr = parseInt(openYear);
-                  const checkYr = parseInt(checkYear);
-                  if (!isNaN(openYr) && !isNaN(checkYr)) {
-                    if (checkYr === openYr) {
-                      return <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-600 text-center">Miễn phí thường niên năm đầu</p>;
-                    } else if (checkYr > openYr) {
-                      return <p className="mt-3 rounded-lg bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-700 text-center">Cần chi tiêu đủ {money(account.annualFeeWaiverTarget)}/năm để miễn phí, nếu không có thể bị thu {money(account.annualFeeAmount)}.</p>;
-                    }
+                  const openYr = parseInt(fees.openYear);
+                  if (!isNaN(openYr)) {
+                    return (
+                      <div className="space-y-2 mt-3">
+                        {fees.firstYearFree && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="font-bold text-slate-700 w-10">{openYr}:</span>
+                            <span className="text-emerald-600 font-medium">Miễn phí năm đầu</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="font-bold text-slate-700 w-10">{fees.firstYearFree ? openYr + 1 : openYr}:</span>
+                          <span className="text-orange-600 font-medium">Cần kiểm tra chi tiêu năm {fees.firstYearFree ? openYr : openYr - 1}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="font-bold text-slate-700 w-10">{fees.firstYearFree ? openYr + 2 : openYr + 1}:</span>
+                          <span className="text-orange-600 font-medium">Cần kiểm tra chi tiêu năm {fees.firstYearFree ? openYr + 1 : openYr}</span>
+                        </div>
+                      </div>
+                    );
                   }
-                  return null;
+                  return <p className="text-xs text-slate-400 mt-2">Vui lòng cập nhật "Năm mở thẻ" trong khi chỉnh sửa thẻ để xem lịch kiểm tra tự động.</p>;
                 })()}
               </div>
 
-              <p className="text-[11px] font-semibold text-indigo-600 bg-indigo-50/50 p-2.5 rounded-lg border border-indigo-100">
-                💡 Dù trả đúng hạn, vẫn cần theo dõi phí thường niên, lãi suất, phí giao dịch nước ngoài và phí rút tiền mặt.
-              </p>
+              <div className="space-y-2 mt-4">
+                {fees.firstYearFree && (
+                  <p className="text-[11px] font-semibold text-emerald-600 bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100">
+                    Năm đầu được miễn phí thường niên. Từ năm tiếp theo, hệ thống sẽ tự kiểm tra điều kiện miễn phí dựa trên chi tiêu năm trước.
+                  </p>
+                )}
+                
+                <p className="text-[11px] font-semibold text-indigo-600 bg-indigo-50/50 p-2.5 rounded-lg border border-indigo-100">
+                  💡 Dù trả đúng hạn, vẫn cần theo dõi phí thường niên, lãi suất, phí giao dịch nước ngoài và phí rút tiền mặt.
+                </p>
+              </div>
             </div>
           </div>
         </section>
