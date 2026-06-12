@@ -25,20 +25,23 @@ export type NoteKind = "general" | "member";
 
 export type Gender = "male" | "female" | "other" | "";
 export interface LinkedAccount { id: string; username: string; email: string; displayName: string; role: "full_access" | "self_only"; active: boolean; isSystem: boolean; memberId: string; createdAt: string; updatedAt: string; }
-export interface Member { id: string; name: string; nickname: string; birthday: string; gender: Gender; phone: string; avatar: string; avatarPreview?: string; notes: string; color: string; user?: LinkedAccount | null; }
+export interface Member { id: string; name: string; nickname: string; birthday: string; gender: Gender; phone: string; avatar: string; avatarUrl?: string; avatarPreview?: string; notes: string; color: string; user?: LinkedAccount | null; }
 export interface Task { id: string; title: string; memberId: string; assignee: string; due: string; dueDate: string; priority: TaskPriority; status: TaskStatus; }
-export type PaymentMethod = "cash" | "momo" | "apple_pay" | "bank_account" | "bank_card" | "other";
+export type PaymentMethod = "cash" | "transfer" | "momo" | "apple_pay" | "bank_account" | "bank_card" | "card" | "other";
 export interface Transaction { id: string; title: string; memberId: string; amount: number; grossAmount?: number; discountAmount?: number; type: TransactionType; category: string; subcategory?: string; date: string; note?: string; bankAccountId?: string; paymentMethod?: PaymentMethod; estimatedCashback?: number; actualCashback?: number; createdAt?: string; created_at?: string; year?: number; month?: number; }
 export interface ExpenseItem { id: string; expenseId: string; itemName: string; quantity: number; unitPrice: number; amount: number; }
 export interface IncomeSource { id: string; memberId: string; name: string; type: IncomeSourceType; amount: number; frequency: IncomeFrequency; receivedDate: string; startDate: string; note: string; active: boolean; createdAt?: string; updatedAt?: string; memberName?: string; }
 export type MemberJobStatus = "active" | "ended";
 export interface MemberJob { id: string; memberId: string; title: string; company: string; startYear: number | null; endYear: number | null; status: MemberJobStatus; note: string; createdAt?: string; updatedAt?: string; }
 export interface IncomeRecord { id: string; sourceId?: string; memberId: string; memberName?: string; jobId?: string; jobName?: string; workId?: string; workName?: string; workSource?: string; incomeDate: string; receivedDate: string; year: number; month: number; category: IncomeCategory; name: string; amount: number; status: IncomeStatus; note: string; createdAt?: string; updatedAt?: string; sourceName?: string; sourceType?: IncomeSourceType; generated?: boolean; }
+export type SavingsType = "monthly" | "extra" | "bonus" | "interest" | "withdraw" | "adjustment";
+export type SavingsHolder = "Mẹ giữ" | "Ngân hàng" | "Tiền mặt" | "Khác";
+export interface SavingsRecord { id: string; memberId: string | null; year: number; month: number; amount: number; type: SavingsType; holder: SavingsHolder; description: string; note: string; createdAt?: string; updatedAt?: string; }
 export interface EventItem { id: string; title: string; memberId: string; type: EventType; date: string; time: string; color: string; calendarId?: string; description?: string; startDate?: string; endDate?: string; startTime?: string; endTime?: string; allDay?: boolean; location?: string; createdByUserId?: string; repeatRule?: string; lunarDate?: string; relatedMemberIds?: string[]; }
 export interface Note { id: string; title: string; memberId: string; kind: NoteKind; important: boolean; tag: string; content: string; updatedAt: string; }
 
-export type BankCardType = "Tài khoản nhận lương" | "Tài khoản ngân hàng" | "ATM nội địa" | "Debit" | "Credit Visa" | "Credit Mastercard" | "Credit JCB" | "Ví điện tử";
-export type BankCardNetwork = "NAPAS" | "Visa" | "Mastercard" | "JCB" | "Khác";
+export type BankCardType = "Tài khoản ngân hàng" | "Thẻ ghi nợ / ATM" | "Thẻ tín dụng" | "Ví điện tử";
+export type BankCardNetwork = "Không áp dụng" | "Visa" | "Mastercard" | "Napas" | "JCB" | "Amex" | "Khác";
 export type BankAccountStatus = "Đang dùng" | "Tạm khóa" | "Đã hủy";
 export type AnnualFeeWaiverType = "Không có" | "Theo tổng chi tiêu năm" | "Theo tổng chi tiêu tháng" | "Theo số giao dịch";
 export type AnnualFeeCycle = "tháng" | "năm";
@@ -47,12 +50,16 @@ export type BankBenefitType = "Hoàn tiền %" | "Giảm tiền cố định" | 
 export interface BankCardBenefit { id: string; bankAccountId: string; name: string; category: BankBenefitCategory; benefitType: BankBenefitType; benefitValue: number; monthlyCap: number; minTransactionAmount: number; conditionNote: string; active: boolean; createdAt?: string; updatedAt?: string; }
 export type BankCardRewardType = "Hoàn tiền" | "Đổi điểm thành tiền" | "Quà tặng" | "Miễn/giảm phí";
 export interface BankCardReward { id: string; bankAccountId: string; rewardType: BankCardRewardType; title: string; amount: number; points: number; recordedAt: string; note: string; createdAt?: string; updatedAt?: string; }
+export type CardRewardType = "cashback" | "points" | "redeem_points" | "voucher" | "annual_fee_refund" | "other";
+export type CardRewardStatus = "expected" | "received" | "used" | "expired";
+export interface CardReward { id: string; memberId: string; bankAccountId: string | null; rewardDate: string; type: CardRewardType; amount: number; points: number; status: CardRewardStatus; title: string; note: string; createdAt?: string; updatedAt?: string; }
 export interface BankAccount {
   id: string; memberId: string; bankName: string; accountHolder: string; accountNumber: string; cardNumber: string;
   cardType: BankCardType; accountType?: BankCardType; cardNetwork: BankCardNetwork; productName: string; branch: string;
   statementDay: string; dueDay: string; creditLimit: number; expiryMonth: string; expiryYear: string; status: BankAccountStatus;
   annualFeeEnabled: boolean; annualFeeAmount: number; annualFeeWaiverType: AnnualFeeWaiverType; annualFeeWaiverTarget: number;
-  annualFeeCycle: AnnualFeeCycle; annualFeeCycleStart: string; annualFeeCurrentSpending: number; note: string; benefits: BankCardBenefit[]; rewards: BankCardReward[]; createdAt?: string; updatedAt?: string;
+  annualFeeCycle: AnnualFeeCycle; annualFeeCycleStart: string; annualFeeCurrentSpending: number; note: string; benefits: BankCardBenefit[]; rewards: BankCardReward[]; cardRewards?: CardReward[]; createdAt?: string; updatedAt?: string;
+  displayName?: string; last4?: string;
 }
 export type BankRawNoteContentType = "Ưu đãi" | "Phí thường niên" | "Điều khoản thẻ" | "Sao kê" | "Email ngân hàng" | "Khác";
 export interface BankRawNote {
@@ -69,4 +76,18 @@ export interface BankExtractedPayload { bank_name: string; cards: BankExtractedC
 export interface Preferences { language: Language; theme: Theme; }
 export interface AppData {
   members: Member[]; tasks: Task[]; transactions: Transaction[]; events: EventItem[]; notes: Note[];
+}
+export type InvestmentAction = "buy" | "sell";
+export interface InvestmentTransaction {
+  id: string;
+  memberId: string | null;
+  tradeDate: string;
+  stockCode: string;
+  action: InvestmentAction;
+  quantity: number;
+  price: number;
+  fee: number;
+  note: string;
+  createdAt?: string;
+  updatedAt?: string;
 }

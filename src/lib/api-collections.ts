@@ -5,7 +5,7 @@ import { requireSession } from "@/lib/auth";
 export type Collection = "members" | "tasks" | "transactions" | "events" | "notes";
 
 const columns: Record<Collection, string[]> = {
-  members: ["id", "name", "nickname", "birthday", "gender", "role", "phone", "avatar", "notes", "color"],
+  members: ["id", "name", "nickname", "birthday", "gender", "role", "phone", "avatar", "avatar_url", "notes", "color"],
   tasks: ["id", "title", "member_id", "assignee", "due", "due_date_ui", "priority", "status"],
   transactions: ["id", "title", "member_id", "amount", "gross_amount", "discount_amount", "type", "category", "subcategory", "date", "note", "bank_account_id", "estimated_cashback", "actual_cashback", "payment_method"],
   events: ["id", "title", "member_id", "type", "date", "time", "color", "event_date"],
@@ -14,7 +14,10 @@ const columns: Record<Collection, string[]> = {
 
 function toDb(collection: Collection, item: Record<string, unknown>) {
   if (collection === "notes") return { ...item, member_id: item.memberId || null, updated_at: item.updatedAt };
-  if (collection === "members") return { ...item, birthday: toDatabaseDate(item.birthday) };
+  if (collection === "members") {
+    const avatar = item.avatarUrl ?? item.avatar ?? "";
+    return { ...item, birthday: toDatabaseDate(item.birthday), avatar, avatar_url: avatar };
+  }
   if (collection === "tasks") return { ...item, member_id: item.memberId || null, due_date_ui: toDatabaseDate(item.dueDate) };
   if (collection === "transactions") return { ...item, member_id: item.memberId || null, gross_amount: item.grossAmount || item.amount, discount_amount: item.discountAmount || 0, date: toDatabaseDate(item.date), bank_account_id: item.bankAccountId || null, estimated_cashback: item.estimatedCashback || 0, actual_cashback: item.actualCashback || 0, payment_method: item.paymentMethod || "cash" };
   if (collection === "events") {
@@ -41,6 +44,11 @@ function fromDb(collection: Collection, item: Record<string, unknown>) {
     const { event_date, member_id, ...rest } = item;
     const timestamp = typeof event_date === "string" ? event_date : "";
     return { ...rest, memberId: member_id || "", date: rest.date || timestamp.slice(0, 10), time: rest.time || timestamp.slice(11, 16) };
+  }
+  if (collection === "members") {
+    const { avatar_url, ...rest } = item;
+    const avatar = avatar_url || rest.avatar || "";
+    return { ...rest, avatar, avatarUrl: avatar };
   }
   return item;
 }

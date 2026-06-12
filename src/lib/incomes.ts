@@ -157,7 +157,7 @@ export async function fetchIncomeData(year: number) {
       members: membersResult.rows.map(row => ({ id: String(row.id), name: String(row.name || "") })),
       sources: [],
       records,
-      allRecords: records,
+      allRecords: allRows,
       yearlySummaries,
       yearlyComparison,
       jobs

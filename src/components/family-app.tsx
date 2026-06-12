@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from "recharts";
 import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
@@ -1579,7 +1580,7 @@ function Tasks({ data, update, open, t }: TaskProps) {
   return <><select className={`${filterClass} mb-4 max-w-xs`} value={status} onChange={event => setStatus(event.target.value as Task["status"] | "all")}><option value="all">Tất cả công việc</option><option value="todo">Chờ</option><option value="doing">Đang làm</option><option value="done">Hoàn thành</option></select><div className="grid gap-x-4 md:grid-cols-2">{tasks.map(x => <TaskRow key={x.id} task={x} toggle={() => toggle(x.id)} edit={() => open({ kind: "tasks", item: x })} />)}</div><AddButton label={t("add")} onClick={() => open({ kind: "tasks" })} /></>;
 }
 function FinanceOverview() {
-  const [data, setData] = useState<{ month: number; income: number; expense: number }[]>([]);
+  const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
   const [chartMode, setChartMode] = useState<"income" | "expense" | "compare" | "savings">("compare");
@@ -1587,23 +1588,41 @@ function FinanceOverview() {
   const load = useCallback(async () => {
     setLoading(true);
     const response = await fetch(`/api/finance-overview?year=${yearStr}`, { cache: "no-store" });
-    const result = await readJsonSafe<{ data?: { month: number; income: number; expense: number }[] }>(response);
-    if (response.ok && result?.data) setData(result.data);
+    const result = await readJsonSafe<any>(response);
+    if (response.ok) {
+      setData(result?.data || result || {});
+    }
     setLoading(false);
   }, [yearStr]);
 
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
 
-  const totalIncome = data.reduce((sum, d) => sum + d.income, 0);
-  const totalExpense = data.reduce((sum, d) => sum + d.expense, 0);
+  const overviewPayload = data || {};
+  const monthlyData: any[] = Array.isArray(data)
+    ? data
+    : Array.isArray(overviewPayload.monthlyData)
+      ? overviewPayload.monthlyData
+      : Array.isArray(overviewPayload.data)
+        ? overviewPayload.data
+        : Array.isArray(overviewPayload.records)
+          ? overviewPayload.records
+          : [];
+
+  const currentCash = Number(overviewPayload.currentCash || 0);
+  const settings = overviewPayload.settings || null;
+
+  if (!Array.isArray(monthlyData)) return [];
+
+  const totalIncome = monthlyData.reduce((sum: number, d: any) => sum + (d.income || 0), 0);
+  const totalExpense = monthlyData.reduce((sum: number, d: any) => sum + (d.expense || 0), 0);
   const savings = totalIncome - totalExpense;
   const savingsRate = totalIncome > 0 ? ((savings / totalIncome) * 100).toFixed(1) + "%" : "N/A";
   
-  const maxVal = Math.max(1, ...data.map(d => {
-    if (chartMode === "income") return d.income;
-    if (chartMode === "expense") return d.expense;
-    if (chartMode === "savings") return Math.abs(d.income - d.expense);
-    return Math.max(d.income, d.expense);
+  const maxVal = Math.max(1, ...monthlyData.map((d: any) => {
+    if (chartMode === "income") return d.income || 0;
+    if (chartMode === "expense") return d.expense || 0;
+    if (chartMode === "savings") return Math.abs((d.income || 0) - (d.expense || 0));
+    return Math.max(d.income || 0, d.expense || 0);
   }));
 
   return (
@@ -1637,19 +1656,19 @@ function FinanceOverview() {
           </div>
         </div>
         <div className="flex h-64 w-full items-end justify-between gap-1 overflow-x-auto pb-2 md:justify-center md:gap-4 lg:gap-6">
-          {data.map(item => {
-            const itemSavings = item.income - item.expense;
+          {monthlyData.map((item: any) => {
+            const itemSavings = (item.income || 0) - (item.expense || 0);
             return (
             <div key={item.month} className="flex min-w-[30px] flex-1 flex-col items-center gap-2 md:max-w-[60px]">
               <div className="flex h-[240px] w-full items-end justify-center gap-0.5 md:gap-1">
-                {(chartMode === "income" || chartMode === "compare") && <div className="w-full rounded-t-md bg-emerald-500" style={{ height: `${Math.max(2, (item.income / maxVal) * 100)}%` }} title={`Thu: ${money(item.income)}`} />}
-                {(chartMode === "expense" || chartMode === "compare") && <div className="w-full rounded-t-md bg-rose-500" style={{ height: `${Math.max(2, (item.expense / maxVal) * 100)}%` }} title={`Chi: ${money(item.expense)}`} />}
+                {(chartMode === "income" || chartMode === "compare") && <div className="w-full rounded-t-md bg-emerald-500" style={{ height: `${Math.max(2, ((item.income || 0) / maxVal) * 100)}%` }} title={`Thu: ${money(item.income || 0)}`} />}
+                {(chartMode === "expense" || chartMode === "compare") && <div className="w-full rounded-t-md bg-rose-500" style={{ height: `${Math.max(2, ((item.expense || 0) / maxVal) * 100)}%` }} title={`Chi: ${money(item.expense || 0)}`} />}
                 {chartMode === "savings" && <div className={`w-full rounded-t-md ${itemSavings >= 0 ? "bg-blue-500" : "bg-orange-500"}`} style={{ height: `${Math.max(2, (Math.abs(itemSavings) / maxVal) * 100)}%` }} title={`Tiết kiệm: ${money(itemSavings)}`} />}
               </div>
               <span className="text-[10px] font-bold text-slate-400 md:text-xs">T{item.month}</span>
             </div>
           )})}
-          {!data.length && !loading && <div className="w-full text-center text-sm text-slate-400">Chưa có dữ liệu.</div>}
+          {!monthlyData.length && !loading && <div className="w-full text-center text-sm text-slate-400">Chưa có dữ liệu.</div>}
         </div>
       </Card>
   </div>
@@ -2597,6 +2616,7 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
   
   const paymentMethods = [
     { value: "cash", label: "Tiền mặt" },
+    { value: "transfer", label: "Chuyển khoản" },
     { value: "momo", label: "MoMo" },
     { value: "apple_pay", label: "Apple Pay" },
     { value: "bank_account", label: "Tài khoản ngân hàng" },
@@ -2618,16 +2638,23 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
         <Field label="Thực trả"><div className={`flex h-11 w-full items-center rounded-xl bg-slate-50 px-3 font-semibold ${isError || totalAmount < 0 ? "text-rose-500" : "text-emerald-600"} dark:bg-white/5`}>{money(totalAmount)}{isError && " (Lỗi: Giảm giá > Giá gốc)"}</div></Field>
         <Field label="Phương thức thanh toán"><select className={inputClass} value={draft.paymentMethod} onChange={event => {
           const paymentMethod = event.target.value as import("../types").PaymentMethod;
-          if (!["bank_account", "bank_card"].includes(paymentMethod)) {
+          if (!["transfer", "bank_account", "bank_card", "card", "momo", "apple_pay"].includes(paymentMethod)) {
             patch({ paymentMethod, bankAccountId: "" });
           } else {
             patch({ paymentMethod });
           }
         }}>{paymentMethods.map(pm => <option key={pm.value} value={pm.value}>{pm.label}</option>)}</select></Field>
-        {["bank_account", "bank_card"].includes(draft.paymentMethod) && (() => {
-          const safeBankAccounts = Array.isArray(bankAccounts) ? bankAccounts : [];
+        {["transfer", "bank_account", "bank_card", "card", "momo", "apple_pay"].includes(draft.paymentMethod) && (() => {
+          let safeBankAccounts = Array.isArray(bankAccounts) ? bankAccounts : [];
+          if (draft.paymentMethod === "transfer" || draft.paymentMethod === "bank_account") {
+            safeBankAccounts = safeBankAccounts.filter(b => b.cardType === "Tài khoản ngân hàng" || b.cardType === "Thẻ ghi nợ / ATM");
+          } else if (draft.paymentMethod === "bank_card" || draft.paymentMethod === "card") {
+            safeBankAccounts = safeBankAccounts.filter(b => b.cardType === "Thẻ tín dụng" || b.cardType === "Thẻ ghi nợ / ATM");
+          } else if (draft.paymentMethod === "momo") {
+            safeBankAccounts = safeBankAccounts.filter(b => b.cardType === "Ví điện tử" && b.bankName === "MoMo");
+          }
           return <Field label="Tài khoản / Thẻ liên kết">
-            {safeBankAccounts.length === 0 ? <select className={inputClass} disabled><option>Chưa có thẻ/tài khoản. Vào Hồ sơ thành viên → Thẻ ngân hàng để thêm.</option></select> : <select className={inputClass} value={draft.bankAccountId} onChange={event => patch({ bankAccountId: event.target.value })}><option value="">Không liên kết</option>{safeBankAccounts.map(b => <option key={b.id} value={b.id}>{b.bankName} - {b.accountHolder || b.productName} (*{b.cardNumber ? b.cardNumber.slice(-4) : b.accountNumber ? b.accountNumber.slice(-4) : "???"})</option>)}</select>}
+            {safeBankAccounts.length === 0 ? <select className={inputClass} disabled><option>Chưa có thẻ/tài khoản phù hợp. Vào Hồ sơ thành viên → Thẻ ngân hàng để thêm.</option></select> : <select className={inputClass} value={draft.bankAccountId} onChange={event => patch({ bankAccountId: event.target.value })}><option value="">Không liên kết</option>{safeBankAccounts.map(b => <option key={b.id} value={b.id}>{getCardDisplayName(b)}</option>)}</select>}
           </Field>
         })()}
         <div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} placeholder="Coopmart: rau 30k, thịt 120k, sữa 70k" /></Field></div>
@@ -2652,7 +2679,7 @@ function ExpenseDetail({ record, close, edit, remove }: { record: Transaction; c
     }
   }, [record.bankAccountId, record.memberId]);
 
-  const paymentMethodLabels: Record<string, string> = { cash: "Tiền mặt", momo: "MoMo", apple_pay: "Apple Pay", bank_account: "Tài khoản ngân hàng", bank_card: "Thẻ ngân hàng / Thẻ tín dụng", other: "Khác" };
+  const paymentMethodLabels: Record<string, string> = { cash: "Tiền mặt", transfer: "Chuyển khoản", momo: "MoMo", apple_pay: "Apple Pay", bank_account: "Tài khoản ngân hàng", bank_card: "Thẻ ngân hàng / Thẻ tín dụng", other: "Khác" };
 
   return <div className="fixed inset-0 z-50 flex justify-end bg-black/45 p-0 md:p-4" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="flex h-full w-full max-w-lg flex-col overflow-hidden bg-[var(--app-card)] shadow-2xl md:rounded-2xl"><div className="flex shrink-0 items-center justify-between p-5 pb-4"><h3 className="text-lg font-bold">Chi tiết phiếu chi</h3><button onClick={close} className="grid size-9 place-items-center rounded-full border border-[var(--app-border)]">×</button></div><div className="flex-1 overflow-y-auto p-5 pt-0"><div className="grid gap-3 text-sm"><AccountDetail label="Ngày chi" value={formatDateVN(record.date)} /><AccountDetail label="Khoản chi" value={record.category} /><AccountDetail label="Loại chi tiết" value={record.subcategory || "Khác"} /><AccountDetail label="Nội dung chi" value={record.title || "Khác"} /><AccountDetail label="Phương thức" value={paymentMethodLabels[record.paymentMethod || "cash"] || "Tiền mặt"} />{bankAccount && <AccountDetail label="Tài khoản / Thẻ" value={`${bankAccount.bankName} - ${bankAccount.accountHolder || bankAccount.productName}`} />}<AccountDetail label="Giá gốc" value={money(record.grossAmount || record.amount)} />{Number(record.discountAmount) > 0 && <AccountDetail label="Giảm giá" value={money(record.discountAmount || 0)} />}<AccountDetail label="Thực trả" value={money(record.amount)} /><div className="rounded-xl border border-[var(--app-border)] p-4"><p className="text-xs font-bold uppercase text-slate-400">Ghi chú</p><p className="mt-1 font-semibold whitespace-pre-wrap">{record.note || "Không có"}</p></div><button onClick={() => setShowId(!showId)} className="mt-2 text-left text-xs font-semibold text-slate-400">ID giao dịch (Nhấn để {showId ? "ẩn" : "hiện"})</button>{showId && <div className="rounded-xl bg-slate-50 p-4 dark:bg-white/5"><code className="break-all text-xs text-slate-500">{record.id}</code></div>}</div></div><div className="flex shrink-0 gap-3 border-t border-[var(--app-border)] p-5"><button onClick={remove} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button><div className="flex-1"></div><button onClick={close} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5">Đóng</button><button onClick={edit} className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-700">Sửa</button></div></div></div>;
 }
@@ -2661,18 +2688,25 @@ function ExpenseDeleteDialog({ record, close, confirm }: { record: Transaction; 
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-5 shadow-2xl"><h3 className="text-lg font-bold">Xóa phiếu chi này?</h3><div className="mt-4 rounded-xl border border-[var(--app-border)] p-4"><b>{record.title}</b><p className="mt-1 text-sm font-bold text-rose-500">{money(record.amount)}</p></div><div className="mt-5 flex justify-end gap-3"><button onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">Hủy</button><button onClick={confirm} className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white">Xóa</button></div></div></div>;
 }
 
-const bankNames = ["BIDV", "Vietcombank", "Techcombank", "MB", "VPBank", "ACB", "TPBank", "Sacombank", "VIB", "VietinBank", "Agribank", "MoMo", "ZaloPay", "Khác"];
-const bankCardTypes: BankCardType[] = ["Tài khoản nhận lương", "Tài khoản ngân hàng", "ATM nội địa", "Debit", "Credit Visa", "Credit Mastercard", "Credit JCB", "Ví điện tử"];
-const bankNetworks = ["NAPAS", "Visa", "Mastercard", "JCB", "Khác"] as const;
+const bankNames = ["BIDV", "Vietcombank", "Techcombank", "MB", "VPBank", "ACB", "TPBank", "Sacombank", "VIB", "VietinBank", "Agribank", "UOB", "MoMo", "Apple Pay", "ZaloPay", "Khác"];
+const bankCardTypes: import("../types").BankCardType[] = ["Tài khoản ngân hàng", "Thẻ ghi nợ / ATM", "Thẻ tín dụng", "Ví điện tử"];
+const bankNetworks: import("../types").BankCardNetwork[] = ["Không áp dụng", "Visa", "Mastercard", "Napas", "JCB", "Amex"];
 const bankStatuses: BankAccountStatus[] = ["Đang dùng", "Tạm khóa", "Đã hủy"];
 const waiverTypes = ["Không có", "Theo tổng chi tiêu năm", "Theo tổng chi tiêu tháng", "Theo số giao dịch"] as const;
 const benefitCategories = ["Siêu thị", "Y tế", "Giáo dục", "Ăn uống", "Xăng xe", "Mua sắm online", "Thanh toán hóa đơn", "Khác"] as const;
 const benefitTypes = ["Hoàn tiền %", "Giảm tiền cố định", "Điểm thưởng"] as const;
 const bankRawContentTypes: BankRawNoteContentType[] = ["Ưu đãi", "Phí thường niên", "Điều khoản thẻ", "Sao kê", "Email ngân hàng", "Khác"];
 const emptyBenefit = (): BankCardBenefit => ({ id: crypto.randomUUID(), bankAccountId: "", name: "", category: "Khác", benefitType: "Hoàn tiền %", benefitValue: 0, monthlyCap: 0, minTransactionAmount: 0, conditionNote: "", active: true });
-const emptyBankForm = (memberId = ""): BankAccount => ({ id: "", memberId, bankName: "BIDV", accountHolder: "", accountNumber: "", cardNumber: "", accountType: "Tài khoản nhận lương", cardType: "Tài khoản nhận lương", cardNetwork: "NAPAS", productName: "", branch: "", statementDay: "", dueDay: "", creditLimit: 0, expiryMonth: "", expiryYear: "", status: "Đang dùng", annualFeeEnabled: false, annualFeeAmount: 0, annualFeeWaiverType: "Không có", annualFeeWaiverTarget: 0, annualFeeCycle: "năm", annualFeeCycleStart: "", annualFeeCurrentSpending: 0, note: "", benefits: [], rewards: [] });
+const emptyBankForm = (memberId = ""): BankAccount => ({ id: "", memberId, bankName: "BIDV", accountHolder: "", accountNumber: "", cardNumber: "", accountType: "Tài khoản ngân hàng", cardType: "Tài khoản ngân hàng", cardNetwork: "Không áp dụng", productName: "", branch: "", statementDay: "", dueDay: "", creditLimit: 0, expiryMonth: "", expiryYear: "", status: "Đang dùng", annualFeeEnabled: false, annualFeeAmount: 0, annualFeeWaiverType: "Không có", annualFeeWaiverTarget: 0, annualFeeCycle: "năm", annualFeeCycleStart: "", annualFeeCurrentSpending: 0, note: "", benefits: [], rewards: [] });
 function maskLast(value: string, prefix = "******") { const digits = value.replace(/\s+/g, ""); return digits ? `${prefix}${digits.slice(-4)}` : "Chưa cập nhật"; }
 function maskCard(value: string) { const digits = value.replace(/\D/g, ""); return digits ? `**** **** **** ${digits.slice(-4)}` : "Không có số thẻ"; }
+function getCardDisplayName(b: BankAccount) {
+  const last4 = b.last4 || (b.cardNumber ? b.cardNumber.replace(/\D/g, "").slice(-4) : b.accountNumber ? b.accountNumber.replace(/\s+/g, "").slice(-4) : "???");
+  if (b.cardType === "Tài khoản ngân hàng") return `${b.bankName} · Tài khoản · ****${last4}`;
+  if (b.cardType === "Thẻ ghi nợ / ATM") return `${b.bankName} · Thẻ ghi nợ · ****${last4}`;
+  if (b.cardType === "Thẻ tín dụng") return `${b.bankName} · ${b.cardNetwork && b.cardNetwork !== "Không áp dụng" ? b.cardNetwork : "Thẻ tín dụng"} · ****${last4}`;
+  return `${b.bankName} · ${b.cardType} · ****${last4}`;
+}
 function bankProgress(account: BankAccount) { const spent = 0, target = account.annualFeeWaiverTarget || 0, missing = Math.max(0, target - spent); return { spent, target, missing, label: target ? `Đã chi ${money(spent)} / ${money(target)} để miễn phí thường niên` : "Không có điều kiện miễn phí" }; }
 function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }) {
   const canEdit = user.role === "full_access" || user.memberId === member.id;
@@ -2698,7 +2732,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
     const response = await fetch(`/api/bank-accounts?memberId=${encodeURIComponent(member.id)}`, { cache: "no-store" });
     const result = await readJsonSafe<{ ok?: boolean; data?: BankAccount[]; error?: string }>(response);
     setLoading(false);
-    if (!response.ok || !result?.ok) return setError(result?.error || "Không thể tải danh sách ngân hàng.");
+    if (!response.ok || !result?.ok) return setError(result?.error || "Không thể tải thẻ ngân hàng. Vui lòng thử lại.");
     bankCardsByMemberCache.set(member.id, result.data || []);
     setAccounts(result.data || []);
   }, [member.id]);
@@ -2857,8 +2891,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
         <button onClick={() => setView("list")} className={`rounded-lg px-4 py-2 text-sm font-semibold ${view === "list" ? "bg-[#EEF2FF] text-[#4F46E5]" : "text-slate-500"}`}>Danh sách</button>
         <button onClick={() => setView("card")} className={`rounded-lg px-4 py-2 text-sm font-semibold ${view === "card" ? "bg-[#EEF2FF] text-[#4F46E5]" : "text-slate-500"}`}>Dạng thẻ</button>
       </div>
-      {error && <p className="text-sm text-rose-500">{error}</p>}
-      {loading ? <BankCardsSkeleton view={view} /> : filtered.length ? view === "list" ? <BankAccountList accounts={filtered} detail={openDetail} edit={openEdit} remove={remove} canEdit={canEdit} /> : <BankCardGrid accounts={filtered} detail={openDetail} edit={openEdit} remove={remove} canEdit={canEdit} /> : <Card className="p-8 text-center"><p className="font-semibold">Thành viên này chưa có thẻ ngân hàng.</p>{canEdit && <button onClick={openCreate} className="mt-4 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm thẻ</button>}</Card>}
+      {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-400/20 dark:bg-rose-400/10"><p className="font-semibold text-rose-600">{error}</p><button onClick={() => void load(true)} className="mt-4 rounded-xl border border-rose-200 px-4 py-2 text-sm font-bold text-rose-600 hover:bg-rose-100 dark:border-rose-400/30 dark:hover:bg-rose-400/20">Làm mới</button></div> : loading ? <BankCardsSkeleton view={view} /> : filtered.length ? view === "list" ? <BankAccountList accounts={filtered} detail={openDetail} edit={openEdit} remove={remove} canEdit={canEdit} /> : <BankCardGrid accounts={filtered} detail={openDetail} edit={openEdit} remove={remove} canEdit={canEdit} /> : <Card className="p-8 text-center"><p className="font-semibold">Thành viên này chưa có thẻ ngân hàng.</p>{canEdit && <button onClick={openCreate} className="mt-4 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">+ Thêm thẻ</button>}</Card>}
   </div>
   );
 }
@@ -2913,10 +2946,10 @@ function BankCardsSkeleton({ view }: { view: "list" | "card" }) {
   return <div className="overflow-hidden rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] shadow-sm">{Array.from({ length: 4 }).map((_, index) => <div key={index} className="grid gap-4 border-b border-[var(--app-border)] px-5 py-4 last:border-0 xl:grid-cols-[1fr_1.55fr_1fr_1fr_.8fr_48px]"><div className={`${block} h-10`} /><div className={`${block} h-10`} /><div className={`${block} h-10`} /><div className={`${block} h-10`} /><div className={`${block} h-10`} /><div className={`${block} h-10`} /></div>)}</div>;
 }
 function BankAccountList({ accounts, detail, edit, remove, canEdit = true }: { accounts: BankAccount[]; detail: (account: BankAccount) => void; edit: (account: BankAccount) => void; remove: (account: BankAccount) => void; canEdit?: boolean }) {
-  return <div className="overflow-visible rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] shadow-sm"><div className="hidden grid-cols-[1fr_1.55fr_1fr_1fr_.8fr_48px] gap-4 border-b border-[var(--app-border)] bg-slate-50/70 px-5 py-3 text-xs font-bold uppercase text-slate-400 dark:bg-white/5 xl:grid"><span>Ngân hàng</span><span>Sản phẩm / Số thẻ</span><span>Chủ thẻ</span><span>Loại</span><span>Trạng thái</span><span className="text-center">⋯</span></div>{accounts.map(account => <div key={account.id} className="grid gap-4 border-b border-[var(--app-border)] px-5 py-4 text-sm last:border-0 xl:grid-cols-[1fr_1.55fr_1fr_1fr_.8fr_48px] xl:items-center"><div><b className="text-slate-800 dark:text-slate-100">{account.bankName}</b><p className="mt-1 w-fit rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500 dark:bg-white/10">{account.cardNetwork}</p></div><div className="min-w-0"><b className="block truncate">{account.productName || "Chưa cập nhật sản phẩm"}</b><p className="mt-2 w-fit rounded-lg bg-slate-100 px-2 py-1 font-mono text-sm font-bold tracking-wider text-slate-700 dark:bg-white/10 dark:text-slate-100">{account.cardNumber ? maskCard(account.cardNumber) : maskLast(account.accountNumber)}</p></div><span className="font-semibold text-slate-600 dark:text-slate-200">{account.accountHolder}</span><span className="text-slate-500">{account.cardType}</span><span className={`w-fit rounded-full px-2.5 py-1 text-xs font-bold ${account.status === "Đang dùng" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-200" : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-200"}`}>{account.status}</span><BankActionMenu account={account} detail={detail} edit={edit} remove={remove} canEdit={canEdit} /></div>)}</div>;
+  return <div className="overflow-visible rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] shadow-sm"><div className="hidden grid-cols-[1fr_1.55fr_1fr_1fr_.8fr_48px] gap-4 border-b border-[var(--app-border)] bg-slate-50/70 px-5 py-3 text-xs font-bold uppercase text-slate-400 dark:bg-white/5 xl:grid"><span>Ngân hàng</span><span>Sản phẩm / Tài khoản</span><span>Chủ thẻ</span><span>Loại</span><span>Trạng thái</span><span className="text-center">⋯</span></div>{accounts.map(account => <div key={account.id} className="grid gap-4 border-b border-[var(--app-border)] px-5 py-4 text-sm last:border-0 xl:grid-cols-[1fr_1.55fr_1fr_1fr_.8fr_48px] xl:items-center"><div><b className="text-slate-800 dark:text-slate-100">{account.bankName}</b><p className="mt-1 w-fit rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500 dark:bg-white/10">{account.cardNetwork}</p></div><div className="min-w-0"><b className="block truncate">{getCardDisplayName(account)}</b>{account.productName && <p className="mt-1 text-xs text-slate-500">{account.productName}</p>}</div><span className="font-semibold text-slate-600 dark:text-slate-200">{account.accountHolder}</span><span className="text-slate-500">{account.cardType}</span><span className={`w-fit rounded-full px-2.5 py-1 text-xs font-bold ${account.status === "Đang dùng" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-200" : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-200"}`}>{account.status}</span><BankActionMenu account={account} detail={detail} edit={edit} remove={remove} canEdit={canEdit} /></div>)}</div>;
 }
 function BankCardGrid({ accounts, detail, edit, remove, canEdit = true }: { accounts: BankAccount[]; detail: (account: BankAccount) => void; edit: (account: BankAccount) => void; remove: (account: BankAccount) => void; canEdit?: boolean }) {
-  return <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{accounts.map(account => <div key={account.id} className="relative rounded-2xl border border-indigo-100 bg-gradient-to-br from-[#4F46E5] via-indigo-700 to-slate-950 p-5 text-white shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-indigo-100">{account.bankName}</p><h3 className="mt-3 text-base font-bold">{account.productName || "Chưa cập nhật sản phẩm"}</h3><p className="mt-1 text-xs font-semibold text-indigo-100">{account.cardType}</p></div><div className="flex items-center gap-2"><span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{account.cardNetwork}</span><BankActionMenu account={account} detail={detail} edit={edit} remove={remove} canEdit={canEdit} dark /></div></div><p className="mt-6 rounded-xl bg-white/10 px-3 py-3 font-mono text-lg font-bold tracking-widest">{account.cardNumber ? maskCard(account.cardNumber) : maskLast(account.accountNumber)}</p><div className="mt-5 flex items-end justify-between gap-3 text-sm"><div><p className="text-xs text-indigo-100">Chủ thẻ</p><b>{account.accountHolder}</b></div><div className="text-right"><p className="text-xs text-indigo-100">Trạng thái</p><b>{account.status}</b></div></div></div>)}</div>;
+  return <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{accounts.map(account => <div key={account.id} className="relative rounded-2xl border border-indigo-100 bg-gradient-to-br from-[#4F46E5] via-indigo-700 to-slate-950 p-5 text-white shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.16em] text-indigo-100">{account.bankName}</p><h3 className="mt-3 text-base font-bold">{getCardDisplayName(account)}</h3><p className="mt-1 text-xs font-semibold text-indigo-100">{account.productName || account.cardType}</p></div><div className="flex items-center gap-2"><span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">{account.cardNetwork}</span><BankActionMenu account={account} detail={detail} edit={edit} remove={remove} canEdit={canEdit} dark /></div></div><div className="mt-5 flex items-end justify-between gap-3 text-sm"><div><p className="text-xs text-indigo-100">Chủ thẻ</p><b>{account.accountHolder}</b></div><div className="text-right"><p className="text-xs text-indigo-100">Trạng thái</p><b>{account.status}</b></div></div></div>)}</div>;
 }
 function BankActionMenu({ account, detail, edit, remove, canEdit = true, dark = false }: { account: BankAccount; detail: (account: BankAccount) => void; edit: (account: BankAccount) => void; remove: (account: BankAccount) => void; canEdit?: boolean; dark?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -2996,6 +3029,7 @@ export function serializeFees(fees: CardFees): string {
 export function BankAccountSheet({ account, members, close, saved, inline = false }: { account: BankAccount; members: Member[]; close: () => void; saved: (account: BankAccount) => void; inline?: boolean }) {
   const [form, setForm] = useState<BankAccount>({ ...emptyBankForm(account.memberId), ...account, benefits: account.benefits || [] });
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
   const [fees, setFees] = useState<CardFees>(() => parseFees(account.note || "", account.productName || ""));
 
   const set = (key: keyof BankAccount, value: string | number | boolean) => setForm(current => ({ ...current, [key]: value }));
@@ -3027,22 +3061,35 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
 
   const setBenefit = (id: string, key: keyof BankCardBenefit, value: string | number | boolean) => setForm(current => ({ ...current, benefits: current.benefits.map(benefit => benefit.id === id ? { ...benefit, [key]: value } : benefit) }));
   async function submit(event: React.FormEvent) {
-    event.preventDefault(); setError("");
-    const response = await fetch(account.id ? `/api/bank-accounts/${account.id}` : "/api/bank-accounts", { method: account.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-    const result = await readJsonSafe<{ ok?: boolean; data?: BankAccount; error?: string }>(response);
-    if (!response.ok || !result?.data) return setError(result?.error || "Không thể lưu thẻ ngân hàng.");
-    saved(result.data);
+    event.preventDefault(); 
+    if (saving) return;
+    setError("");
+    setSaving(true);
+    try {
+      const response = await fetch(account.id ? `/api/bank-accounts/${account.id}` : "/api/bank-accounts", { method: account.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const result = await readJsonSafe<{ ok?: boolean; data?: BankAccount; error?: string }>(response);
+      if (!response.ok || !result?.data) return setError(result?.error || "Không thể lưu thẻ ngân hàng.");
+      saved(result.data);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const formContent = (
     <>
       {inline && (
         <div className="mb-4">
-          <button type="button" onClick={close} className="text-sm font-semibold text-indigo-600">← Quay lại danh sách thẻ</button>
+          <button type="button" onClick={close} className="flex items-center gap-1 text-sm font-semibold text-indigo-600"><ArrowLeft className="h-4 w-4" /><span>Quay lại danh sách thẻ</span></button>
         </div>
       )}
       <h2 className="text-lg font-bold">{account.id ? "Sửa thẻ ngân hàng" : "Thêm thẻ ngân hàng"}</h2>
       <div className="mt-5 space-y-6">
+        {(() => {
+          const isBank = form.cardType === "Tài khoản ngân hàng";
+          const isDebit = form.cardType === "Thẻ ghi nợ / ATM";
+          const isCredit = form.cardType === "Thẻ tín dụng";
+          const isWallet = form.cardType === "Ví điện tử";
+          return <>
         <div>
           <h3 className="text-sm font-bold text-indigo-600">A. Thông tin cơ bản</h3>
           <div className="mt-3 grid gap-4 md:grid-cols-2">
@@ -3051,42 +3098,39 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
                 {members.map(member => <option key={member.id} value={member.id}>{member.nickname || member.name}</option>)}
               </select>
             </Field>
-            <Field label="Ngân hàng">
+            <Field label={isWallet ? "Tên ví" : "Ngân hàng"}>
               <select required className={inputClass} value={form.bankName} onChange={event => set("bankName", event.target.value)}>
                 {bankNames.map(name => <option key={name}>{name}</option>)}
+              </select>
+            </Field>
+            <Field label="Loại thẻ/tài khoản">
+              <select className={inputClass} value={form.cardType} onChange={event => { 
+                const value = event.target.value as import("../types").BankCardType;
+                let defaultNetwork = form.cardNetwork;
+                if (value === "Thẻ tín dụng" && defaultNetwork === "Không áp dụng") defaultNetwork = "Visa";
+                if (value === "Thẻ ghi nợ / ATM" && defaultNetwork === "Không áp dụng") defaultNetwork = "Napas";
+                if (value === "Tài khoản ngân hàng" || value === "Ví điện tử") defaultNetwork = "Không áp dụng";
+                setForm(current => ({ ...current, cardType: value, accountType: value, cardNetwork: defaultNetwork }));
+              }}>
+                {bankCardTypes.map(type => <option key={type}>{type}</option>)}
               </select>
             </Field>
             <Field label="Tên chủ tài khoản">
               <input required className={inputClass} value={form.accountHolder} onChange={event => set("accountHolder", event.target.value)} />
             </Field>
-            <Field label="Số cuối tài khoản (4 số)">
-              <input maxLength={4} className={inputClass} value={form.accountNumber} onChange={event => set("accountNumber", event.target.value.replace(/\D/g, ""))} placeholder="Ví dụ: 1234" />
+            <Field label={isBank ? "4 số cuối tài khoản" : isDebit ? "4 số cuối thẻ/tài khoản" : isCredit ? "4 số cuối thẻ tín dụng" : "Số điện thoại hoặc 4 số cuối"}>
+              <input maxLength={isWallet ? 15 : 4} className={inputClass} value={form.last4 || ""} onChange={event => set("last4", event.target.value.replace(/[^\d+]/g, ""))} placeholder={isWallet ? "Ví dụ: 0912345678" : "Ví dụ: 1234"} />
             </Field>
-            <Field label="Số cuối thẻ (4 số)">
-              <input maxLength={4} className={inputClass} value={form.cardNumber} onChange={event => set("cardNumber", event.target.value.replace(/\D/g, ""))} placeholder="Ví dụ: 1234" />
-            </Field>
-            <Field label="Loại thẻ/tài khoản">
-              <select className={inputClass} value={form.cardType} onChange={event => { set("cardType", event.target.value); set("accountType", event.target.value); }}>
-                {bankCardTypes.map(type => <option key={type}>{type}</option>)}
-              </select>
-            </Field>
+            
+            {(isDebit || isCredit) && (
             <Field label="Tổ chức thẻ">
               <select className={inputClass} value={form.cardNetwork} onChange={event => set("cardNetwork", event.target.value)}>
                 {bankNetworks.map(value => <option key={value}>{value}</option>)}
               </select>
             </Field>
-            <Field label="Tên sản phẩm thẻ">
-              <input className={inputClass} value={form.productName} onChange={event => handleProductNameChange(event.target.value)} placeholder="BIDV Visa Platinum Cashback 360" />
-            </Field>
-            <Field label="Ngày sao kê">
-              <input className={inputClass} inputMode="numeric" value={form.statementDay} onChange={event => set("statementDay", event.target.value)} />
-            </Field>
-            <Field label="Ngày đến hạn thanh toán">
-              <input className={inputClass} inputMode="numeric" value={form.dueDay} onChange={event => set("dueDay", event.target.value)} />
-            </Field>
-            <Field label="Hạn mức tín dụng">
-              <input className={inputClass} type="number" min="0" value={form.creditLimit} onChange={event => set("creditLimit", Number(event.target.value))} />
-            </Field>
+            )}
+
+            {(isDebit || isCredit) && (
             <div className="grid grid-cols-2 gap-2">
               <Field label="Tháng hết hạn">
                 <input className={inputClass} inputMode="numeric" maxLength={2} value={form.expiryMonth} onChange={event => set("expiryMonth", event.target.value)} />
@@ -3095,6 +3139,8 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
                 <input className={inputClass} inputMode="numeric" maxLength={4} value={form.expiryYear} onChange={event => set("expiryYear", event.target.value)} />
               </Field>
             </div>
+            )}
+
             <Field label="Trạng thái">
               <select className={inputClass} value={form.status} onChange={event => set("status", event.target.value)}>
                 {bankStatuses.map(status => <option key={status}>{status}</option>)}
@@ -3108,8 +3154,29 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
           </div>
         </div>
 
+        {isCredit && (
         <div>
-          <h3 className="text-sm font-bold text-indigo-600">B. Biểu phí & điều kiện miễn phí</h3>
+          <h3 className="text-sm font-bold text-indigo-600">B. Thông tin thẻ tín dụng</h3>
+          <div className="mt-3 grid gap-4 md:grid-cols-2">
+            <Field label="Tên sản phẩm thẻ">
+              <input className={inputClass} value={form.productName} onChange={event => handleProductNameChange(event.target.value)} placeholder="BIDV Visa Platinum Cashback 360" />
+            </Field>
+            <Field label="Hạn mức tín dụng">
+              <input className={inputClass} type="number" min="0" value={form.creditLimit} onChange={event => set("creditLimit", Number(event.target.value))} />
+            </Field>
+            <Field label="Ngày sao kê">
+              <input className={inputClass} inputMode="numeric" value={form.statementDay} onChange={event => set("statementDay", event.target.value)} />
+            </Field>
+            <Field label="Ngày đến hạn thanh toán">
+              <input className={inputClass} inputMode="numeric" value={form.dueDay} onChange={event => set("dueDay", event.target.value)} />
+            </Field>
+          </div>
+        </div>
+        )}
+
+        {isCredit && (
+        <div>
+          <h3 className="text-sm font-bold text-indigo-600">C. Biểu phí & điều kiện miễn phí</h3>
           <div className="mt-3 grid gap-4 md:grid-cols-2">
             <div className="grid grid-cols-2 gap-2">
               <Field label="Phí thường niên">
@@ -3146,27 +3213,17 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
               <input className={inputClass} value={fees.cashFee} onChange={event => updateFee("cashFee", event.target.value)} placeholder="3%, tối thiểu 50.000 đ" />
             </Field>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="md:col-span-2">
               <Field label="Năm mở thẻ">
                 <input className={inputClass} maxLength={4} placeholder="e.g. 2025" value={fees.openYear} onChange={event => updateFee("openYear", event.target.value)} />
               </Field>
-              <Field label="Năm cần kiểm tra">
-                <input className={inputClass} maxLength={4} placeholder="e.g. 2026" value={fees.checkYear} onChange={event => updateFee("checkYear", event.target.value)} />
-              </Field>
             </div>
 
-            {(() => {
-              const openYr = parseInt(fees.openYear);
-              const checkYr = parseInt(fees.checkYear);
-              if (!isNaN(openYr) && !isNaN(checkYr)) {
-                if (checkYr === openYr) {
-                  return <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-600 md:col-span-2">Miễn phí thường niên năm đầu</p>;
-                } else if (checkYr > openYr) {
-                  return <p className="rounded-xl bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-700 md:col-span-2">Cần chi tiêu đủ {money(form.annualFeeWaiverTarget)}/năm để miễn phí, nếu không có thể bị thu {money(form.annualFeeAmount)}.</p>;
-                }
-              }
-              return null;
-            })()}
+            {fees.firstYearFree && (
+              <p className="rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-600 md:col-span-2">
+                Năm đầu được miễn phí thường niên. Từ năm tiếp theo, hệ thống sẽ tự kiểm tra điều kiện miễn phí dựa trên chi tiêu năm trước.
+              </p>
+            )}
 
             <p className="rounded-xl bg-indigo-50 px-4 py-3 text-xs font-semibold text-indigo-600 md:col-span-2">💡 Dù trả đúng hạn, vẫn cần theo dõi phí thường niên, lãi suất, phí giao dịch nước ngoài và phí rút tiền mặt.</p>
 
@@ -3177,10 +3234,12 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
             </div>
           </div>
         </div>
+        )}
 
+        {isCredit && (
         <div>
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-indigo-600">C. Ưu đãi / Cashback</h3>
+            <h3 className="text-sm font-bold text-indigo-600">D. Ưu đãi / Cashback</h3>
             <button type="button" onClick={() => setForm(current => ({ ...current, benefits: [...current.benefits, emptyBenefit()] }))} className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-bold text-indigo-600">+ Thêm ưu đãi</button>
           </div>
           <div className="mt-3 space-y-3">
@@ -3224,10 +3283,12 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
             )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] px-4 py-6 text-center text-sm text-slate-400">Chưa có rule ưu đãi.</p>}
           </div>
         </div>
+        )}
 
+        {isCredit && (
         <div>
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-indigo-600">D. Ưu đãi mở thẻ / ưu đãi theo đợt</h3>
+            <h3 className="text-sm font-bold text-indigo-600">E. Ưu đãi mở thẻ / ưu đãi theo đợt</h3>
             <button 
               type="button" 
               onClick={() => {
@@ -3371,11 +3432,14 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
             )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] px-4 py-6 text-center text-sm text-slate-400">Chưa có ưu đãi mở thẻ.</p>}
           </div>
         </div>
+        )}
+        </>;
+        })()}
       </div>
       {error && <p className="mt-4 text-sm text-rose-500">{error}</p>}
       <div className="mt-6 flex gap-3">
         <button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Hủy</button>
-        <button className="flex-1 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">Lưu</button>
+        <button type="submit" disabled={saving} className="flex-1 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Đang lưu..." : "Lưu"}</button>
       </div>
     </>
   );
@@ -3422,7 +3486,7 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
     <>
       {inline && (
         <div className="mb-4">
-          <button type="button" onClick={close} className="text-sm font-semibold text-indigo-600">← Quay lại danh sách thẻ</button>
+          <button type="button" onClick={close} className="flex items-center gap-1 text-sm font-semibold text-indigo-600"><ArrowLeft className="h-4 w-4" /><span>Quay lại danh sách thẻ</span></button>
         </div>
       )}
       <div className="flex items-center justify-between relative">
@@ -3464,7 +3528,7 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
         <section>
           <h3 className="font-semibold">Thông tin thẻ</h3>
           <div className="mt-3 grid gap-4 text-sm sm:grid-cols-2">
-            {[["Ngân hàng", account.bankName], ["Sản phẩm", account.productName || "Chưa cập nhật"], ["Thành viên", owner], ["Chủ thẻ", account.accountHolder], ["Loại", account.cardType], ["Tổ chức thẻ", account.cardNetwork], ["Trạng thái", account.status], ["Hạn mức tín dụng", money(account.creditLimit)], ["Ngày sao kê", account.statementDay || "Không có"], ["Ngày đến hạn", account.dueDay || "Không có"], ["Số tài khoản", showFull ? account.accountNumber || "Không có" : maskLast(account.accountNumber)], ["Số thẻ", showFull ? account.cardNumber || "Không có" : maskCard(account.cardNumber)], ["Hết hạn", account.expiryMonth || account.expiryYear ? `${account.expiryMonth}/${account.expiryYear}` : "Không áp dụng"], ["Ghi chú", account.note && account.note.startsWith("FEES_JSON:") ? (parseFees(account.note, account.productName || "").feeNote || "Không có") : (account.note || "Không có")]].map(([label, value]) => (
+            {[["Ngân hàng", account.bankName], ["Sản phẩm", account.productName || "Chưa cập nhật"], ["Tên nhận diện", getCardDisplayName(account)], ["Thành viên", owner], ["Chủ thẻ", account.accountHolder], ["Loại", account.cardType], ["Tổ chức thẻ", account.cardNetwork], ["Trạng thái", account.status], ["Hạn mức tín dụng", money(account.creditLimit)], ["Ngày sao kê", account.statementDay || "Không có"], ["Ngày đến hạn", account.dueDay || "Không có"], ["4 số cuối", account.last4 || (showFull ? account.accountNumber || "Không có" : maskLast(account.accountNumber))], ["Hết hạn", account.expiryMonth || account.expiryYear ? `${account.expiryMonth}/${account.expiryYear}` : "Không áp dụng"], ["Ghi chú", account.note && account.note.startsWith("FEES_JSON:") ? (parseFees(account.note, account.productName || "").feeNote || "Không có") : (account.note || "Không có")]].map(([label, value]) => (
               <div key={label}>
                 <p className="text-xs text-slate-400">{label}</p>
                 <p className="mt-1 font-medium">{value}</p>

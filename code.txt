@@ -1,0 +1,487 @@
+const fs = require("fs");
+
+const newComponent = `function InvestmentSheet({ user }: { user: AuthUser }) {
+  const [data, setData] = useState<InvestmentTransaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"list" | "new" | "edit">("list");
+  const [editing, setEditing] = useState<InvestmentTransaction | null>(null);
+  const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
+  const [search, setSearch] = useState("");
+  const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set());
+  const [viewStock, setViewStock] = useState<string | null>(null);
+
+  const toggleMonth = (m: number) => {
+    setExpandedMonths(current => {
+      const next = new Set(current);
+      if (next.has(m)) next.delete(m); else next.add(m);
+      return next;
+    });
+  };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const response = await fetch(\`/api/investments\`, { cache: "no-store" });
+    const payload = await response.json();
+    const records = Array.isArray(payload) ? payload : payload.data || [];
+    setData(records);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+
+  const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const payload = {
+      tradeDate: fd.get("tradeDate") as string,
+      stockCode: (fd.get("stockCode") as string).toUpperCase(),
+      action: fd.get("action") as InvestmentAction,
+      quantity: Number(fd.get("quantity")),
+      price: Number(fd.get("price")),
+      fee: Number(fd.get("fee")) || 0,
+      note: fd.get("note") as string,
+    };
+
+    if (view === "new") {
+      const res = await fetch("/api/investments", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) { setView("list"); load(); } else alert("Lỗi khi thêm");
+    } else if (editing) {
+      const res = await fetch(\`/api/investments/\${editing.id}\`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) { setView("list"); load(); } else alert("Lỗi khi sửa");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Xóa giao dịch này?")) return;
+    const res = await fetch(\`/api/investments/\${id}\`, { method: "DELETE" });
+    if (res.ok) {
+      if (viewStock && data.filter(d => d.stockCode === viewStock).length === 1) setViewStock(null);
+      load();
+    } else alert("Lỗi khi xóa");
+  };
+
+  const userAllowedData = data.filter(d => user.role === "full_access" || d.memberId === null || d.memberId === user.memberId);
+  
+  type EnhancedTx = InvestmentTransaction & { realizedProfit?: number, avgCostAtTime?: number };
+
+  const processedData = useMemo(() => {
+    const sorted = [...userAllowedData].sort((a, b) => new Date(a.tradeDate).getTime() - new Date(b.tradeDate).getTime() || new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+    
+    const state: Record<string, { qty: number, avgCost: number, firstBuyDate: string | null, lastSellDate: string | null }> = {};
+    const stats: Record<string, { buyAmount: number; buyQty: number; sellAmount: number; sellQty: number; fee: number; realizedProfit: number; firstBuyDate: string | null; lastSellDate: string | null }> = {};
+
+    const enhanced = sorted.map(tx => {
+      const code = tx.stockCode;
+      if (!state[code]) state[code] = { qty: 0, avgCost: 0, firstBuyDate: null, lastSellDate: null };
+      if (!stats[code]) stats[code] = { buyAmount: 0, buyQty: 0, sellAmount: 0, sellQty: 0, fee: 0, realizedProfit: 0, firstBuyDate: null, lastSellDate: null };
+      
+      const st = state[code];
+      const global = stats[code];
+      let txProfit = 0;
+
+      if (tx.action === "buy") {
+        if (st.qty === 0) {
+          st.firstBuyDate = tx.tradeDate;
+        }
+        const costBefore = st.qty * st.avgCost;
+        const newCost = (tx.quantity * tx.price) + tx.fee;
+        st.qty += tx.quantity;
+        st.avgCost = (costBefore + newCost) / st.qty;
+
+        global.buyQty += tx.quantity;
+        global.buyAmount += newCost;
+      } else {
+        st.lastSellDate = tx.tradeDate;
+        const sellValue = (tx.quantity * tx.price) - tx.fee;
+        const costValue = tx.quantity * st.avgCost;
+        txProfit = sellValue - costValue;
+        st.qty -= tx.quantity;
+
+        global.sellQty += tx.quantity;
+        global.sellAmount += sellValue;
+        global.realizedProfit += txProfit;
+        global.fee += tx.fee;
+
+        if (st.qty <= 0) {
+          st.qty = 0;
+          st.avgCost = 0;
+        }
+      }
+      
+      global.firstBuyDate = st.firstBuyDate;
+      global.lastSellDate = st.lastSellDate;
+
+      return { ...tx, realizedProfit: tx.action === "sell" ? txProfit : undefined, avgCostAtTime: st.avgCost } as EnhancedTx;
+    });
+
+    return { enhanced, stats, state };
+  }, [userAllowedData]);
+
+  const { enhanced, stats, state } = processedData;
+
+  const yearData = enhanced.filter(d => {
+    if (Number(d.tradeDate.split("-")[0]) !== Number(yearStr)) return false;
+    if (search && !d.stockCode.toLowerCase().includes(search.toLowerCase()) && !d.note.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  let totalBuy = 0;
+  let totalSell = 0;
+  let totalProfit = 0;
+  let activeStocksCount = 0;
+  let closedStocksCount = 0;
+  let totalHoldingValue = 0;
+
+  for (const code in stats) {
+    const s = stats[code];
+    const st = state[code];
+    totalBuy += s.buyAmount;
+    totalSell += s.sellAmount;
+    totalProfit += s.realizedProfit;
+    if (st.qty > 0) {
+      activeStocksCount++;
+      totalHoldingValue += (st.qty * st.avgCost);
+    } else {
+      closedStocksCount++;
+    }
+  }
+
+  const getHoldDays = (firstBuy: string | null, lastSell: string | null, isHolding: boolean) => {
+    if (!firstBuy) return 0;
+    const start = new Date(firstBuy);
+    const end = isHolding ? new Date() : (lastSell ? new Date(lastSell) : new Date());
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  if (view !== "list") {
+    const isNew = view === "new";
+    const today = new Date().toISOString().split("T")[0];
+    return (
+      <div className="space-y-4">
+        <button onClick={() => setView("list")} className="font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+          ← Quay lại
+        </button>
+        <Card className="max-w-2xl">
+          <h3 className="mb-4 text-lg font-bold">{isNew ? "Thêm" : "Sửa"} giao dịch</h3>
+          <form onSubmit={handleSave} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-sm font-semibold">Ngày giao dịch</label>
+              <input name="tradeDate" type="date" required defaultValue={editing?.tradeDate || today} className={inputClass} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold">Mã cổ phiếu</label>
+              <input name="stockCode" required placeholder="VD: FPT" defaultValue={editing?.stockCode || viewStock || ""} className={\`\${inputClass} uppercase\`} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold">Loại giao dịch</label>
+              <select name="action" required defaultValue={editing?.action || "buy"} className={inputClass}>
+                <option value="buy">Mua</option>
+                <option value="sell">Bán</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold">Số lượng</label>
+              <input name="quantity" type="number" min="0" step="0.01" required defaultValue={editing?.quantity} className={inputClass} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold">Giá (VNĐ)</label>
+              <input name="price" type="number" min="0" required defaultValue={editing?.price} className={inputClass} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold">Phí giao dịch/Thuế</label>
+              <input name="fee" type="number" min="0" defaultValue={editing?.fee || 0} className={inputClass} />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-semibold">Ghi chú</label>
+            <input name="note" defaultValue={editing?.note} className={inputClass} />
+          </div>
+          <div className="flex justify-end gap-3 pt-4">
+            <button type="button" onClick={() => setView("list")} className="rounded-xl border border-[var(--app-border)] px-5 py-2 font-bold hover:bg-slate-50 dark:hover:bg-white/5">Hủy</button>
+            <button className="rounded-xl bg-blue-500 px-6 py-2 font-bold text-white hover:bg-blue-600">Lưu</button>
+          </div>
+          </form>
+        </Card>
+      </div>
+    );
+  }
+
+  if (viewStock) {
+    const s = stats[viewStock];
+    const st = state[viewStock];
+    const isHolding = st.qty > 0;
+    const history = enhanced.filter(d => d.stockCode === viewStock).reverse();
+    return (
+      <div className="space-y-4">
+        <button onClick={() => setViewStock(null)} className="font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+          ← Quay lại danh sách
+        </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold">{viewStock}</h2>
+          <button onClick={() => { setEditing(null); setView("new"); }} className="rounded-xl bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-600">+ Thêm GD</button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Card>
+            <p className="text-xs text-slate-400">Đang nắm giữ</p>
+            <b className="text-lg text-blue-500">{st.qty.toLocaleString("vi")}</b>
+          </Card>
+          <Card>
+            <p className="text-xs text-slate-400">Giá vốn TB</p>
+            <b className="text-lg text-slate-700 dark:text-slate-300">{money(st.avgCost)}</b>
+          </Card>
+          <Card>
+            <p className="text-xs text-slate-400">Lãi/Lỗ đã chốt</p>
+            <b className={\`text-lg \${s.realizedProfit >= 0 ? "text-emerald-500" : "text-rose-500"}\`}>{s.realizedProfit > 0 ? "+" : ""}{money(s.realizedProfit)}</b>
+          </Card>
+          <Card>
+            <p className="text-xs text-slate-400">Số ngày nắm giữ</p>
+            <b className="text-lg">{getHoldDays(s.firstBuyDate, s.lastSellDate, isHolding)} ngày</b>
+          </Card>
+        </div>
+        <Card className="overflow-hidden p-0">
+          <div className="border-b border-[var(--app-border)] p-4 bg-slate-50 dark:bg-white/5">
+            <b className="text-sm">Lịch sử giao dịch</b>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="text-xs text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Ngày</th>
+                  <th className="px-4 py-3">Lệnh</th>
+                  <th className="px-4 py-3 text-right">Khối lượng</th>
+                  <th className="px-4 py-3 text-right">Giá</th>
+                  <th className="px-4 py-3 text-right">Giá trị</th>
+                  <th className="px-4 py-3 text-right">Lãi/Lỗ</th>
+                  <th className="px-4 py-3 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--app-border)]">
+                {history.map(item => {
+                  const val = item.action === "buy" ? (item.quantity * item.price + item.fee) : (item.quantity * item.price - item.fee);
+                  return (
+                    <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-white/5">
+                      <td className="px-4 py-3 text-slate-500">{item.tradeDate.split("-").reverse().join("/")}</td>
+                      <td className="px-4 py-3">
+                        <span className={\`rounded-md px-2 py-0.5 text-xs font-bold \${item.action === "buy" ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"}\`}>
+                          {item.action === "buy" ? "MUA" : "BÁN"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium">{item.quantity.toLocaleString("vi")}</td>
+                      <td className="px-4 py-3 text-right font-medium">{money(item.price)}</td>
+                      <td className={\`px-4 py-3 text-right font-bold \${item.action === "buy" ? "text-rose-500" : "text-emerald-500"}\`}>
+                        {money(val)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold">
+                        {item.realizedProfit !== undefined ? (
+                          <span className={item.realizedProfit >= 0 ? "text-emerald-500" : "text-rose-500"}>
+                            {item.realizedProfit > 0 ? "+" : ""}{money(item.realizedProfit)}
+                          </span>
+                        ) : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => { setEditing(item); setView("edit"); }} className="mr-3 font-semibold text-blue-500 hover:text-blue-600">Sửa</button>
+                        <button onClick={() => handleDelete(item.id)} className="font-semibold text-rose-500 hover:text-rose-600">Xóa</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <select className={\`\${filterClass} w-full flex-none md:w-[110px]\`} value={yearStr} onChange={event => setYearStr(event.target.value)}>
+          {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
+        </select>
+        <input placeholder="Tìm mã cổ phiếu..." className={\`\${filterClass} w-full flex-1 md:w-auto\`} value={search} onChange={e => setSearch(e.target.value)} />
+        <button onClick={() => { setEditing(null); setView("new"); }} className="flex-none whitespace-nowrap rounded-xl bg-blue-500 px-4 py-3 text-sm font-bold text-white hover:bg-blue-600">+ Thêm</button>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        <Card>
+          <p className="text-xs text-slate-400">Tổng tiền đã mua</p>
+          <b className="text-lg text-rose-500">{money(totalBuy)}</b>
+        </Card>
+        <Card>
+          <p className="text-xs text-slate-400">Tổng tiền đã bán</p>
+          <b className="text-lg text-emerald-500">{money(totalSell)}</b>
+        </Card>
+        <Card>
+          <p className="text-xs text-slate-400">Tổng vốn đang giữ</p>
+          <b className="text-lg text-blue-500">{money(totalHoldingValue)}</b>
+        </Card>
+        <Card>
+          <p className="text-xs text-slate-400">Lãi/Lỗ đã chốt</p>
+          <b className={\`text-lg \${totalProfit >= 0 ? "text-emerald-500" : "text-rose-500"}\`}>{totalProfit > 0 ? "+" : ""}{money(totalProfit)}</b>
+        </Card>
+        <Card>
+          <p className="text-xs text-slate-400">Đang nắm giữ</p>
+          <b className="text-lg text-indigo-500">{activeStocksCount} mã</b>
+        </Card>
+        <Card>
+          <p className="text-xs text-slate-400">Đã bán hết</p>
+          <b className="text-lg text-slate-500">{closedStocksCount} mã</b>
+        </Card>
+      </div>
+
+      <Card className="overflow-hidden p-0">
+        <div className="border-b border-[var(--app-border)] p-4 bg-slate-50 dark:bg-white/5">
+          <b className="text-sm">Tổng quan theo mã (All time)</b>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="text-xs text-slate-400">
+              <tr>
+                <th className="px-4 py-3">Mã CP</th>
+                <th className="px-4 py-3 text-right">Tổng Mua</th>
+                <th className="px-4 py-3 text-right">Tổng Bán</th>
+                <th className="px-4 py-3 text-right">Khối lượng giữ</th>
+                <th className="px-4 py-3 text-right">Giá vốn TB</th>
+                <th className="px-4 py-3 text-right">Lãi/Lỗ đã chốt</th>
+                <th className="px-4 py-3 text-right">Ngày nắm giữ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--app-border)]">
+              {Object.keys(stats).sort().map(code => {
+                const s = stats[code];
+                const st = state[code];
+                const isHolding = st.qty > 0;
+                return (
+                  <tr key={code} onClick={() => setViewStock(code)} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5">
+                    <td className="px-4 py-3 font-bold text-blue-500 hover:underline">{code}</td>
+                    <td className="px-4 py-3 text-right text-rose-500 font-medium">{money(s.buyAmount)}</td>
+                    <td className="px-4 py-3 text-right text-emerald-500 font-medium">{money(s.sellAmount)}</td>
+                    <td className="px-4 py-3 text-right font-medium">{st.qty.toLocaleString("vi")}</td>
+                    <td className="px-4 py-3 text-right font-medium">{money(st.avgCost)}</td>
+                    <td className={\`px-4 py-3 text-right font-bold \${s.realizedProfit >= 0 ? "text-emerald-500" : "text-rose-500"}\`}>
+                      {s.realizedProfit > 0 ? "+" : ""}{money(s.realizedProfit)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-500">
+                      {getHoldDays(s.firstBuyDate, s.lastSellDate, isHolding)}
+                    </td>
+                  </tr>
+                );
+              })}
+              {Object.keys(stats).length === 0 && (
+                <tr><td colSpan={7} className="p-4 text-center text-slate-400">Chưa có mã nào</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card className="overflow-hidden p-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--app-border)] p-4 bg-slate-50 dark:bg-white/5">
+          <b className="text-sm">Danh sách giao dịch {yearStr}</b>
+          {loading && <span className="text-xs text-slate-400">Đang tải...</span>}
+        </div>
+        <div className="divide-y divide-[var(--app-border)]">
+          {Array.from({ length: 12 }, (_, i) => i + 1).map(month => {
+            const monthRecords = yearData.filter(d => Number(d.tradeDate.split("-")[1]) === month).reverse();
+            const monthBuy = monthRecords.filter(d => d.action === "buy").reduce((s, d) => s + (d.quantity * d.price) + d.fee, 0);
+            const monthSell = monthRecords.filter(d => d.action === "sell").reduce((s, d) => s + (d.quantity * d.price) - d.fee, 0);
+            const expanded = expandedMonths.has(month);
+            
+            return (
+              <div key={month} className="bg-[var(--app-card)]">
+                <div className="flex cursor-pointer items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => toggleMonth(month)}>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold">Tháng {month}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="text-slate-500">{monthRecords.length} GD</span>
+                    <div className="flex w-32 flex-col items-end">
+                      {monthBuy > 0 && <span className="text-xs font-semibold text-rose-500">Mua: {money(monthBuy)}</span>}
+                      {monthSell > 0 && <span className="text-xs font-semibold text-emerald-500">Bán: {money(monthSell)}</span>}
+                      {!monthBuy && !monthSell && <span className="text-xs font-semibold text-slate-400">0 đ</span>}
+                    </div>
+                    <span className={\`text-slate-400 transition-transform \${expanded ? "rotate-180" : ""}\`}>▼</span>
+                  </div>
+                </div>
+                {expanded && (
+                  <div className="border-t border-[var(--app-border)] bg-slate-50 overflow-x-auto dark:bg-white/5">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                      <thead className="text-xs text-slate-400">
+                        <tr>
+                          <th className="px-4 py-3">Ngày</th>
+                          <th className="px-4 py-3">Mã CP</th>
+                          <th className="px-4 py-3">Lệnh</th>
+                          <th className="px-4 py-3 text-right">Khối lượng</th>
+                          <th className="px-4 py-3 text-right">Giá</th>
+                          <th className="px-4 py-3 text-right">Giá trị</th>
+                          <th className="px-4 py-3 text-right">Lãi/Lỗ</th>
+                          <th className="px-4 py-3 text-right">Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--app-border)]">
+                        {monthRecords.map(item => {
+                          const val = item.action === "buy" ? (item.quantity * item.price + item.fee) : (item.quantity * item.price - item.fee);
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-100 dark:hover:bg-white/10">
+                              <td className="px-4 py-3 text-slate-500">{item.tradeDate.split("-").reverse().join("/")}</td>
+                              <td className="px-4 py-3 font-bold" onClick={() => setViewStock(item.stockCode)}><span className="cursor-pointer text-blue-500 hover:underline">{item.stockCode}</span></td>
+                              <td className="px-4 py-3">
+                                <span className={\`rounded-md px-2 py-0.5 text-xs font-bold \${item.action === "buy" ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600"}\`}>
+                                  {item.action === "buy" ? "MUA" : "BÁN"}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right font-medium">{item.quantity.toLocaleString("vi")}</td>
+                              <td className="px-4 py-3 text-right font-medium">{money(item.price)}</td>
+                              <td className={\`px-4 py-3 text-right font-bold \${item.action === "buy" ? "text-rose-500" : "text-emerald-500"}\`}>
+                                {money(val)}
+                              </td>
+                              <td className="px-4 py-3 text-right font-bold">
+                                {item.realizedProfit !== undefined ? (
+                                  <span className={item.realizedProfit >= 0 ? "text-emerald-500" : "text-rose-500"}>
+                                    {item.realizedProfit > 0 ? "+" : ""}{money(item.realizedProfit)}
+                                  </span>
+                                ) : "-"}
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <button onClick={(e) => { e.stopPropagation(); setEditing(item); setView("edit"); }} className="mr-3 font-semibold text-blue-500 hover:text-blue-600">Sửa</button>
+                                <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="font-semibold text-rose-500 hover:text-rose-600">Xóa</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {!monthRecords.length && <tr><td colSpan={8} className="p-4 text-center text-slate-400">Không có giao dịch</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+    </div>
+  );
+}
+`;
+
+const fileContent = fs.readFileSync("src/components/family-app.tsx", "utf-8");
+const startIndex = fileContent.indexOf("function InvestmentSheet({ user }: { user: AuthUser }) {");
+
+if (startIndex === -1) {
+  console.error("InvestmentSheet not found");
+  process.exit(1);
+}
+
+const before = fileContent.substring(0, startIndex);
+fs.writeFileSync("src/components/family-app.tsx", before + newComponent, "utf-8");
+console.log("Replaced successfully!");

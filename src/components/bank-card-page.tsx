@@ -7,9 +7,9 @@ import type { AnnualFeeCycle, AnnualFeeWaiverType, BankAccount, BankAccountStatu
 type AuthUser = { id: string; username: string; displayName: string; avatar: string; role: "full_access" | "self_only"; memberId?: string };
 type FormMode = "new" | "edit";
 
-const bankNames = ["BIDV", "Vietcombank", "Techcombank", "MB", "VPBank", "ACB", "TPBank", "Sacombank", "VIB", "VietinBank", "Agribank", "MoMo", "ZaloPay", "Khác"];
-const bankCardTypes: BankCardType[] = ["Tài khoản nhận lương", "Tài khoản ngân hàng", "ATM nội địa", "Debit", "Credit Visa", "Credit Mastercard", "Credit JCB", "Ví điện tử"];
-const bankNetworks: BankCardNetwork[] = ["NAPAS", "Visa", "Mastercard", "JCB", "Khác"];
+const bankNames = ["BIDV", "Vietcombank", "Techcombank", "MB", "VPBank", "ACB", "TPBank", "Sacombank", "VIB", "VietinBank", "Agribank", "UOB", "MoMo", "Apple Pay", "ZaloPay", "Khác"];
+const bankCardTypes: BankCardType[] = ["Tài khoản ngân hàng", "Thẻ ghi nợ / ATM", "Thẻ tín dụng", "Ví điện tử"];
+const bankNetworks: BankCardNetwork[] = ["Không áp dụng", "Napas", "Visa", "Mastercard", "JCB", "Amex", "Khác"];
 const bankStatuses: BankAccountStatus[] = ["Đang dùng", "Tạm khóa", "Đã hủy"];
 const waiverTypes: AnnualFeeWaiverType[] = ["Không có", "Theo tổng chi tiêu năm", "Theo tổng chi tiêu tháng", "Theo số giao dịch"];
 const annualCycles: AnnualFeeCycle[] = ["tháng", "năm"];
@@ -39,14 +39,14 @@ function newReward(): BankCardReward {
 function emptyBankForm(memberId: string): BankAccount {
   return {
     id: crypto.randomUUID(), memberId, bankName: "BIDV", accountHolder: "", accountNumber: "", cardNumber: "",
-    accountType: "Tài khoản nhận lương", cardType: "Tài khoản nhận lương", cardNetwork: "NAPAS", productName: "", branch: "",
+    accountType: "Tài khoản ngân hàng", cardType: "Tài khoản ngân hàng", cardNetwork: "Không áp dụng", productName: "", branch: "",
     statementDay: "", dueDay: "", creditLimit: 0, expiryMonth: "", expiryYear: "", status: "Đang dùng",
     annualFeeEnabled: false, annualFeeAmount: 0, annualFeeWaiverType: "Không có", annualFeeWaiverTarget: 0, annualFeeCycle: "năm", annualFeeCycleStart: "", annualFeeCurrentSpending: 0, note: "", benefits: [], rewards: [],
   };
 }
 
 function isCreditType(type: BankCardType) {
-  return type === "Credit Visa" || type === "Credit Mastercard" || type === "Credit JCB";
+  return type === "Thẻ tín dụng";
 }
 
 
@@ -210,20 +210,24 @@ export function BankCardFormPage({ memberId, cardId, mode }: { memberId: string;
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (!canEdit) return;
+    if (saving) return;
     setSaving(true);
-    setError("");
-    const response = await fetch(mode === "new" ? "/api/bank-accounts" : `/api/bank-accounts/${form.id}`, {
-      method: mode === "new" ? "POST" : "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, accountType: form.cardType }),
-    });
-    const result = await readJsonSafe<{ error?: string; data?: BankAccount }>(response);
-    setSaving(false);
-    if (!response.ok || !result?.data) {
-      setError(result?.error || "Không lưu được thẻ ngân hàng.");
-      return;
+    try {
+      setError("");
+      const response = await fetch(mode === "new" ? "/api/bank-accounts" : `/api/bank-accounts/${form.id}`, {
+        method: mode === "new" ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, accountType: form.cardType }),
+      });
+      const result = await readJsonSafe<{ error?: string; data?: BankAccount }>(response);
+      if (!response.ok || !result?.data) {
+        setError(result?.error || "Không lưu được thẻ ngân hàng.");
+        return;
+      }
+      window.location.href = `/members/${result.data.memberId}/bank-cards/${result.data.id}`;
+    } finally {
+      setSaving(false);
     }
-    window.location.href = `/members/${result.data.memberId}/bank-cards/${result.data.id}`;
   }
 
   if (loading) return <Shell title={mode === "new" ? "Thêm thẻ ngân hàng" : "Sửa thẻ ngân hàng"} member={currentMember}><LoadingState /></Shell>;
@@ -247,7 +251,7 @@ export function BankCardFormPage({ memberId, cardId, mode }: { memberId: string;
                 <Field label="Thành viên sở hữu"><select required className={inputClass} value={form.memberId} onChange={event => set("memberId", event.target.value)}>{editableMembers.map(member => <option key={member.id} value={member.id}>{member.nickname || member.name}</option>)}</select></Field>
                 <Field label="Ngân hàng"><select required className={inputClass} value={form.bankName} onChange={event => set("bankName", event.target.value)}>{bankNames.map(name => <option key={name}>{name}</option>)}</select></Field>
                 <Field label="Chủ thẻ"><input required className={inputClass} value={form.accountHolder} onChange={event => set("accountHolder", event.target.value)} /></Field>
-                <Field label="Loại thẻ"><select className={inputClass} value={form.cardType} onChange={event => { const value = event.target.value as BankCardType; setForm(current => ({ ...current, cardType: value, accountType: value, cardNetwork: value === "Credit Visa" ? "Visa" : value === "Credit Mastercard" ? "Mastercard" : value === "Credit JCB" ? "JCB" : current.cardNetwork })); }}>{bankCardTypes.map(type => <option key={type}>{type}</option>)}</select></Field>
+                <Field label="Loại thẻ"><select className={inputClass} value={form.cardType} onChange={event => { const value = event.target.value as BankCardType; setForm(current => ({ ...current, cardType: value, accountType: value, cardNetwork: value === "Thẻ tín dụng" && current.cardNetwork === "Không áp dụng" ? "Visa" : current.cardNetwork })); }}>{bankCardTypes.map(type => <option key={type}>{type}</option>)}</select></Field>
               </div>
               <div className="mt-6 flex justify-end"><button type="button" onClick={() => setActiveTab("card")} className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white">Tiếp tục →</button></div>
             </section>}
@@ -331,7 +335,7 @@ export function BankCardFormPage({ memberId, cardId, mode }: { memberId: string;
           </div>
           <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-3 border-t border-[var(--app-border,#e2e8f0)] bg-white/95 p-4 backdrop-blur dark:bg-slate-900/95">
             <button type="button" onClick={() => history.back()} className="min-h-11 rounded-xl border border-[var(--app-border,#e2e8f0)] px-5 text-sm font-bold text-slate-600 dark:text-slate-100">Hủy</button>
-            <button disabled={saving} className="min-h-11 rounded-xl bg-indigo-600 px-6 text-sm font-bold text-white disabled:opacity-60">{saving ? "Đang lưu..." : "Lưu thẻ"}</button>
+            <button type="submit" disabled={saving} className="min-h-11 rounded-xl bg-indigo-600 px-6 text-sm font-bold text-white disabled:opacity-60">{saving ? "Đang lưu..." : "Lưu thẻ"}</button>
           </div>
         </div>
       </form>
@@ -471,20 +475,20 @@ function ManualExtractDialog({ note, close }: { note: BankRawNote; close: () => 
 
 function extractBankInfo(rawText: string, bankName: string, hasImage: boolean): BankExtractedPayload {
   const text = rawText.toLocaleLowerCase("vi-VN");
-  const knownBidv = [
-    ["Visa Infinite", "Visa", "Credit Visa"],
-    ["Visa Easy", "Visa", "Credit Visa"],
-    ["Visa Cashback Online", "Visa", "Credit Visa"],
-    ["Visa Cashback 360", "Visa", "Credit Visa"],
-    ["Visa Flexi", "Visa", "Credit Visa"],
-    ["Mastercard World Travel", "Mastercard", "Credit Mastercard"],
-    ["JCB Ultimate", "JCB", "Credit JCB"],
-    ["JCB Platinum Well-being", "JCB", "Credit JCB"],
-  ] as const;
+  const knownBidv: readonly [string, BankCardNetwork, BankCardType][] = [
+    ["Visa Infinite", "Visa", "Thẻ tín dụng"],
+    ["Visa Easy", "Visa", "Thẻ tín dụng"],
+    ["Visa Cashback Online", "Visa", "Thẻ tín dụng"],
+    ["Visa Cashback 360", "Visa", "Thẻ tín dụng"],
+    ["Visa Flexi", "Visa", "Thẻ tín dụng"],
+    ["Mastercard World Travel", "Mastercard", "Thẻ tín dụng"],
+    ["JCB Ultimate", "JCB", "Thẻ tín dụng"],
+    ["JCB Platinum Well-being", "JCB", "Thẻ tín dụng"],
+  ];
   const moneyValues = [...rawText.matchAll(/(\d[\d.,]*)\s*(?:đ|vnd|vnđ)/gi)].map(match => Number(match[1].replace(/[^\d]/g, ""))).filter(Boolean);
   const percentValues = [...rawText.matchAll(/(\d+(?:[.,]\d+)?)\s*%/g)].map(match => Number(match[1].replace(",", "."))).filter(Boolean);
   const found = knownBidv.filter(([name]) => text.includes(name.toLocaleLowerCase("vi-VN")));
-  const cards = (found.length ? found : bankName === "BIDV" || hasImage ? knownBidv : [["Thẻ ngân hàng", "Visa", "Credit Visa"] as const]).map(([name, network, type], index) => {
+  const cards = (found.length ? found : bankName === "BIDV" || hasImage ? knownBidv : [["Thẻ ngân hàng", "Visa", "Thẻ tín dụng"] as [string, BankCardNetwork, BankCardType]]).map(([name, network, type], index) => {
     const cashback = name.includes("Cashback") ? 10 : percentValues[index] || percentValues[0] || 0;
     return {
       product_name: `${bankName} ${name}`.trim(),

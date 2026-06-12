@@ -38,6 +38,7 @@ ALTER TABLE members ADD COLUMN IF NOT EXISTS gender VARCHAR(16) NOT NULL DEFAULT
 ALTER TABLE members ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT '';
 ALTER TABLE members ADD COLUMN IF NOT EXISTS phone VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE members ADD COLUMN IF NOT EXISTS avatar TEXT NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
 ALTER TABLE members ADD COLUMN IF NOT EXISTS color VARCHAR(32) NOT NULL DEFAULT '#fb7185';
 
@@ -626,3 +627,23 @@ ALTER TABLE member_jobs ALTER COLUMN start_year SET NOT NULL;
 
 DROP INDEX IF EXISTS idx_member_jobs_dates;
 CREATE INDEX IF NOT EXISTS idx_member_jobs_years ON member_jobs(start_year, end_year);
+
+-- ==========================================
+-- MIGRATION: 031_create_savings_records.sql
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS savings_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id UUID REFERENCES members(id) ON DELETE SET NULL,
+  year INTEGER NOT NULL,
+  month INTEGER NOT NULL,
+  amount NUMERIC NOT NULL DEFAULT 0,
+  type TEXT NOT NULL DEFAULT 'monthly',
+  holder TEXT NOT NULL DEFAULT 'Ngân hàng',
+  description TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_savings_records_year_month ON savings_records(year, month);
+CREATE INDEX IF NOT EXISTS idx_savings_records_member_id ON savings_records(member_id);

@@ -37,8 +37,19 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     if (existing.error) return existing.error;
     const body = await request.json();
     const account = normalizeBankBody({ ...body, id });
-    const missingNumber = !isCreditBankType(account.cardType) && !account.accountNumber && !account.cardNumber;
-    if (!account.memberId || !account.bankName || !account.accountHolder || missingNumber) return NextResponse.json({ ok: false, error: "Vui lòng nhập đủ thông tin ngân hàng." }, { status: 400 });
+    if (!account.memberId || !account.bankName || !account.accountType || !account.accountHolder || !account.status) {
+      return NextResponse.json({ ok: false, error: "Vui lòng nhập đủ thông tin cơ bản." }, { status: 400 });
+    }
+    if (account.accountType !== "Ví điện tử" && !/^\d{4}$/.test(account.last4)) {
+      return NextResponse.json({ ok: false, error: "Vui lòng nhập đúng 4 số cuối." }, { status: 400 });
+    }
+    if (account.accountType === "Ví điện tử" && !account.last4) {
+      return NextResponse.json({ ok: false, error: "Vui lòng nhập số điện thoại hoặc 4 số cuối." }, { status: 400 });
+    }
+    if (account.accountType === "Thẻ tín dụng") {
+      if (!account.cardNetwork || account.cardNetwork === "Không áp dụng") return NextResponse.json({ ok: false, error: "Vui lòng chọn tổ chức thẻ." }, { status: 400 });
+      if (!account.productName) return NextResponse.json({ ok: false, error: "Vui lòng nhập tên sản phẩm thẻ." }, { status: 400 });
+    }
     if (!await bankMemberExists(account.memberId)) return NextResponse.json({ ok: false, error: "Không tìm thấy thành viên." }, { status: 404 });
     if (!await canAccessBankMember(user, account.memberId)) return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });
     const saved = await upsertBankAccount(account);
