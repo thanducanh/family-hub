@@ -6,11 +6,12 @@ import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from "recharts";
 import { TimeTreeCalendar } from "@/components/timetree-calendar";
+import { MemberSimsPanel } from "@/components/member-sims-panel";
 import { useUI } from "@/components/ui-context";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
-import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberJob, MemberJobStatus, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
+import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberJob, MemberJobStatus, MemberSim, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
 import * as XLSX from "xlsx";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
@@ -1277,7 +1278,7 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
     {!members.length && <div className="mt-6">Chưa có dữ liệu</div>}
   </>;
 }
-type MemberProfileTab = "profile" | "account" | "work" | "bank" | "bankRaw" | "security" | "tasks" | "events" | "notes";
+type MemberProfileTab = "profile" | "account" | "work" | "bank" | "sims" | "bankRaw" | "security" | "tasks" | "events" | "notes";
 type ProfileSubTab = "basic" | "education" | "skills" | "experience" | "documents";
 function MemberProfile({ member, data, user, close, saved, remove, personal = false, openChangePassword, logout, savedUser = () => undefined, initialEdit = false }: { member: Member | "new"; data: AppData; user: AuthUser; close: () => void; saved: (member: Member) => void; remove: (member: Member) => void; personal?: boolean; openChangePassword?: () => void; logout?: () => void; savedUser?: (user: AuthUser) => void; initialEdit?: boolean }) {
   const existing = member === "new" ? null : member;
@@ -1325,9 +1326,10 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
     void fetch("/api/users").then(async response => { const result = await readJsonSafe<{ users?: ManagedUser[] }>(response); if (response.ok && result?.users) setLinkedUsers(result.users.filter(account => account.memberId === form.id)); });
   };
   const menu: [MemberProfileTab, string][] = [["profile", "Thông tin cá nhân"], ["account", "Tài khoản đăng nhập"], ["work", "Công việc"], ["bank", "Thẻ ngân hàng"], ["bankRaw", "Nội dung gốc ngân hàng"], ["security", "Bảo mật"], ["tasks", "Việc nhà liên quan"], ["events", "Sự kiện liên quan"], ["notes", "Ghi chú"]];
+  const profileMenu = menu.flatMap(([value, label]) => value === "bank" ? [[value, label], ["sims", "SIM / Data"]] as [MemberProfileTab, string][] : [[value, label]] as [MemberProfileTab, string][]);
   return <div><div className="mb-6 flex flex-wrap items-center justify-between gap-3"><div>{!personal && <button onClick={close} className="text-sm font-semibold text-indigo-600">← Danh sách thành viên</button>}<h2 className={personal ? "text-2xl font-semibold" : "mt-3 text-2xl font-semibold"}>{personal ? "Hồ sơ cá nhân" : existing ? "Hồ sơ thành viên" : "Thêm thành viên"}</h2><p className="mt-1 text-sm text-slate-400">Family Hub / {personal ? "Hồ sơ cá nhân" : `Thành viên / ${existing ? form.nickname || form.name : "Thêm mới"}`}</p></div></div>
-    <div className="grid gap-5 lg:grid-cols-[240px_1fr]"><Card className="h-fit p-3"><nav className="space-y-1">{menu.map(([value, label]) => <button key={value} onClick={() => setTab(value)} className={`w-full rounded-lg px-3 py-3 text-left text-sm font-semibold ${tab === value ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-400/15" : "text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5"}`}>{label}</button>)}</nav></Card>
-      <div>{!detailsLoaded && ["account", "bank", "bankRaw", "notes"].includes(tab) ? (
+    <div className="grid gap-5 lg:grid-cols-[240px_1fr]"><Card className="h-fit p-3"><nav className="space-y-1">{profileMenu.map(([value, label]) => <button key={value} onClick={() => setTab(value)} className={`w-full rounded-lg px-3 py-3 text-left text-sm font-semibold ${tab === value ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-400/15" : "text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5"}`}>{label}</button>)}</nav></Card>
+      <div>{!detailsLoaded && ["account", "bank", "sims", "bankRaw", "notes"].includes(tab) ? (
         <Card className="p-6 text-center text-slate-400">Đang tải dữ liệu chi tiết...</Card>
       ) : (
         <>
@@ -1467,6 +1469,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
           {tab === "notes" && <Card><h3 className="mb-4 font-semibold">Ghi chú</h3>{notes.length ? notes.map(note => <div key={note.id} className="border-b border-[var(--app-border)] py-3 last:border-0"><b>{note.title}</b><p className="mt-1 text-sm text-slate-500">{note.content}</p></div>) : <EmptyState />}</Card>}
           {tab === "account" && <LoginAccountTab key={`${linkedAccount?.id || "new"}:${linkedAccount?.username || ""}:${linkedAccount?.role || ""}:${String(linkedAccount?.active ?? "")}:${linkedAccount?.memberId || form.id}`} account={linkedAccount} member={form} actor={user} canManage={canManage} isCurrent={linkedAccount?.id === user.id} savedUser={savedUser} refreshed={refreshLinkedAccount} />}
           {tab === "bank" && <MemberBankAccounts member={form} user={user} />}
+          {tab === "sims" && <MemberSimsPanel member={form} members={data.members} user={user} />}
           {tab === "bankRaw" && <MemberBankRawNotes member={form} user={user} />}
           {tab === "security" && <Card><h3 className="mb-4 font-semibold">Bảo mật</h3>{linkedAccount ? <div className="space-y-3"><div className="rounded-lg border border-[var(--app-border)] px-4 py-3 text-sm"><b>Ghi nhớ đăng nhập</b><p className="mt-1 text-xs text-slate-400">Thiết lập khi đăng nhập trên thiết bị này.</p></div>{personal && <button onClick={openChangePassword} className="w-full rounded-lg border border-[var(--app-border)] px-4 py-3 text-left text-sm font-semibold">Đổi mật khẩu</button>}{personal && <button onClick={logout} className="w-full rounded-lg border border-rose-200 px-4 py-3 text-left text-sm font-semibold text-rose-500">Đăng xuất khỏi thiết bị</button>}</div> : <p className="text-sm text-slate-400">Chưa có tài khoản đăng nhập.</p>}</Card>}
         </>
@@ -1612,6 +1615,8 @@ function FinanceOverview() {
   const [error, setError] = useState<string | null>(null);
   const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
   const [chartMode, setChartMode] = useState<"income" | "expense" | "compare" | "savings">("compare");
+  const [settingsForm, setSettingsForm] = useState({ trackingStartMonth: "1", trackingStartYear: String(new Date().getFullYear()), openingCashBalance: "0" });
+  const [savingSettings, setSavingSettings] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1647,17 +1652,48 @@ function FinanceOverview() {
           : [];
 
   const currentCash = Number(overviewPayload.currentCash || 0);
+  const currentSavings = Number(overviewPayload.currentSavings || 0);
+  const currentInvestment = Number(overviewPayload.currentInvestment || 0);
+  const estimatedAssets = Number(overviewPayload.estimatedAssets || currentCash + currentSavings + currentInvestment);
   const settings = overviewPayload.settings || null;
+
+  useEffect(() => {
+    if (!settings && !overviewPayload.trackingStartMonth) return;
+    setSettingsForm({
+      trackingStartMonth: String(settings?.trackingStartMonth || overviewPayload.trackingStartMonth || 1),
+      trackingStartYear: String(settings?.trackingStartYear || overviewPayload.trackingStartYear || new Date().getFullYear()),
+      openingCashBalance: String(settings?.openingCashBalance ?? overviewPayload.openingCashBalance ?? 0),
+    });
+  }, [settings, overviewPayload.trackingStartMonth, overviewPayload.trackingStartYear, overviewPayload.openingCashBalance]);
+
+  async function saveFinanceSettings() {
+    setSavingSettings(true);
+    try {
+      const response = await fetch("/api/finance-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trackingStartMonth: Number(settingsForm.trackingStartMonth) || 1,
+          trackingStartYear: Number(settingsForm.trackingStartYear) || new Date().getFullYear(),
+          openingCashBalance: Number(String(settingsForm.openingCashBalance).replace(/\D/g, "")) || 0,
+        }),
+      });
+      if (response.ok) await load();
+    } finally {
+      setSavingSettings(false);
+    }
+  }
 
   const totalIncome = monthlyData.reduce((sum: number, d: any) => sum + (d.income || 0), 0);
   const totalExpense = monthlyData.reduce((sum: number, d: any) => sum + (d.expense || 0), 0);
-  const savings = totalIncome - totalExpense;
-  const savingsRate = totalIncome > 0 ? ((savings / totalIncome) * 100).toFixed(1) + "%" : "N/A";
+  const afterExpenseTotal = monthlyData.reduce((sum: number, d: any) => sum + (d.afterExpense ?? ((d.income || 0) - (d.expense || 0))), 0);
+  const cashFlowTotal = monthlyData.reduce((sum: number, d: any) => sum + (d.monthlyCashFlow ?? 0), 0);
+  const savingsRate = totalIncome > 0 ? ((afterExpenseTotal / totalIncome) * 100).toFixed(1) + "%" : "N/A";
   
   const maxVal = Math.max(1, ...monthlyData.map((d: any) => {
     if (chartMode === "income") return d.income || 0;
     if (chartMode === "expense") return d.expense || 0;
-    if (chartMode === "savings") return Math.abs((d.income || 0) - (d.expense || 0));
+    if (chartMode === "savings") return Math.abs(d.monthlyCashFlow ?? ((d.income || 0) - (d.expense || 0)));
     return Math.max(d.income || 0, d.expense || 0);
   }));
 
@@ -1669,6 +1705,15 @@ function FinanceOverview() {
         </select>
       </div>
 
+      <Card>
+        <div className="grid gap-3 md:grid-cols-[160px_160px_minmax(220px,1fr)_auto] md:items-end">
+          <Field label="Tháng bắt đầu"><select className={inputClass} value={settingsForm.trackingStartMonth} onChange={event => setSettingsForm(current => ({ ...current, trackingStartMonth: event.target.value }))}>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select></Field>
+          <Field label="Năm bắt đầu"><input className={inputClass} value={settingsForm.trackingStartYear} onChange={event => setSettingsForm(current => ({ ...current, trackingStartYear: event.target.value.replace(/\D/g, "") }))} /></Field>
+          <Field label="Tiền hiện tại ban đầu"><input className={inputClass} value={settingsForm.openingCashBalance} onChange={event => setSettingsForm(current => ({ ...current, openingCashBalance: event.target.value.replace(/\D/g, "") }))} /></Field>
+          <button type="button" onClick={() => void saveFinanceSettings()} disabled={savingSettings} className="h-11 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-60">{savingSettings ? "Đang lưu..." : "Lưu cài đặt"}</button>
+        </div>
+      </Card>
+
       {error && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-6 text-center">
           <p className="font-semibold text-rose-600">{error}</p>
@@ -1676,13 +1721,19 @@ function FinanceOverview() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card><p className="text-xs text-slate-400">Tiền hiện tại ước tính</p><b className="text-indigo-500">{money(currentCash)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Tiết kiệm hiện có</p><b className="text-blue-500">{money(currentSavings)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Đầu tư hiện có</p><b className="text-purple-500">{money(currentInvestment)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Tổng tài sản ước tính</p><b className="text-emerald-500">{money(estimatedAssets)}</b></Card>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Card><p className="text-xs text-slate-400">Tổng thu năm</p><b className="text-emerald-500">{money(totalIncome)}</b></Card>
         <Card><p className="text-xs text-slate-400">Tổng chi năm</p><b className="text-rose-500">{money(totalExpense)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Tiết kiệm năm</p><b className={savings >= 0 ? "text-blue-500" : "text-rose-500"}>{money(savings)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Dư sau chi</p><b className={afterExpenseTotal >= 0 ? "text-blue-500" : "text-rose-500"}>{money(afterExpenseTotal)}</b></Card>
         <Card><p className="text-xs text-slate-400">Tỷ lệ tiết kiệm</p><b className="text-indigo-500">{savingsRate}</b></Card>
-        <Card><p className="text-xs text-slate-400">Trung bình thu/tháng</p><b className="text-emerald-500">{money(totalIncome / 12)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Trung bình chi/tháng</p><b className="text-rose-500">{money(totalExpense / 12)}</b></Card>
+        <Card><p className="text-xs text-slate-400">Dòng tiền thực còn</p><b className={cashFlowTotal >= 0 ? "text-emerald-500" : "text-rose-500"}>{money(cashFlowTotal)}</b></Card>
       </div>
 
       <Card>
@@ -1695,18 +1746,18 @@ function FinanceOverview() {
             <button onClick={() => setChartMode("income")} className={`rounded-full px-3 py-1 font-bold ${chartMode === "income" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-slate-100 text-slate-500 dark:bg-white/5"}`}>Thu nhập</button>
             <button onClick={() => setChartMode("expense")} className={`rounded-full px-3 py-1 font-bold ${chartMode === "expense" ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400" : "bg-slate-100 text-slate-500 dark:bg-white/5"}`}>Chi tiêu</button>
             <button onClick={() => setChartMode("compare")} className={`rounded-full px-3 py-1 font-bold ${chartMode === "compare" ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400" : "bg-slate-100 text-slate-500 dark:bg-white/5"}`}>So sánh</button>
-            <button onClick={() => setChartMode("savings")} className={`rounded-full px-3 py-1 font-bold ${chartMode === "savings" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-slate-100 text-slate-500 dark:bg-white/5"}`}>Tiết kiệm</button>
+            <button onClick={() => setChartMode("savings")} className={`rounded-full px-3 py-1 font-bold ${chartMode === "savings" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" : "bg-slate-100 text-slate-500 dark:bg-white/5"}`}>Dòng tiền</button>
           </div>
         </div>
         <div className="flex h-64 w-full items-end justify-between gap-1 overflow-x-auto pb-2 md:justify-center md:gap-4 lg:gap-6">
           {monthlyData.map((item: any) => {
-            const itemSavings = (item.income || 0) - (item.expense || 0);
+            const itemSavings = item.monthlyCashFlow ?? ((item.income || 0) - (item.expense || 0));
             return (
             <div key={item.month} className="flex min-w-[30px] flex-1 flex-col items-center gap-2 md:max-w-[60px]">
               <div className="flex h-[240px] w-full items-end justify-center gap-0.5 md:gap-1">
                 {(chartMode === "income" || chartMode === "compare") && <div className="w-full rounded-t-md bg-emerald-500" style={{ height: `${Math.max(2, ((item.income || 0) / maxVal) * 100)}%` }} title={`Thu: ${money(item.income || 0)}`} />}
                 {(chartMode === "expense" || chartMode === "compare") && <div className="w-full rounded-t-md bg-rose-500" style={{ height: `${Math.max(2, ((item.expense || 0) / maxVal) * 100)}%` }} title={`Chi: ${money(item.expense || 0)}`} />}
-                {chartMode === "savings" && <div className={`w-full rounded-t-md ${itemSavings >= 0 ? "bg-blue-500" : "bg-orange-500"}`} style={{ height: `${Math.max(2, (Math.abs(itemSavings) / maxVal) * 100)}%` }} title={`Tiết kiệm: ${money(itemSavings)}`} />}
+                {chartMode === "savings" && <div className={`w-full rounded-t-md ${itemSavings >= 0 ? "bg-blue-500" : "bg-orange-500"}`} style={{ height: `${Math.max(2, (Math.abs(itemSavings) / maxVal) * 100)}%` }} title={`Dòng tiền: ${money(itemSavings)}`} />}
               </div>
               <span className="text-[10px] font-bold text-slate-400 md:text-xs">T{item.month}</span>
             </div>
@@ -1727,34 +1778,37 @@ function FinanceOverview() {
                 <th className="px-4 py-3 text-right">Thu nhập</th>
                 <th className="px-4 py-3 text-right">Chi tiêu</th>
                 <th className="px-4 py-3 text-right">Dư sau chi</th>
-                <th className="px-4 py-3 text-right">Tiết kiệm chuyển</th>
+                <th className="px-4 py-3 text-right">Tiết kiệm trong chi</th>
                 <th className="px-4 py-3 text-right">Đầu tư ròng</th>
-                <th className="px-4 py-3 text-right">Còn lại tháng</th>
+                <th className="px-4 py-3 text-right">Dòng tiền thực còn</th>
+                <th className="px-4 py-3 text-right">Tiền lũy kế</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--app-border)]">
               {monthlyData.map((item: any) => {
                 const income = item.income || 0;
                 const expense = item.expense || 0;
-                const savingsTransferred = item.savingsTransferred || 0;
+                const savingsInExpense = item.savingsInExpense || 0;
                 const netInvestment = item.netInvestment || 0;
-                const duSauChi = income - expense;
-                const conLai = duSauChi - savingsTransferred + netInvestment;
+                const duSauChi = item.afterExpense ?? (income - expense);
+                const conLai = item.monthlyCashFlow ?? (duSauChi - netInvestment);
+                const cumulativeCash = item.cumulativeCash ?? 0;
                 return (
                   <tr key={item.month} className="hover:bg-slate-50 dark:hover:bg-white/5">
                     <td className="px-4 py-3 font-semibold">Tháng {item.month}</td>
                     <td className="px-4 py-3 text-right text-emerald-500">{money(income)}</td>
                     <td className="px-4 py-3 text-right text-rose-500">{money(expense)}</td>
                     <td className="px-4 py-3 text-right font-medium">{money(duSauChi)}</td>
-                    <td className="px-4 py-3 text-right text-blue-500">{money(savingsTransferred)}</td>
+                    <td className="px-4 py-3 text-right text-blue-500">{money(savingsInExpense)}</td>
                     <td className="px-4 py-3 text-right text-purple-500">{money(netInvestment)}</td>
                     <td className="px-4 py-3 text-right font-bold text-slate-700 dark:text-slate-200">{money(conLai)}</td>
+                    <td className="px-4 py-3 text-right font-bold text-indigo-600">{money(cumulativeCash)}</td>
                   </tr>
                 );
               })}
               {!monthlyData.length && !loading && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-sm text-slate-400">Chưa có dữ liệu.</td>
+                  <td colSpan={8} className="px-4 py-6 text-center text-sm text-slate-400">Chưa có dữ liệu.</td>
                 </tr>
               )}
             </tbody>
@@ -1882,14 +1936,12 @@ function InvestmentSheet() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <select className={filterClass} value={yearStr} onChange={event => setYearStr(event.target.value)}>
-            {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
-          </select>
-          <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm mã cổ phiếu..." />
-        </div>
-        <button className="rounded-xl bg-purple-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-purple-700 transition">+ Thêm đầu tư</button>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <select className={`${filterClass} md:w-[120px]`} value={yearStr} onChange={event => setYearStr(event.target.value)}>
+          {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
+        </select>
+        <input className={`${filterClass} flex-1`} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm mã cổ phiếu..." />
+        <button className="w-full whitespace-nowrap rounded-xl bg-purple-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-purple-700 md:w-auto">+ Thêm đầu tư</button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -1958,6 +2010,7 @@ function SavingsSheet() {
   const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
   const [query, setQuery] = useState("");
   const [expandedMonths, setExpandedMonths] = useState<Set<number>>(() => new Set());
+  const [savingType, setSavingType] = useState("all");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1992,6 +2045,7 @@ function SavingsSheet() {
   const yearRecords = data.filter(r => String(r.year) === yearStr);
   const filteredRecords = yearRecords.filter(r => {
     const q = query.toLowerCase();
+    if (savingType !== "all" && String(r.type || "monthly") !== savingType) return false;
     return !q || (r.description?.toLowerCase().includes(q) || r.note?.toLowerCase().includes(q) || r.holder?.toLowerCase().includes(q));
   }).sort(sortRecordsAsc);
 
@@ -2025,14 +2079,21 @@ function SavingsSheet() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <select className={filterClass} value={yearStr} onChange={event => setYearStr(event.target.value)}>
-            {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
-          </select>
-          <input className={filterClass} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm khoản tiết kiệm..." />
-        </div>
-        <button className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 transition">+ Thêm tiết kiệm</button>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <select className={`${filterClass} md:w-[120px]`} value={yearStr} onChange={event => setYearStr(event.target.value)}>
+          {Array.from({ length: 7 }, (_, index) => String(new Date().getFullYear() - 3 + index)).map(value => <option key={value}>{value}</option>)}
+        </select>
+        <select className={`${filterClass} md:w-[180px]`} value={savingType} onChange={event => setSavingType(event.target.value)}>
+          <option value="all">Khoản tiết kiệm</option>
+          <option value="monthly">Gửi tiết kiệm</option>
+          <option value="withdraw">Rút tiết kiệm</option>
+        </select>
+        <input className={`${filterClass} flex-1`} value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm khoản tiết kiệm..." />
+        <button className="w-full whitespace-nowrap rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 md:w-auto">+ Thêm tiết kiệm</button>
+      </div>
+
+      <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-200">
+        Tiết kiệm hằng tháng nên nhập từ Chi tiêu → Tiết kiệm để dòng tiền tổng quan chính xác.
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -2140,7 +2201,7 @@ async function fetchIncomeApiData(year: string): Promise<IncomeApiData> {
     return { ...emptyIncomeApiData };
   }
 }
-const incomeCategories: IncomeCategory[] = ["Lương", "Thưởng", "Tiền lễ", "Khác"];
+const incomeCategories: IncomeCategory[] = ["Lương", "Thưởng", "Tiền lễ", "Đầu tư", "Cổ tức", "Bán chứng khoán/rút tiền về", "Khác"];
 const incomeTemplates = ["Lương CB", "Lương KQCV", "Thưởng", "Tiền lễ", "Khác"];
 function isReceivedIncome(record: IncomeRecord) {
   const value = String(record.status || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
@@ -2749,10 +2810,11 @@ const expenseCategoryTree: Record<string, string[]> = {
   "Sức khỏe": ["Thuốc", "Khám bệnh", "Nha khoa"],
   "Giải trí": ["Phim", "Game", "Đi chơi", "Du lịch"],
   "Gia đình": ["Ba mẹ", "Quà tặng", "Việc nhà"],
+  "Tiết kiệm": ["Mẹ giữ", "Ngân hàng", "Tiền mặt", "Quỹ dự phòng", "Khác"],
   "Khác": ["Khác"]
 };
 const expenseCategories = Object.keys(expenseCategoryTree);
-type ExpenseDraft = { id: string; memberId: string; date: string; transactionTime: string; category: string; subcategory: string; vendor: string; grossAmount: string; discountAmount: string; note: string; paymentMethod: import("../types").PaymentMethod; paymentAccountId: string; };
+type ExpenseDraft = { id: string; memberId: string; date: string; transactionTime: string; category: string; subcategory: string; vendor: string; grossAmount: string; discountAmount: string; note: string; paymentMethod: import("../types").PaymentMethod; paymentAccountId: string; simId: string; topupSimBalance: boolean; };
 
 const currentTimeValue = () => new Date().toTimeString().slice(0, 5);
 const normalizeTimeValue = (value: unknown) => String(value || "").slice(0, 5);
@@ -2777,6 +2839,8 @@ const formatExpenseDateTime = (record: Transaction) => {
   const time = normalizeTimeValue(record.transactionTime || record.transaction_time) || timeFromTimestamp(record.createdAt || record.created_at);
   return `${formatDateVN(record.date || record.createdAt || record.created_at || "")}${time ? ` · ${time}` : ""}`;
 };
+
+const getExpenseDate = (record: any) => parseDate(record.date || record.expense_date || record.created_at || record.createdAt || "");
 
 function ExpenseSheetManagement({ data, update, user }: { data: AppData; update: (data: AppData) => void; user: AuthUser }) {
   const ui = useUI();
@@ -2823,9 +2887,12 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
     return "Không rõ";
   }
 
-  const yearRecords = useMemo(() => data.transactions.filter(r => String(r.type).toLowerCase() === "expense" && String(new Date(r.date || r.createdAt || "").getFullYear()) === year), [data.transactions, year]);
+  const yearRecords = useMemo(() => data.transactions.filter(r => {
+    const parsed = getExpenseDate(r);
+    return String(r.type).toLowerCase() === "expense" && parsed?.getFullYear() === Number(year);
+  }), [data.transactions, year]);
   const visibleRecords = useMemo(() => yearRecords.filter(r => {
-    const parsed = parseDate(r.date || r.createdAt || "");
+    const parsed = getExpenseDate(r);
     const m = parsed ? String(parsed.getMonth() + 1) : "";
     if (month !== "all" && m !== month) return false;
     if (categoryFilter !== "all" && r.category !== categoryFilter) return false;
@@ -2839,25 +2906,26 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
 
   const selectedMonth = month === "all" ? String(new Date().getMonth() + 1) : month;
   const monthRecords = visibleRecords.filter(record => {
-    const parsed = parseDate(record.date || record.createdAt || "");
+    const parsed = getExpenseDate(record);
     return parsed ? String(parsed.getMonth() + 1) === selectedMonth : false;
   });
+  const filteredExpensesForStats = visibleRecords;
   
   const totalMonth = monthRecords.reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
   const totalDiscountMonth = monthRecords.reduce((sum, record) => sum + (Number(record.discountAmount) || 0), 0);
   const totalYear = yearRecords.reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
   const totalDiscountYear = yearRecords.reduce((sum, record) => sum + (Number(record.discountAmount) || 0), 0);
   
-  const byCategory = expenseCategories.map(category => ({ label: category, total: visibleRecords.filter(record => record.category === category).reduce((sum, record) => sum + (Number(record.amount) || 0), 0) })).filter(item => item.total > 0).sort((a, b) => b.total - a.total);
+  const byCategory = expenseCategories.map(category => ({ label: category, total: filteredExpensesForStats.filter(record => record.category === category).reduce((sum, record) => sum + (Number(record.amount) || 0), 0) })).filter(item => item.total > 0).sort((a, b) => b.total - a.total);
   const largestCategory = byCategory[0];
-  const allSubcategories = Array.from(new Set(visibleRecords.map(r => r.subcategory || "Khác")));
-  const bySubcategory = allSubcategories.map(sub => ({ label: sub, total: visibleRecords.filter(record => (record.subcategory || "Khác") === sub).reduce((sum, record) => sum + (Number(record.amount) || 0), 0) })).filter(item => item.total > 0).sort((a, b) => b.total - a.total);
+  const allSubcategories = Array.from(new Set(filteredExpensesForStats.map(r => r.subcategory || "Khác")));
+  const bySubcategory = allSubcategories.map(sub => ({ label: sub, total: filteredExpensesForStats.filter(record => (record.subcategory || "Khác") === sub).reduce((sum, record) => sum + (Number(record.amount) || 0), 0) })).filter(item => item.total > 0).sort((a, b) => b.total - a.total);
   const largestSubcategory = bySubcategory[0];
   
   const monthSummaryRows = Array.from({ length: 12 }, (_, index) => {
     const itemMonth = index + 1;
     const monthItems = visibleRecords.filter(record => {
-      const parsed = parseDate(record.date || record.createdAt || "");
+      const parsed = getExpenseDate(record);
       return parsed ? parsed.getMonth() + 1 === itemMonth : false;
     });
     return { month: itemMonth, items: monthItems, total: monthItems.reduce((sum, record) => sum + (Number(record.amount) || 0), 0), count: monthItems.length };
@@ -2979,8 +3047,9 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
     const discount = String(record?.discountAmount || "0");
     const paymentMethod = record?.paymentMethod || record?.payment_method || "cash";
     const paymentAccountId = record?.paymentAccountId || record?.payment_account_id || record?.bankAccountId || record?.bank_account_id || "";
+    const simId = record?.simId || record?.sim_id || "";
     const transactionTime = normalizeTimeValue(record?.transactionTime || record?.transaction_time) || timeFromTimestamp(record?.createdAt || record?.created_at) || currentTimeValue();
-    return { id: record?.id || crypto.randomUUID(), memberId: record?.memberId || user.memberId || user.member?.id || members[0]?.id || "", date: record?.date || today, transactionTime, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod, paymentAccountId };
+    return { id: record?.id || crypto.randomUUID(), memberId: record?.memberId || user.memberId || user.member?.id || members[0]?.id || "", date: record?.date || today, transactionTime, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod, paymentAccountId, simId, topupSimBalance: Boolean((record as any)?.simTopupApplied || (record as any)?.sim_topup_applied) };
   });
   const grossValue = Number(String(draft.grossAmount).replace(/\D/g, "") || 0);
   const discountValue = Number(String(draft.discountAmount).replace(/\D/g, "") || 0);
@@ -2989,6 +3058,8 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
   const bankAccountsState = useState<any[]>([]);
   const bankAccounts = bankAccountsState[0];
   const setBankAccounts = bankAccountsState[1];
+  const [memberSims, setMemberSims] = useState<MemberSim[]>([]);
+  const isSimDataExpense = draft.category === "Sinh hoạt" && draft.subcategory === "Sim / Data";
 
   useEffect(() => {
     if (!record) return;
@@ -3078,6 +3149,19 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
     });
   }, [user.memberId, user.member?.id, draft.memberId]);
 
+  useEffect(() => {
+    const currentMemberId = draft.memberId || user.memberId || user.member?.id || "";
+    if (!currentMemberId) {
+      setMemberSims([]);
+      return;
+    }
+    fetch(`/api/member-sims?memberId=${encodeURIComponent(currentMemberId)}`, { cache: "no-store" }).then(async response => {
+      const json = await response.json().catch(() => null);
+      const rows = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : Array.isArray(json?.rows) ? json.rows : [];
+      setMemberSims(rows);
+    }).catch(() => setMemberSims([]));
+  }, [user.memberId, user.member?.id, draft.memberId]);
+
   function patch(value: Partial<ExpenseDraft>) { setDraft(current => ({ ...current, ...value })); }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -3087,7 +3171,9 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
     }
     const existingPaymentAccountId = record?.paymentAccountId || record?.payment_account_id || record?.bankAccountId || record?.bank_account_id || "";
     const finalPaymentAccountId = ["cash", "other"].includes(draft.paymentMethod) ? "" : (draft.paymentAccountId || existingPaymentAccountId || "");
-    const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, transactionTime: draft.transactionTime, transaction_time: draft.transactionTime, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: grossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, payment_method: draft.paymentMethod, paymentAccountId: finalPaymentAccountId || undefined, payment_account_id: finalPaymentAccountId || undefined, bankAccountId: finalPaymentAccountId || undefined, bank_account_id: finalPaymentAccountId || undefined };
+    const finalSimId = isSimDataExpense ? draft.simId : "";
+    const shouldTopupSim = Boolean(finalSimId && draft.topupSimBalance && ["transfer", "bank_account", "bank_card", "card", "credit_card", "momo", "apple_pay"].includes(draft.paymentMethod));
+    const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, transactionTime: draft.transactionTime, transaction_time: draft.transactionTime, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: grossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, payment_method: draft.paymentMethod, paymentAccountId: finalPaymentAccountId || undefined, payment_account_id: finalPaymentAccountId || undefined, bankAccountId: finalPaymentAccountId || undefined, bank_account_id: finalPaymentAccountId || undefined, simId: finalSimId || undefined, sim_id: finalSimId || undefined, simTopupApplied: shouldTopupSim, sim_topup_applied: shouldTopupSim } as Transaction & { simTopupApplied: boolean; sim_topup_applied: boolean };
     const response = await fetch("/api/transactions", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
     if (!response.ok) {
       const result = await readJsonSafe<{ error?: string }>(response);
@@ -3117,8 +3203,10 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
       <Card><div className="grid gap-3 md:grid-cols-2">
         <Field label="Ngày chi"><DateVNInput required value={draft.date} onChange={value => patch({ date: value })} /></Field>
         <Field label="Giờ chi"><input required type="time" className={inputClass} value={draft.transactionTime} onChange={event => patch({ transactionTime: event.target.value })} /></Field>
-        <Field label="Khoản chi"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value, subcategory: expenseCategoryTree[event.target.value]?.[0] || "Khác" })}>{expenseCategories.map(category => <option key={category}>{category}</option>)}</select></Field>
-        <Field label="Loại chi tiết"><select className={inputClass} value={draft.subcategory} onChange={event => patch({ subcategory: event.target.value })}>{(expenseCategoryTree[draft.category] || ["Khác"]).map(sub => <option key={sub}>{sub}</option>)}</select></Field>
+        <Field label="Khoản chi"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value, subcategory: expenseCategoryTree[event.target.value]?.[0] || "Khác", simId: "", topupSimBalance: false })}>{expenseCategories.map(category => <option key={category}>{category}</option>)}</select></Field>
+        <Field label="Loại chi tiết"><select className={inputClass} value={draft.subcategory} onChange={event => patch({ subcategory: event.target.value, simId: event.target.value === "Sim / Data" ? draft.simId : "", topupSimBalance: event.target.value === "Sim / Data" ? draft.topupSimBalance : false })}>{(expenseCategoryTree[draft.category] || ["Khác"]).map(sub => <option key={sub}>{sub}</option>)}</select></Field>
+        {isSimDataExpense && <Field label="SIM liên kết"><select className={inputClass} value={draft.simId} onChange={event => patch({ simId: event.target.value, topupSimBalance: event.target.value ? draft.topupSimBalance : false })}><option value="">Không liên kết</option>{memberSims.map(sim => <option key={sim.id} value={sim.id}>{[sim.planName || sim.phoneNumber || "SIM/Data", sim.carrier].filter(Boolean).join(" / ")}</option>)}</select></Field>}
+        {isSimDataExpense && draft.simId && ["transfer", "bank_account", "bank_card", "card", "credit_card", "momo", "apple_pay"].includes(draft.paymentMethod) && <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300"><input type="checkbox" checked={draft.topupSimBalance} onChange={event => patch({ topupSimBalance: event.target.checked })} /> Cộng vào số dư SIM</label>}
         <Field label="Nội dung chi"><input required className={inputClass} value={draft.vendor} onChange={event => patch({ vendor: event.target.value })} placeholder="Ví dụ: Đi chợ, Thanh toán tiền điện..." /></Field>
         <Field label="Giá gốc"><input required className={inputClass} value={draft.grossAmount} onChange={event => patch({ grossAmount: event.target.value.replace(/\D/g, "") })} /></Field>
         <Field label="Giảm giá"><input className={inputClass} value={draft.discountAmount} onChange={event => patch({ discountAmount: event.target.value.replace(/\D/g, "") })} placeholder="0" /></Field>
@@ -3169,6 +3257,8 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
 function ExpenseDetail({ record, close, edit, remove }: { record: Transaction; close: () => void; edit: () => void; remove: () => void }) {
   const [showId, setShowId] = useState(false);
   const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
+  const [linkedSim, setLinkedSim] = useState<MemberSim | null>(null);
+  const simId = record.simId || record.sim_id || "";
   const paymentAccountId = record.paymentAccountId || record.payment_account_id || record.bankAccountId || record.bank_account_id || "";
   
   useEffect(() => {
@@ -3181,9 +3271,18 @@ function ExpenseDetail({ record, close, edit, remove }: { record: Transaction; c
     }
   }, [paymentAccountId, record.memberId]);
 
+  useEffect(() => {
+    if (!simId) { setLinkedSim(null); return; }
+    fetch(`/api/member-sims?memberId=${record.memberId}`).then(r => r.json()).then(data => {
+      const rows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.rows) ? data.rows : [];
+      const found = rows.find((sim: MemberSim) => String(sim.id) === String(simId));
+      setLinkedSim(found || null);
+    }).catch(() => setLinkedSim(null));
+  }, [simId, record.memberId]);
+
   const paymentMethodLabels: Record<string, string> = { cash: "Tiền mặt", transfer: "Chuyển khoản", bank_account: "Tài khoản", card: "Thẻ", bank_card: "Thẻ", credit_card: "Thẻ tín dụng", apple_pay: "Apple Pay", momo: "MoMo", other: "Khác" };
 
-  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45 p-0 md:p-4" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="flex h-full w-full max-w-lg flex-col overflow-hidden bg-[var(--app-card)] shadow-2xl md:rounded-2xl"><div className="flex shrink-0 items-center justify-between p-5 pb-4"><h3 className="text-lg font-bold">Chi tiết phiếu chi</h3><button onClick={close} className="grid size-9 place-items-center rounded-full border border-[var(--app-border)]">×</button></div><div className="flex-1 overflow-y-auto p-5 pt-0"><div className="grid gap-3 text-sm"><AccountDetail label="Ngày chi" value={formatDateVN(record.date)} /><AccountDetail label="Khoản chi" value={record.category} /><AccountDetail label="Loại chi tiết" value={record.subcategory || "Khác"} /><AccountDetail label="Nội dung chi" value={record.title || "Khác"} /><AccountDetail label="Phương thức" value={paymentMethodLabels[record.paymentMethod || record.payment_method || "cash"] || "Tiền mặt"} />{bankAccount && <AccountDetail label="Tài khoản / Thẻ" value={`${bankAccount.bankName} - ${bankAccount.accountHolder || bankAccount.productName}`} />}<AccountDetail label="Giá gốc" value={money(record.grossAmount || record.amount)} />{Number(record.discountAmount) > 0 && <AccountDetail label="Giảm giá" value={money(record.discountAmount || 0)} />}<AccountDetail label="Thực trả" value={money(record.amount)} /><div className="rounded-xl border border-[var(--app-border)] p-4"><p className="text-xs font-bold uppercase text-slate-400">Ghi chú</p><p className="mt-1 font-semibold whitespace-pre-wrap">{record.note || "Không có"}</p></div><button onClick={() => setShowId(!showId)} className="mt-2 text-left text-xs font-semibold text-slate-400">ID giao dịch (Nhấn để {showId ? "ẩn" : "hiện"})</button>{showId && <div className="rounded-xl bg-slate-50 p-4 dark:bg-white/5"><code className="break-all text-xs text-slate-500">{record.id}</code></div>}</div></div><div className="flex shrink-0 gap-3 border-t border-[var(--app-border)] p-5"><button onClick={remove} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button><div className="flex-1"></div><button onClick={close} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5">Đóng</button><button onClick={edit} className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-700">Sửa</button></div></div></div>;
+  return <div className="fixed inset-0 z-50 flex justify-end bg-black/45 p-0 md:p-4" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="flex h-full w-full max-w-lg flex-col overflow-hidden bg-[var(--app-card)] shadow-2xl md:rounded-2xl"><div className="flex shrink-0 items-center justify-between p-5 pb-4"><h3 className="text-lg font-bold">Chi tiết phiếu chi</h3><button onClick={close} className="grid size-9 place-items-center rounded-full border border-[var(--app-border)]">×</button></div><div className="flex-1 overflow-y-auto p-5 pt-0"><div className="grid gap-3 text-sm"><AccountDetail label="Ngày chi" value={formatDateVN(record.date)} /><AccountDetail label="Khoản chi" value={record.category} /><AccountDetail label="Loại chi tiết" value={record.subcategory || "Khác"} /><AccountDetail label="Nội dung chi" value={record.title || "Khác"} /><AccountDetail label="Phương thức" value={paymentMethodLabels[record.paymentMethod || record.payment_method || "cash"] || "Tiền mặt"} />{bankAccount && <AccountDetail label="Tài khoản / Thẻ" value={`${bankAccount.bankName} - ${bankAccount.accountHolder || bankAccount.productName}`} />}{linkedSim && <AccountDetail label="SIM/Data" value={[linkedSim.planName || linkedSim.phoneNumber || "SIM/Data", linkedSim.carrier].filter(Boolean).join(" / ")} />}<AccountDetail label="Giá gốc" value={money(record.grossAmount || record.amount)} />{Number(record.discountAmount) > 0 && <AccountDetail label="Giảm giá" value={money(record.discountAmount || 0)} />}<AccountDetail label="Thực trả" value={money(record.amount)} /><div className="rounded-xl border border-[var(--app-border)] p-4"><p className="text-xs font-bold uppercase text-slate-400">Ghi chú</p><p className="mt-1 font-semibold whitespace-pre-wrap">{record.note || "Không có"}</p></div><button onClick={() => setShowId(!showId)} className="mt-2 text-left text-xs font-semibold text-slate-400">ID giao dịch (Nhấn để {showId ? "ẩn" : "hiện"})</button>{showId && <div className="rounded-xl bg-slate-50 p-4 dark:bg-white/5"><code className="break-all text-xs text-slate-500">{record.id}</code></div>}</div></div><div className="flex shrink-0 gap-3 border-t border-[var(--app-border)] p-5"><button onClick={remove} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button><div className="flex-1"></div><button onClick={close} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5">Đóng</button><button onClick={edit} className="rounded-xl bg-indigo-600 px-6 py-3 text-sm font-bold text-white hover:bg-indigo-700">Sửa</button></div></div></div>;
 }
 
 function ExpenseDeleteDialog({ record, close, confirm }: { record: Transaction; close: () => void; confirm: () => void }) {

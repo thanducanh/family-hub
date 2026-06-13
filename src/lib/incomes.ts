@@ -12,7 +12,7 @@ export type IncomeRecordRow = {
   note: string; createdAt: string; updatedAt: string;
 };
 
-const categories: IncomeCategory[] = ["Lương", "Thưởng", "Tiền lễ", "Khác"];
+const categories: IncomeCategory[] = ["Lương", "Thưởng", "Tiền lễ", "Đầu tư", "Cổ tức", "Bán chứng khoán/rút tiền về", "Khác"];
 const statuses: IncomeStatus[] = ["Đã nhận", "Chưa nhận"];
 const validTypes = new Set(["fixed", "variable"]);
 const validFrequencies = new Set(["monthly", "weekly", "yearly", "one_time", "custom"]);

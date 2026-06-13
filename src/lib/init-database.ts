@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { pool } from "@/lib/db";
+import { ensureMemberSimsTable } from "@/lib/member-sims";
 
 const globalForInit = globalThis as unknown as { familyDbInitPromise?: Promise<void> };
 
@@ -29,6 +30,7 @@ async function doInitDatabase() {
   }
 
   // Seed default admin if users table is empty
+  await ensureMemberSimsTable();
   await seedAdminUser();
 }
 
