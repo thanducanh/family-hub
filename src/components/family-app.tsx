@@ -28,6 +28,8 @@ const icons: Record<Screen | "plus" | "check", React.ReactNode> = { dashboard: <
 const vnDateFormatter = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 const vnMoneyFormatter = new Intl.NumberFormat("vi-VN");
 const money = (value: number) => `${vnMoneyFormatter.format(Number.isFinite(value) ? value : 0)} đ`;
+const formatVndInput = (value: number | string) => `${vnMoneyFormatter.format(Number(String(value).replace(/\D/g, "")) || 0)} đ`;
+const parseVndInput = (value: string) => Number(String(value).replace(/\D/g, "")) || 0;
 const titleKey: Record<Screen, Parameters<ReturnType<typeof translator>>[0]> = { dashboard: "dashboard", members: "members", tasks: "tasks", finance: "finance", chat: "chat", calendar: "calendar", notes: "notes", settings: "settings", notifications: "notifications" };
 const accessLabel = (role: UserRole) => role === "full_access" ? "Toàn quyền" : "Chỉ xem chính mình";
 const bankCardsByMemberCache = new Map<string, BankAccount[]>();
@@ -99,8 +101,8 @@ function BirthdaySelect({ value, onChange, disabled = false }: { value: string; 
   return <Field label="Ngày sinh"><div className="grid grid-cols-3 gap-2"><select disabled={disabled} className={selectClass} value={day && Number(day) <= maxDay ? String(Number(day)) : ""} onChange={event => select(event.target.value, month, year)}><option value="">Ngày</option>{Array.from({ length: maxDay }, (_, index) => String(index + 1)).map(value => <option key={value}>{value}</option>)}</select><select disabled={disabled} className={selectClass} value={month ? String(Number(month)) : ""} onChange={event => select(day, event.target.value, year)}><option value="">Tháng</option>{Array.from({ length: 12 }, (_, index) => String(index + 1)).map(value => <option key={value}>{value}</option>)}</select><select disabled={disabled} className={selectClass} value={year} onChange={event => select(day, month, event.target.value)}><option value="">Năm</option>{Array.from({ length: new Date().getFullYear() - 1899 }, (_, index) => String(new Date().getFullYear() - index)).map(value => <option key={value}>{value}</option>)}</select></div></Field>;
 }
 
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 shadow-sm ${className}`}>{children}</div>;
+function Card({ children, className = "", ...props }: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode; className?: string }) {
+  return <div {...props} className={`rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 shadow-sm ${className}`}>{children}</div>;
 }
 function Circle({ children, color = "#fb7185" }: { children: React.ReactNode; color?: string }) {
   return <span className="grid size-10 shrink-0 place-items-center rounded-full text-sm font-bold text-white" style={{ background: color }}>{children}</span>;
@@ -1615,8 +1617,15 @@ function FinanceOverview() {
   const [error, setError] = useState<string | null>(null);
   const [yearStr, setYearStr] = useState(String(new Date().getFullYear()));
   const [chartMode, setChartMode] = useState<"income" | "expense" | "compare" | "savings">("compare");
-  const [settingsForm, setSettingsForm] = useState({ trackingStartMonth: "1", trackingStartYear: String(new Date().getFullYear()), openingCashBalance: "0" });
+  const [settingsForm, setSettingsForm] = useState({
+    trackingStartMonth: "1",
+    trackingStartYear: String(new Date().getFullYear()),
+    openingCashBalance: "0",
+    openingSavingsBalance: "0",
+    openingInvestmentBalance: "0",
+  });
   const [savingSettings, setSavingSettings] = useState(false);
+  const [overviewTooltip, setOverviewTooltip] = useState<{ x: number; y: number; title: string; lines: string[] } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1663,8 +1672,10 @@ function FinanceOverview() {
       trackingStartMonth: String(settings?.trackingStartMonth || overviewPayload.trackingStartMonth || 1),
       trackingStartYear: String(settings?.trackingStartYear || overviewPayload.trackingStartYear || new Date().getFullYear()),
       openingCashBalance: String(settings?.openingCashBalance ?? overviewPayload.openingCashBalance ?? 0),
+      openingSavingsBalance: String(settings?.openingSavingsBalance ?? overviewPayload.openingSavingsBalance ?? 0),
+      openingInvestmentBalance: String(settings?.openingInvestmentBalance ?? overviewPayload.openingInvestmentBalance ?? 0),
     });
-  }, [settings, overviewPayload.trackingStartMonth, overviewPayload.trackingStartYear, overviewPayload.openingCashBalance]);
+  }, [settings, overviewPayload.trackingStartMonth, overviewPayload.trackingStartYear, overviewPayload.openingCashBalance, overviewPayload.openingSavingsBalance, overviewPayload.openingInvestmentBalance]);
 
   async function saveFinanceSettings() {
     setSavingSettings(true);
@@ -1675,7 +1686,9 @@ function FinanceOverview() {
         body: JSON.stringify({
           trackingStartMonth: Number(settingsForm.trackingStartMonth) || 1,
           trackingStartYear: Number(settingsForm.trackingStartYear) || new Date().getFullYear(),
-          openingCashBalance: Number(String(settingsForm.openingCashBalance).replace(/\D/g, "")) || 0,
+          openingCashBalance: parseVndInput(settingsForm.openingCashBalance),
+          openingSavingsBalance: parseVndInput(settingsForm.openingSavingsBalance),
+          openingInvestmentBalance: parseVndInput(settingsForm.openingInvestmentBalance),
         }),
       });
       if (response.ok) await load();
@@ -1689,6 +1702,22 @@ function FinanceOverview() {
   const afterExpenseTotal = monthlyData.reduce((sum: number, d: any) => sum + (d.afterExpense ?? ((d.income || 0) - (d.expense || 0))), 0);
   const cashFlowTotal = monthlyData.reduce((sum: number, d: any) => sum + (d.monthlyCashFlow ?? 0), 0);
   const savingsRate = totalIncome > 0 ? ((afterExpenseTotal / totalIncome) * 100).toFixed(1) + "%" : "N/A";
+  const startDateText = formatDateVN(overviewPayload.trackingStartDate || settings?.trackingStartDate || "");
+  const cashBreakdown = overviewPayload.cashBreakdown || {};
+  const savingsBreakdown = overviewPayload.savingsBreakdown || {};
+  const investmentBreakdown = overviewPayload.investmentBreakdown || {};
+  const totalAssetBreakdown = overviewPayload.totalAssetBreakdown || {};
+  const showOverviewTooltip = (event: React.MouseEvent, title: string, lines: string[]) => setOverviewTooltip({ x: event.clientX, y: event.clientY, title, lines });
+  const overviewTooltipProps = (title: string, lines: string[]) => ({
+    onMouseMove: (event: React.MouseEvent) => showOverviewTooltip(event, title, lines),
+    onMouseLeave: () => setOverviewTooltip(null),
+  });
+  const overviewCard = (title: string, value: React.ReactNode, valueClass: string, lines: string[]) => (
+    <Card className="cursor-help" {...overviewTooltipProps(title, lines)}>
+      <p className="text-xs text-slate-400">{title}</p>
+      <b className={valueClass}>{value}</b>
+    </Card>
+  );
   
   const maxVal = Math.max(1, ...monthlyData.map((d: any) => {
     if (chartMode === "income") return d.income || 0;
@@ -1706,10 +1735,12 @@ function FinanceOverview() {
       </div>
 
       <Card>
-        <div className="grid gap-3 md:grid-cols-[160px_160px_minmax(220px,1fr)_auto] md:items-end">
+        <div className="grid gap-3 md:grid-cols-[140px_140px_repeat(3,minmax(180px,1fr))_auto] md:items-end">
           <Field label="Tháng bắt đầu"><select className={inputClass} value={settingsForm.trackingStartMonth} onChange={event => setSettingsForm(current => ({ ...current, trackingStartMonth: event.target.value }))}>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select></Field>
           <Field label="Năm bắt đầu"><input className={inputClass} value={settingsForm.trackingStartYear} onChange={event => setSettingsForm(current => ({ ...current, trackingStartYear: event.target.value.replace(/\D/g, "") }))} /></Field>
-          <Field label="Tiền hiện tại ban đầu"><input className={inputClass} value={settingsForm.openingCashBalance} onChange={event => setSettingsForm(current => ({ ...current, openingCashBalance: event.target.value.replace(/\D/g, "") }))} /></Field>
+          <Field label="Tiền hiện tại ban đầu"><input type="text" className={`${inputClass} text-right`} value={formatVndInput(settingsForm.openingCashBalance)} onChange={event => setSettingsForm(current => ({ ...current, openingCashBalance: String(parseVndInput(event.target.value)) }))} /></Field>
+          <Field label="Tiết kiệm ban đầu"><input type="text" className={`${inputClass} text-right`} value={formatVndInput(settingsForm.openingSavingsBalance)} onChange={event => setSettingsForm(current => ({ ...current, openingSavingsBalance: String(parseVndInput(event.target.value)) }))} /></Field>
+          <Field label="Đầu tư ban đầu"><input type="text" className={`${inputClass} text-right`} value={formatVndInput(settingsForm.openingInvestmentBalance)} onChange={event => setSettingsForm(current => ({ ...current, openingInvestmentBalance: String(parseVndInput(event.target.value)) }))} /></Field>
           <button type="button" onClick={() => void saveFinanceSettings()} disabled={savingSettings} className="h-11 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-60">{savingSettings ? "Đang lưu..." : "Lưu cài đặt"}</button>
         </div>
       </Card>
@@ -1721,20 +1752,75 @@ function FinanceOverview() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card><p className="text-xs text-slate-400">Tiền hiện tại ước tính</p><b className="text-indigo-500">{money(currentCash)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Tiết kiệm hiện có</p><b className="text-blue-500">{money(currentSavings)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Đầu tư hiện có</p><b className="text-purple-500">{money(currentInvestment)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Tổng tài sản ước tính</p><b className="text-emerald-500">{money(estimatedAssets)}</b></Card>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {overviewCard("Tiền hiện tại ước tính", money(currentCash), "text-indigo-500", [
+          `Từ ${startDateText}`,
+          `Ban đầu: ${money(cashBreakdown.openingCashBalance ?? overviewPayload.openingCashBalance ?? 0)}`,
+          `+ Thu: ${money(cashBreakdown.incomeSinceStart || 0)}`,
+          `- Chi thật: ${money(cashBreakdown.realExpenseSinceStart || 0)}`,
+          `- Tiết kiệm: ${money(cashBreakdown.savingTransferSinceStart || 0)}`,
+          `- Mua đầu tư: ${money(cashBreakdown.investmentBuySinceStart || 0)}`,
+          `+ Bán đầu tư: ${money(cashBreakdown.investmentSellSinceStart || 0)}`,
+          `= ${money(currentCash)}`,
+        ])}
+        {overviewCard("Tiết kiệm hiện có", money(currentSavings), "text-blue-500", [
+          `Từ ${startDateText}`,
+          `Ban đầu: ${money(savingsBreakdown.openingSavingsBalance ?? overviewPayload.openingSavingsBalance ?? 0)}`,
+          `+ Từ Chi tiêu → Tiết kiệm: ${money(savingsBreakdown.savingFromExpensesSinceStart || 0)}`,
+          `+ Nhập tay: ${money(savingsBreakdown.manualSavingsSinceStart || 0)}`,
+          `= ${money(currentSavings)}`,
+        ])}
+        {overviewCard("Đầu tư hiện có", money(currentInvestment), "text-purple-500", [
+          `Từ ${startDateText}`,
+          `Ban đầu: ${money(investmentBreakdown.openingInvestmentBalance ?? overviewPayload.openingInvestmentBalance ?? 0)}`,
+          `+ Mua đầu tư: ${money(investmentBreakdown.investmentBuySinceStart || 0)}`,
+          `- Bán/rút đầu tư: ${money(investmentBreakdown.investmentSellSinceStart || 0)}`,
+          `= ${money(currentInvestment)}`,
+        ])}
+        {overviewCard("Tổng tài sản ước tính", money(estimatedAssets), "text-emerald-500", [
+          `Tiền hiện tại: ${money(totalAssetBreakdown.currentCash ?? currentCash)}`,
+          `+ Tiết kiệm: ${money(totalAssetBreakdown.currentSavings ?? currentSavings)}`,
+          `+ Đầu tư: ${money(totalAssetBreakdown.currentInvestment ?? currentInvestment)}`,
+          `= ${money(estimatedAssets)}`,
+        ])}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Card><p className="text-xs text-slate-400">Tổng thu năm</p><b className="text-emerald-500">{money(totalIncome)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Tổng chi năm</p><b className="text-rose-500">{money(totalExpense)}</b></Card>
-        <Card><p className="text-xs text-slate-400">Dư sau chi</p><b className={afterExpenseTotal >= 0 ? "text-blue-500" : "text-rose-500"}>{money(afterExpenseTotal)}</b></Card>
+        {overviewCard("Tổng thu năm", money(totalIncome), "text-emerald-500", [
+          `Năm ${yearStr}`,
+          `Tổng tất cả khoản thu nhập: ${money(totalIncome)}`,
+        ])}
+        {overviewCard("Tổng chi năm", money(totalExpense), "text-rose-500", [
+          `Năm ${yearStr}`,
+          `Chỉ tính chi tiêu thật: ${money(totalExpense)}`,
+        ])}
+        {overviewCard("Dư sau chi", money(afterExpenseTotal), afterExpenseTotal >= 0 ? "text-blue-500" : "text-rose-500", [
+          `Thu nhập: ${money(totalIncome)}`,
+          `- Chi tiêu thật: ${money(totalExpense)}`,
+          `= ${money(afterExpenseTotal)}`,
+        ])}
         <Card><p className="text-xs text-slate-400">Tỷ lệ tiết kiệm</p><b className="text-indigo-500">{savingsRate}</b></Card>
-        <Card><p className="text-xs text-slate-400">Dòng tiền thực còn</p><b className={cashFlowTotal >= 0 ? "text-emerald-500" : "text-rose-500"}>{money(cashFlowTotal)}</b></Card>
+        {overviewCard("Dòng tiền thực còn", money(cashFlowTotal), cashFlowTotal >= 0 ? "text-emerald-500" : "text-rose-500", [
+          `Thu nhập: ${money(totalIncome)}`,
+          `- Chi tiêu thật: ${money(totalExpense)}`,
+          `- Tiết kiệm: ${money(monthlyData.reduce((sum: number, d: any) => sum + (d.savingsInExpense || 0), 0))}`,
+          `- Mua đầu tư: ${money(monthlyData.reduce((sum: number, d: any) => sum + (d.investmentBuy || 0), 0))}`,
+          `+ Bán đầu tư: ${money(monthlyData.reduce((sum: number, d: any) => sum + (d.investmentSell || 0), 0))}`,
+          `= ${money(cashFlowTotal)}`,
+        ])}
       </div>
+
+      {overviewTooltip && (
+        <div
+          className="pointer-events-none fixed z-[100] max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-xl"
+          style={{ left: overviewTooltip.x + 14, top: overviewTooltip.y + 14 }}
+        >
+          <p className="font-bold text-slate-900">{overviewTooltip.title}</p>
+          <div className="mt-1 space-y-0.5 whitespace-pre-line">
+            {overviewTooltip.lines.map((line, index) => <p key={index} className={line.startsWith("=") ? "font-bold text-slate-900" : ""}>{line}</p>)}
+          </div>
+        </div>
+      )}
 
       <Card>
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -2811,10 +2897,11 @@ const expenseCategoryTree: Record<string, string[]> = {
   "Giải trí": ["Phim", "Game", "Đi chơi", "Du lịch"],
   "Gia đình": ["Ba mẹ", "Quà tặng", "Việc nhà"],
   "Tiết kiệm": ["Mẹ giữ", "Ngân hàng", "Tiền mặt", "Quỹ dự phòng", "Khác"],
+  "Thanh toán hộ": ["Mẹ cần hoàn", "Ba cần hoàn", "Người thân cần hoàn", "Bạn bè cần hoàn", "Khác"],
   "Khác": ["Khác"]
 };
 const expenseCategories = Object.keys(expenseCategoryTree);
-type ExpenseDraft = { id: string; memberId: string; date: string; transactionTime: string; category: string; subcategory: string; vendor: string; grossAmount: string; discountAmount: string; note: string; paymentMethod: import("../types").PaymentMethod; paymentAccountId: string; simId: string; topupSimBalance: boolean; };
+type ExpenseDraft = { id: string; memberId: string; date: string; transactionTime: string; category: string; subcategory: string; vendor: string; grossAmount: string; discountAmount: string; note: string; paymentMethod: import("../types").PaymentMethod; paymentAccountId: string; simId: string; topupSimBalance: boolean; reimbursementPerson?: string; reimbursementStatus?: string; reimbursedAmount?: string; reimbursedAt?: string; };
 
 const currentTimeValue = () => new Date().toTimeString().slice(0, 5);
 const normalizeTimeValue = (value: unknown) => String(value || "").slice(0, 5);
@@ -2910,13 +2997,34 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
     return parsed ? String(parsed.getMonth() + 1) === selectedMonth : false;
   });
   const filteredExpensesForStats = visibleRecords;
+  const isReimbursableExpense = (record: Transaction) => Boolean((record as any).isReimbursable || (record as any).is_reimbursable || record.category === "Thanh toán hộ");
+  const getReimbursementStatus = (record: Transaction) => String((record as any).reimbursementStatus || (record as any).reimbursement_status || (isReimbursableExpense(record) ? "pending" : "none"));
+  const getReimbursementPerson = (record: Transaction) => String((record as any).reimbursementPerson || (record as any).reimbursement_person || "Người cần hoàn");
+  const getReimbursedAmount = (record: Transaction) => Number((record as any).reimbursedAmount ?? (record as any).reimbursed_amount ?? 0) || 0;
+  const countsAsPersonalExpense = (record: Transaction) => {
+    if ((record as any).countsForPersonalExpense === false || (record as any).counts_for_personal_expense === false) return false;
+    if (record.category === "Thanh toán hộ" || record.category === "Tiết kiệm") return false;
+    return true;
+  };
+  const pendingReimbursements = yearRecords
+    .filter(isReimbursableExpense)
+    .filter(record => getReimbursementStatus(record) !== "reimbursed")
+    .map(record => ({ record, pendingAmount: Math.max((Number(record.amount) || 0) - getReimbursedAmount(record), 0) }))
+    .filter(item => item.pendingAmount > 0);
+  const totalPendingReimbursement = pendingReimbursements.reduce((sum, item) => sum + item.pendingAmount, 0);
+  const pendingByPerson = Object.values(pendingReimbursements.reduce<Record<string, { person: string; total: number }>>((result, item) => {
+    const person = getReimbursementPerson(item.record);
+    result[person] = { person, total: (result[person]?.total || 0) + item.pendingAmount };
+    return result;
+  }, {})).sort((a, b) => b.total - a.total);
   
-  const totalMonth = monthRecords.reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
+  const totalMonth = monthRecords.filter(countsAsPersonalExpense).reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
   const totalDiscountMonth = monthRecords.reduce((sum, record) => sum + (Number(record.discountAmount) || 0), 0);
-  const totalYear = yearRecords.reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
+  const totalYear = yearRecords.filter(countsAsPersonalExpense).reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
   const totalDiscountYear = yearRecords.reduce((sum, record) => sum + (Number(record.discountAmount) || 0), 0);
   
-  const byCategory = expenseCategories.map(category => ({ label: category, total: filteredExpensesForStats.filter(record => record.category === category).reduce((sum, record) => sum + (Number(record.amount) || 0), 0) })).filter(item => item.total > 0).sort((a, b) => b.total - a.total);
+  const realExpensesForStats = filteredExpensesForStats.filter(countsAsPersonalExpense);
+  const byCategory = expenseCategories.map(category => ({ label: category, total: realExpensesForStats.filter(record => record.category === category).reduce((sum, record) => sum + (Number(record.amount) || 0), 0) })).filter(item => item.total > 0).sort((a, b) => b.total - a.total);
   const largestCategory = byCategory[0];
   const allSubcategories = Array.from(new Set(filteredExpensesForStats.map(r => r.subcategory || "Khác")));
   const bySubcategory = allSubcategories.map(sub => ({ label: sub, total: filteredExpensesForStats.filter(record => (record.subcategory || "Khác") === sub).reduce((sum, record) => sum + (Number(record.amount) || 0), 0) })).filter(item => item.total > 0).sort((a, b) => b.total - a.total);
@@ -2948,6 +3056,35 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
     }
     update({ ...data, transactions: data.transactions.filter(item => item.id !== record.id) });
     setDeleting(null);
+    ui.toast("Đã đánh dấu khoản chờ hoàn là đã hoàn");
+  }
+
+  async function markReimbursed(record: Transaction) {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const reimbursedAmount = Number(record.amount) || 0;
+    const updated: Transaction = {
+      ...record,
+      isReimbursable: true,
+      is_reimbursable: true,
+      reimbursementStatus: "reimbursed",
+      reimbursement_status: "reimbursed",
+      reimbursedAmount,
+      reimbursed_amount: reimbursedAmount,
+      reimbursedAt: todayIso,
+      reimbursed_at: todayIso,
+      countsForPersonalExpense: false,
+      counts_for_personal_expense: false,
+      countsForCardSpending: true,
+      counts_for_card_spending: true,
+    };
+    const response = await fetch("/api/transactions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) });
+    const result = await readJsonSafe<Transaction & { error?: string }>(response);
+    if (!response.ok || !result || (result as any).error) {
+      ui.toast((result as any)?.error || "Không thể đánh dấu đã hoàn.", "error");
+      return;
+    }
+    update({ ...data, transactions: [result, ...data.transactions.filter(item => item.id !== record.id)] });
+    setMenuId(null);
     ui.toast("Đã xóa khoản chi");
   }
 
@@ -2983,6 +3120,7 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
         <Card><p className="text-xs text-slate-400">{"Tổng chi tháng"} {selectedMonth}</p><b className="font-semibold text-slate-900 dark:text-slate-100">{money(totalMonth)}</b>{totalDiscountMonth > 0 && <p className="mt-0.5 text-[10px] font-semibold text-emerald-500">Tiết kiệm: {money(totalDiscountMonth)}</p>}</Card>
         <Card><p className="text-xs text-slate-400">Khoản chi lớn nhất</p><b className="font-semibold text-slate-900 dark:text-slate-100">{largestCategory ? `${largestCategory.label} (${money(largestCategory.total)})` : "Chưa có"}</b></Card>
         <Card><p className="text-xs text-slate-400">Loại chi tiết lớn nhất</p><b className="font-semibold text-rose-500">{largestSubcategory ? `${largestSubcategory.label} (${money(largestSubcategory.total)})` : "Chưa có"}</b></Card>
+        <Card><p className="text-xs text-slate-400">Đang chờ hoàn</p><b className="font-semibold text-orange-500">{money(totalPendingReimbursement)}</b>{pendingByPerson.length > 0 && <p className="mt-1 text-[10px] font-semibold text-slate-500">{pendingByPerson.map(item => `${item.person}: ${money(item.total)}`).join(" · ")}</p>}</Card>
       </div>
 
       <Card className="overflow-visible p-0">
@@ -3004,21 +3142,22 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
                   return <div key={record.id} className="group relative border-b border-[var(--app-border)] px-3 py-3 hover:bg-slate-50 dark:hover:bg-white/5 sm:grid sm:grid-cols-[120px_180px_1fr_160px_140px_40px] sm:items-center sm:gap-0 sm:border-b-0 sm:py-2">
                     <div className="flex items-start justify-between sm:contents">
                       <div className="min-w-0 flex-1 sm:hidden">
-                        <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100" title={record.title || "Khác"}>{record.title || "Khác"}</div>
+                        <div className="truncate text-sm font-bold flex items-center text-slate-900 dark:text-slate-100" title={record.title || "Khác"}>{record.title || "Khác"}{record.category === 'Thanh toán hộ' && <span className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>{(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'Đã hoàn' : `Chờ ${getReimbursementPerson(record)} hoàn`}</span>}</div>
                         <div className="mt-0.5 text-xs text-slate-500">{formatExpenseDateTime(record)} · {record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</div>
                       </div>
                       <div className="hidden min-w-0 truncate pr-3 text-xs font-medium text-slate-500 sm:block">{formatExpenseDateTime(record)}</div>
                       <div className="hidden min-w-0 truncate pr-3 text-xs font-semibold text-slate-600 dark:text-slate-400 sm:block" title={`${record.category}${record.subcategory ? ` / ${record.subcategory}` : ""}`}>{record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</div>
-                      <div className="hidden min-w-0 truncate pr-3 text-sm font-medium text-slate-900 dark:text-slate-100 sm:block" title={record.title || "Khác"}>{record.title || "Khác"}</div>
+                      <div className="hidden min-w-0 truncate pr-3 text-sm font-medium flex items-center text-slate-900 dark:text-slate-100 sm:flex" title={record.title || "Khác"}>{record.title || "Khác"}{record.category === 'Thanh toán hộ' && <span className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>{(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'Đã hoàn' : `Chờ ${getReimbursementPerson(record)} hoàn`}</span>}</div>
                       <div className="hidden min-w-0 truncate pr-3 text-left text-xs font-medium text-slate-500 sm:block" title={pm}>{pm}</div>
                       <div className="flex shrink-0 items-center gap-2 sm:contents">
                         <div className="text-sm font-bold text-rose-500 sm:text-right">{money(record.amount)}</div>
                         <div className="relative shrink-0 sm:grid sm:w-10 sm:place-items-center">
-                          <button type="button" onClick={() => setMenuId(menuOpen ? null : record.id)} className="grid size-8 place-items-center rounded-lg text-lg font-semibold text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">...</button>
-                          {menuOpen && <div className="absolute right-0 top-10 z-30 w-36 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-1.5 shadow-xl">
-                            <button className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setMenuId(null); setDetail(record); }}>Xem chi tiết</button>
-                            <button className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setMenuId(null); setEditing(record); }}>Sửa</button>
-                            <button className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5" onClick={() => { setMenuId(null); setDeleting(record); }}>Xóa</button>
+                          <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setMenuId(menuOpen ? null : record.id); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100/60 hover:text-slate-800">⋮</button>
+                          {menuOpen && <div className="pointer-events-auto absolute right-0 top-10 z-50 w-44 rounded-xl border border-slate-100 bg-white p-2 shadow-lg dark:border-white/10 dark:bg-slate-900">
+                            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setMenuId(null); setDetail(record); }}>Xem chi tiết</button>
+                            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium hover:bg-slate-50 dark:hover:bg-white/5" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setMenuId(null); setEditing(record); }}>Sửa</button>
+                            {isReimbursableExpense(record) && getReimbursementStatus(record) !== "reimbursed" && <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-white/5" onClick={(event) => { event.preventDefault(); event.stopPropagation(); void markReimbursed(record); }}>Đánh dấu đã hoàn</button>}
+                            <button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setMenuId(null); setDeleting(record); }}>Xóa</button>
                           </div>}
                         </div>
                       </div>
@@ -3049,7 +3188,7 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
     const paymentAccountId = record?.paymentAccountId || record?.payment_account_id || record?.bankAccountId || record?.bank_account_id || "";
     const simId = record?.simId || record?.sim_id || "";
     const transactionTime = normalizeTimeValue(record?.transactionTime || record?.transaction_time) || timeFromTimestamp(record?.createdAt || record?.created_at) || currentTimeValue();
-    return { id: record?.id || crypto.randomUUID(), memberId: record?.memberId || user.memberId || user.member?.id || members[0]?.id || "", date: record?.date || today, transactionTime, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod, paymentAccountId, simId, topupSimBalance: Boolean((record as any)?.simTopupApplied || (record as any)?.sim_topup_applied) };
+    return { id: record?.id || crypto.randomUUID(), memberId: record?.memberId || user.memberId || user.member?.id || members[0]?.id || "", date: record?.date || today, transactionTime, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod, paymentAccountId, simId, topupSimBalance: Boolean((record as any)?.simTopupApplied || (record as any)?.sim_topup_applied), reimbursementPerson: (record as any)?.reimbursementPerson || (record as any)?.reimbursement_person || "", reimbursementStatus: (record as any)?.reimbursementStatus || (record as any)?.reimbursement_status || (cat === "Thanh toán hộ" ? "pending" : "none"), reimbursedAmount: String((record as any)?.reimbursedAmount ?? (record as any)?.reimbursed_amount ?? ""), reimbursedAt: (record as any)?.reimbursedAt || (record as any)?.reimbursed_at || "" };
   });
   const grossValue = Number(String(draft.grossAmount).replace(/\D/g, "") || 0);
   const discountValue = Number(String(draft.discountAmount).replace(/\D/g, "") || 0);
@@ -3173,7 +3312,11 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
     const finalPaymentAccountId = ["cash", "other"].includes(draft.paymentMethod) ? "" : (draft.paymentAccountId || existingPaymentAccountId || "");
     const finalSimId = isSimDataExpense ? draft.simId : "";
     const shouldTopupSim = Boolean(finalSimId && draft.topupSimBalance && ["transfer", "bank_account", "bank_card", "card", "credit_card", "momo", "apple_pay"].includes(draft.paymentMethod));
-    const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, transactionTime: draft.transactionTime, transaction_time: draft.transactionTime, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: grossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, payment_method: draft.paymentMethod, paymentAccountId: finalPaymentAccountId || undefined, payment_account_id: finalPaymentAccountId || undefined, bankAccountId: finalPaymentAccountId || undefined, bank_account_id: finalPaymentAccountId || undefined, simId: finalSimId || undefined, sim_id: finalSimId || undefined, simTopupApplied: shouldTopupSim, sim_topup_applied: shouldTopupSim } as Transaction & { simTopupApplied: boolean; sim_topup_applied: boolean };
+    const isReimbursement = draft.category === "Thanh toán hộ";
+    const isSavingExpense = draft.category === "Tiết kiệm";
+    const reimbursementStatus = isReimbursement ? (draft.reimbursementStatus || "pending") : "none";
+    const reimbursementAmount = isReimbursement ? Number(draft.reimbursedAmount || 0) : 0;
+    const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, transactionTime: draft.transactionTime, transaction_time: draft.transactionTime, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: grossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, payment_method: draft.paymentMethod, paymentAccountId: finalPaymentAccountId || undefined, payment_account_id: finalPaymentAccountId || undefined, bankAccountId: finalPaymentAccountId || undefined, bank_account_id: finalPaymentAccountId || undefined, simId: finalSimId || undefined, sim_id: finalSimId || undefined, simTopupApplied: shouldTopupSim, sim_topup_applied: shouldTopupSim, isReimbursable: isReimbursement, is_reimbursable: isReimbursement, reimbursementPerson: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursement_person: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursementStatus, reimbursement_status: reimbursementStatus, reimbursedAmount: reimbursementAmount, reimbursed_amount: reimbursementAmount, reimbursedAt: isReimbursement ? draft.reimbursedAt || null : null, reimbursed_at: isReimbursement ? draft.reimbursedAt || null : null, countsForPersonalExpense: !isReimbursement && !isSavingExpense, counts_for_personal_expense: !isReimbursement && !isSavingExpense, countsForCardSpending: isReimbursement || !isSavingExpense, counts_for_card_spending: isReimbursement || !isSavingExpense } as Transaction & { simTopupApplied: boolean; sim_topup_applied: boolean; reimbursementPerson?: string | null; reimbursementStatus?: string; reimbursedAmount?: number };
     const response = await fetch("/api/transactions", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
     if (!response.ok) {
       const result = await readJsonSafe<{ error?: string }>(response);
@@ -3203,10 +3346,21 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
       <Card><div className="grid gap-3 md:grid-cols-2">
         <Field label="Ngày chi"><DateVNInput required value={draft.date} onChange={value => patch({ date: value })} /></Field>
         <Field label="Giờ chi"><input required type="time" className={inputClass} value={draft.transactionTime} onChange={event => patch({ transactionTime: event.target.value })} /></Field>
-        <Field label="Khoản chi"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value, subcategory: expenseCategoryTree[event.target.value]?.[0] || "Khác", simId: "", topupSimBalance: false })}>{expenseCategories.map(category => <option key={category}>{category}</option>)}</select></Field>
+        <Field label="Khoản chi"><select className={inputClass} value={draft.category} onChange={event => {
+          const category = event.target.value;
+          patch({ category, subcategory: expenseCategoryTree[category]?.[0] || "Khác", simId: "", topupSimBalance: false, reimbursementStatus: category === "Thanh toán hộ" ? "pending" : "none", reimbursedAmount: category === "Thanh toán hộ" ? "0" : "", reimbursedAt: "" });
+        }}>{expenseCategories.map(category => <option key={category}>{category}</option>)}</select></Field>
         <Field label="Loại chi tiết"><select className={inputClass} value={draft.subcategory} onChange={event => patch({ subcategory: event.target.value, simId: event.target.value === "Sim / Data" ? draft.simId : "", topupSimBalance: event.target.value === "Sim / Data" ? draft.topupSimBalance : false })}>{(expenseCategoryTree[draft.category] || ["Khác"]).map(sub => <option key={sub}>{sub}</option>)}</select></Field>
         {isSimDataExpense && <Field label="SIM liên kết"><select className={inputClass} value={draft.simId} onChange={event => patch({ simId: event.target.value, topupSimBalance: event.target.value ? draft.topupSimBalance : false })}><option value="">Không liên kết</option>{memberSims.map(sim => <option key={sim.id} value={sim.id}>{[sim.planName || sim.phoneNumber || "SIM/Data", sim.carrier].filter(Boolean).join(" / ")}</option>)}</select></Field>}
         {isSimDataExpense && draft.simId && ["transfer", "bank_account", "bank_card", "card", "credit_card", "momo", "apple_pay"].includes(draft.paymentMethod) && <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300"><input type="checkbox" checked={draft.topupSimBalance} onChange={event => patch({ topupSimBalance: event.target.checked })} /> Cộng vào số dư SIM</label>}
+        {draft.category === 'Thanh toán hộ' && (
+          <>
+            <Field label="Người cần hoàn lại"><input className={inputClass} value={draft.reimbursementPerson || ''} onChange={event => patch({ reimbursementPerson: event.target.value })} placeholder="Mẹ" /></Field>
+            <Field label="Trạng thái hoàn"><select className={inputClass} value={draft.reimbursementStatus || 'pending'} onChange={event => patch({ reimbursementStatus: event.target.value })}><option value="pending">Chưa hoàn</option><option value="partial">Đã hoàn một phần</option><option value="reimbursed">Đã hoàn đủ</option></select></Field>
+            {draft.reimbursementStatus !== 'pending' && <Field label="Số tiền đã hoàn"><input type="number" className={inputClass} value={draft.reimbursedAmount || ''} onChange={event => patch({ reimbursedAmount: event.target.value })} placeholder="0" /></Field>}
+            {draft.reimbursementStatus !== 'pending' && <Field label="Ngày hoàn nếu có"><DateVNInput value={draft.reimbursedAt || ''} onChange={value => patch({ reimbursedAt: value })} /></Field>}
+          </>
+        )}
         <Field label="Nội dung chi"><input required className={inputClass} value={draft.vendor} onChange={event => patch({ vendor: event.target.value })} placeholder="Ví dụ: Đi chợ, Thanh toán tiền điện..." /></Field>
         <Field label="Giá gốc"><input required className={inputClass} value={draft.grossAmount} onChange={event => patch({ grossAmount: event.target.value.replace(/\D/g, "") })} /></Field>
         <Field label="Giảm giá"><input className={inputClass} value={draft.discountAmount} onChange={event => patch({ discountAmount: event.target.value.replace(/\D/g, "") })} placeholder="0" /></Field>

@@ -130,6 +130,13 @@ export async function ensureBankAccountsTable() {
   await pool.query("UPDATE transactions SET payment_account_id = bank_account_id WHERE payment_account_id IS NULL AND bank_account_id IS NOT NULL");
   await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS estimated_cashback NUMERIC NOT NULL DEFAULT 0");
   await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS actual_cashback NUMERIC NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS counts_for_card_spending BOOLEAN NOT NULL DEFAULT TRUE");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS counts_for_personal_expense BOOLEAN NOT NULL DEFAULT TRUE");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_reimbursable BOOLEAN NOT NULL DEFAULT FALSE");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reimbursement_person TEXT");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reimbursement_status TEXT NOT NULL DEFAULT 'none'");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reimbursed_amount NUMERIC NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reimbursed_at DATE");
 }
 
 export async function bankAccountsFromRows(rows: Record<string, unknown>[]) {

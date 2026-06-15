@@ -8,7 +8,7 @@ export type Collection = "members" | "tasks" | "transactions" | "events" | "note
 const columns: Record<Collection, string[]> = {
   members: ["id", "name", "nickname", "birthday", "gender", "role", "phone", "avatar", "avatar_url", "notes", "color"],
   tasks: ["id", "title", "member_id", "assignee", "due", "due_date_ui", "priority", "status"],
-  transactions: ["id", "title", "member_id", "amount", "gross_amount", "discount_amount", "type", "category", "subcategory", "date", "transaction_time", "note", "bank_account_id", "payment_account_id", "sim_id", "sim_topup_applied", "savings_applied", "savings_holder", "linked_savings_id", "estimated_cashback", "actual_cashback", "payment_method"],
+  transactions: ["id", "title", "member_id", "amount", "gross_amount", "discount_amount", "type", "category", "subcategory", "date", "transaction_time", "note", "bank_account_id", "payment_account_id", "sim_id", "sim_topup_applied", "savings_applied", "savings_holder", "linked_savings_id", "estimated_cashback", "actual_cashback", "payment_method", "is_reimbursable", "reimbursement_person", "reimbursement_status", "reimbursed_amount", "reimbursed_at", "counts_for_personal_expense", "counts_for_card_spending"],
   events: ["id", "title", "member_id", "type", "date", "time", "color", "event_date"],
   notes: ["id", "title", "member_id", "kind", "important", "tag", "content", "updated_at"],
 };
@@ -38,6 +38,15 @@ async function ensureCollectionSchema(collection: Collection) {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`);
   await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transaction_time TIME");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_reimbursable BOOLEAN NOT NULL DEFAULT FALSE");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reimbursement_person TEXT");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reimbursement_status TEXT NOT NULL DEFAULT 'none'");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reimbursed_amount NUMERIC NOT NULL DEFAULT 0");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reimbursed_at DATE");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS counts_for_personal_expense BOOLEAN NOT NULL DEFAULT TRUE");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS counts_for_card_spending BOOLEAN NOT NULL DEFAULT TRUE");
+  await pool.query("UPDATE transactions SET is_reimbursable = TRUE, reimbursement_status = COALESCE(NULLIF(reimbursement_status, 'none'), 'pending'), reimbursed_amount = COALESCE(reimbursed_amount, 0), counts_for_personal_expense = FALSE, counts_for_card_spending = TRUE WHERE category = 'Thanh toán hộ'");
+  await pool.query("UPDATE transactions SET is_reimbursable = FALSE, counts_for_personal_expense = FALSE, counts_for_card_spending = FALSE WHERE category = 'Tiết kiệm'");
   await pool.query("UPDATE transactions SET payment_account_id = bank_account_id WHERE payment_account_id IS NULL AND bank_account_id IS NOT NULL");
 }
 
@@ -51,7 +60,47 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
   if (collection === "transactions") {
     const paymentAccountId = item.paymentAccountId || item.payment_account_id || item.bankAccountId || item.bank_account_id || null;
     const savingsApplied = String(item.category || "") === "Tiết kiệm" && String(item.type || "") === "expense";
-    return { ...item, member_id: item.memberId || null, gross_amount: item.grossAmount || item.amount, discount_amount: item.discountAmount || 0, date: toDatabaseDate(item.date), transaction_time: item.transactionTime || item.transaction_time || null, bank_account_id: paymentAccountId, payment_account_id: paymentAccountId, sim_id: item.simId || item.sim_id || null, sim_topup_applied: Boolean(item.simTopupApplied || item.sim_topup_applied), savings_applied: Boolean(item.savingsApplied || item.savings_applied || savingsApplied), savings_holder: item.savingsHolder || item.savings_holder || item.subcategory || null, linked_savings_id: item.linkedSavingsId || item.linked_savings_id || null, estimated_cashback: item.estimatedCashback || 0, actual_cashback: item.actualCashback || 0, payment_method: item.paymentMethod || item.payment_method || "cash" };
+    
+    let counts_for_personal_expense = item.countsForPersonalExpense ?? item.counts_for_personal_expense ?? true;
+    let counts_for_card_spending = item.countsForCardSpending ?? item.counts_for_card_spending ?? true;
+    let is_reimbursable = item.isReimbursable ?? item.is_reimbursable ?? false;
+    let reimbursement_status = item.reimbursementStatus ?? item.reimbursement_status ?? 'none';
+    
+    if (item.category === 'Thanh toán hộ') {
+      counts_for_personal_expense = false;
+      counts_for_card_spending = true;
+      is_reimbursable = true;
+      reimbursement_status = item.reimbursementStatus ?? item.reimbursement_status ?? 'pending';
+    } else if (item.category === 'Tiết kiệm') {
+      counts_for_personal_expense = false;
+      counts_for_card_spending = false;
+    }
+    
+    return { 
+      ...item, 
+      member_id: item.memberId || null, 
+      gross_amount: item.grossAmount || item.amount, 
+      discount_amount: item.discountAmount || 0, 
+      date: toDatabaseDate(item.date), 
+      transaction_time: item.transactionTime || item.transaction_time || null, 
+      bank_account_id: paymentAccountId, 
+      payment_account_id: paymentAccountId, 
+      sim_id: item.simId || item.sim_id || null, 
+      sim_topup_applied: Boolean(item.simTopupApplied || item.sim_topup_applied), 
+      savings_applied: Boolean(item.savingsApplied || item.savings_applied || savingsApplied), 
+      savings_holder: item.savingsHolder || item.savings_holder || item.subcategory || null, 
+      linked_savings_id: item.linkedSavingsId || item.linked_savings_id || null, 
+      estimated_cashback: item.estimatedCashback || 0, 
+      actual_cashback: item.actualCashback || 0, 
+      payment_method: item.paymentMethod || item.payment_method || "cash",
+      is_reimbursable,
+      reimbursement_person: item.reimbursementPerson || item.reimbursement_person || null,
+      reimbursement_status,
+      reimbursed_amount: item.reimbursedAmount || item.reimbursed_amount || 0,
+      reimbursed_at: toDatabaseDate(item.reimbursedAt || item.reimbursed_at),
+      counts_for_personal_expense,
+      counts_for_card_spending
+    };
   }
   if (collection === "events") {
     const date = toDatabaseDate(item.date);
@@ -69,10 +118,10 @@ function fromDb(collection: Collection, item: Record<string, unknown>) {
     return { ...rest, memberId: member_id || "", dueDate: due_date_ui || "" };
   }
   if (collection === "transactions") {
-    const { member_id, bank_account_id, payment_account_id, sim_id, sim_topup_applied, savings_applied, savings_holder, linked_savings_id, gross_amount, discount_amount, estimated_cashback, actual_cashback, created_at, payment_method, transaction_time, category, ...rest } = item as any;
+    const { member_id, bank_account_id, payment_account_id, sim_id, sim_topup_applied, savings_applied, savings_holder, linked_savings_id, gross_amount, discount_amount, estimated_cashback, actual_cashback, created_at, payment_method, transaction_time, category, is_reimbursable, reimbursement_person, reimbursement_status, reimbursed_amount, reimbursed_at, counts_for_personal_expense, counts_for_card_spending, ...rest } = item as any;
     const mappedCategory = category === "Nhà cửa & sinh hoạt" ? "Sinh hoạt" : category;
     const paymentAccountId = payment_account_id || bank_account_id || "";
-    return { ...rest, category: mappedCategory, memberId: member_id || "", grossAmount: Number(gross_amount || rest.amount || 0), discountAmount: Number(discount_amount || 0), bankAccountId: paymentAccountId, paymentAccountId, payment_account_id: paymentAccountId, bank_account_id: paymentAccountId, simId: sim_id || "", sim_id: sim_id || "", simTopupApplied: Boolean(sim_topup_applied), sim_topup_applied: Boolean(sim_topup_applied), savingsApplied: Boolean(savings_applied), savings_applied: Boolean(savings_applied), savingsHolder: savings_holder || "", savings_holder: savings_holder || "", linkedSavingsId: linked_savings_id || "", linked_savings_id: linked_savings_id || "", transactionTime: transaction_time || "", transaction_time: transaction_time || "", estimatedCashback: Number(estimated_cashback || 0), actualCashback: Number(actual_cashback || 0), createdAt: created_at, paymentMethod: payment_method || "cash", payment_method: payment_method || "cash" };
+    return { ...rest, category: mappedCategory, memberId: member_id || "", grossAmount: Number(gross_amount || rest.amount || 0), discountAmount: Number(discount_amount || 0), bankAccountId: paymentAccountId, paymentAccountId, payment_account_id: paymentAccountId, bank_account_id: paymentAccountId, simId: sim_id || "", sim_id: sim_id || "", simTopupApplied: Boolean(sim_topup_applied), sim_topup_applied: Boolean(sim_topup_applied), savingsApplied: Boolean(savings_applied), savings_applied: Boolean(savings_applied), savingsHolder: savings_holder || "", savings_holder: savings_holder || "", linkedSavingsId: linked_savings_id || "", linked_savings_id: linked_savings_id || "", transactionTime: transaction_time || "", transaction_time: transaction_time || "", estimatedCashback: Number(estimated_cashback || 0), actualCashback: Number(actual_cashback || 0), createdAt: created_at, paymentMethod: payment_method || "cash", payment_method: payment_method || "cash", isReimbursable: Boolean(is_reimbursable), reimbursementPerson: reimbursement_person || "", reimbursementStatus: reimbursement_status || "none", reimbursedAmount: Number(reimbursed_amount || 0), reimbursedAt: reimbursed_at || "", countsForPersonalExpense: counts_for_personal_expense !== false, countsForCardSpending: counts_for_card_spending !== false };
   }
   if (collection === "events") {
     const { event_date, member_id, ...rest } = item;

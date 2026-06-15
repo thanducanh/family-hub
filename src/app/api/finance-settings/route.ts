@@ -10,6 +10,8 @@ async function ensureFinanceSettingsTable() {
       tracking_start_month INTEGER DEFAULT 1,
       tracking_start_year INTEGER DEFAULT 2024,
       opening_cash_balance NUMERIC DEFAULT 0,
+      opening_savings_balance NUMERIC DEFAULT 0,
+      opening_investment_balance NUMERIC DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT now(),
       updated_at TIMESTAMPTZ DEFAULT now()
     )
@@ -18,6 +20,8 @@ async function ensureFinanceSettingsTable() {
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS tracking_start_month INTEGER DEFAULT 1");
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS tracking_start_year INTEGER DEFAULT 2024");
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_cash_balance NUMERIC DEFAULT 0");
+  await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_savings_balance NUMERIC DEFAULT 0");
+  await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_investment_balance NUMERIC DEFAULT 0");
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now()");
 }
 
@@ -46,12 +50,14 @@ export async function GET() {
              to_char(COALESCE(tracking_start_date, make_date(tracking_start_year, tracking_start_month, 1)), 'YYYY-MM-DD') as "trackingStartDate",
              COALESCE(tracking_start_month, EXTRACT(MONTH FROM tracking_start_date)::integer, 1) as "trackingStartMonth",
              COALESCE(tracking_start_year, EXTRACT(YEAR FROM tracking_start_date)::integer, 2024) as "trackingStartYear",
-             opening_cash_balance::float as "openingCashBalance"
+             opening_cash_balance::float as "openingCashBalance",
+             opening_savings_balance::float as "openingSavingsBalance",
+             opening_investment_balance::float as "openingInvestmentBalance"
       FROM finance_settings
       LIMIT 1
     `);
     if (result.rows.length === 0) {
-      return NextResponse.json({ ok: true, data: { trackingStartDate: "2024-01-01", trackingStartMonth: 1, trackingStartYear: 2024, openingCashBalance: 0 } });
+      return NextResponse.json({ ok: true, data: { trackingStartDate: "2024-01-01", trackingStartMonth: 1, trackingStartYear: 2024, openingCashBalance: 0, openingSavingsBalance: 0, openingInvestmentBalance: 0 } });
     }
     return NextResponse.json({ ok: true, data: result.rows[0] });
   } catch (error) {
@@ -68,6 +74,8 @@ export async function PUT(req: NextRequest) {
     const body = await req.json();
     const start = normalizeStart(body);
     const openingCashBalance = Number(body.openingCashBalance ?? body.opening_cash_balance ?? 0) || 0;
+    const openingSavingsBalance = Number(body.openingSavingsBalance ?? body.opening_savings_balance ?? 0) || 0;
+    const openingInvestmentBalance = Number(body.openingInvestmentBalance ?? body.opening_investment_balance ?? 0) || 0;
 
     const check = await pool.query("SELECT id FROM finance_settings LIMIT 1");
     if (check.rows.length > 0) {
@@ -77,18 +85,20 @@ export async function PUT(req: NextRequest) {
              tracking_start_month = $2,
              tracking_start_year = $3,
              opening_cash_balance = $4,
+             opening_savings_balance = $5,
+             opening_investment_balance = $6,
              updated_at = now()`,
-        [start.date, start.month, start.year, openingCashBalance]
+        [start.date, start.month, start.year, openingCashBalance, openingSavingsBalance, openingInvestmentBalance]
       );
     } else {
       await pool.query(
-        `INSERT INTO finance_settings (tracking_start_date, tracking_start_month, tracking_start_year, opening_cash_balance)
-         VALUES ($1, $2, $3, $4)`,
-        [start.date, start.month, start.year, openingCashBalance]
+        `INSERT INTO finance_settings (tracking_start_date, tracking_start_month, tracking_start_year, opening_cash_balance, opening_savings_balance, opening_investment_balance)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [start.date, start.month, start.year, openingCashBalance, openingSavingsBalance, openingInvestmentBalance]
       );
     }
 
-    return NextResponse.json({ ok: true, data: { trackingStartDate: start.date, trackingStartMonth: start.month, trackingStartYear: start.year, openingCashBalance } });
+    return NextResponse.json({ ok: true, data: { trackingStartDate: start.date, trackingStartMonth: start.month, trackingStartYear: start.year, openingCashBalance, openingSavingsBalance, openingInvestmentBalance } });
   } catch (error) {
     console.error("[PUT /api/finance-settings]", error);
     return NextResponse.json({ ok: false, error: "Lỗi server" }, { status: 500 });
