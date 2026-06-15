@@ -30,6 +30,9 @@ type CalendarEvent = {
   memberIds: string[];
   createdByUserId?: string;
   createdAt?: string;
+  visibility?: "all" | "private" | "custom";
+  allowedMemberIds?: string[];
+  relatedMemberIds?: string[];
 };
 type EventDraft = Omit<CalendarEvent, "id" | "color" | "createdAt"> & { id?: string };
 
@@ -171,7 +174,10 @@ function draftFor(date: string, calendarId: string, user?: Actor): EventDraft {
     status: "open",
     labelColor: "",
     memberIds: user?.memberId ? [user.memberId] : [],
-    createdByUserId: user?.id
+    createdByUserId: user?.id,
+    visibility: "all",
+    allowedMemberIds: [],
+    relatedMemberIds: []
   };
 }
 
@@ -204,6 +210,9 @@ function generateFixedEvents(year: number, members: Member[]): CalendarEvent[] {
       color: "#e11d48",
       labelColor: "#e11d48",
       memberIds: [],
+      visibility: "all",
+      allowedMemberIds: [],
+      relatedMemberIds: []
     });
   });
 
@@ -231,6 +240,9 @@ function generateFixedEvents(year: number, members: Member[]): CalendarEvent[] {
           color: "#d97706",
           labelColor: "#d97706",
           memberIds: [member.id],
+          visibility: "all",
+          allowedMemberIds: [],
+          relatedMemberIds: []
         });
       }
     }
@@ -696,7 +708,7 @@ function AgendaView({ events, members, open, edit, remove, openMenuId, setOpenMe
 
 function AgendaItem({ item, members, open, edit, remove, openMenuId, setOpenMenuId }: { item: CalendarEvent; members: Member[]; open: (event: CalendarEvent) => void; edit: (event: CalendarEvent) => void; remove: (event: CalendarEvent) => void; openMenuId: string | null; setOpenMenuId: (id: string | null) => void }) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const related = members.filter(member => item.memberIds.includes(member.id)).map(memberName).join(", ");
+  const related = members.filter(member => item.relatedMemberIds?.includes(member.id) || item.memberIds.includes(member.id)).map(memberName).join(", ");
   const meta = eventTypeMeta(item.type);
   useEffect(() => {
     if (openMenuId !== item.id) return;
@@ -712,7 +724,11 @@ function AgendaItem({ item, members, open, edit, remove, openMenuId, setOpenMenu
         <span className="w-14 shrink-0 text-sm font-bold text-slate-500">{eventTimeLabel(item)}</span>
         <i className="h-10 w-1.5 shrink-0 rounded-full" style={{ background: eventColor(item) }} />
         <span className="min-w-0 flex-1">
-          <b className={`block truncate text-sm ${item.status === "done" ? "text-slate-400 line-through" : ""}`}>{item.title}</b>
+          <b className={`block truncate text-sm ${item.status === "done" ? "text-slate-400 line-through" : ""}`}>
+            {item.visibility === "private" && <span className="mr-1 inline-flex items-center justify-center rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500">🔒 Riêng tư</span>}
+            {item.visibility === "custom" && <span className="mr-1 inline-flex items-center justify-center rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500">👁️ Tùy chọn</span>}
+            {item.title}
+          </b>
           <small className="mt-1 block truncate text-xs text-slate-400">{meta.label}{related ? ` · ${related}` : ""}{item.location ? ` · ${item.location}` : ""}</small>
         </span>
       </button>
@@ -791,19 +807,51 @@ function EventEditor({ draft, calendars, members, user, setDraft, save, remove }
           <Field label="Nhắc trước"><select className={input} value={draft.reminderMinutes} onChange={event => set("reminderMinutes", Number(event.target.value))}>{reminderOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
           <Field label="Lặp lại"><select className={input} value={draft.repeatRule} onChange={event => set("repeatRule", event.target.value)}>{repeatOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
           <Field label="Trạng thái"><select className={input} value={draft.status} onChange={event => set("status", event.target.value as EventStatus)}><option value="open">Đang mở</option><option value="done">Hoàn thành</option></select></Field>
+          <Field label="Thành viên được phép xem">
+            <select className={input} value={draft.visibility || "all"} onChange={event => set("visibility", event.target.value as "all" | "private" | "custom")}>
+              <option value="all">Tất cả thành viên</option>
+              <option value="private">Chỉ mình tôi</option>
+              <option value="custom">Chọn thành viên cụ thể</option>
+            </select>
+          </Field>
         </div>
 
-        <Field label="Người liên quan">
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {selectable.map(member => (
-              <label key={member.id} className="flex items-center gap-2 rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5">
-                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(member)[0]}</span>
-                <span className="min-w-0 flex-1 truncate">{memberName(member)}</span>
-                <input type="checkbox" checked={draft.memberIds.includes(member.id)} onChange={() => set("memberIds", draft.memberIds.includes(member.id) ? draft.memberIds.filter(id => id !== member.id) : [...draft.memberIds, member.id])} />
-              </label>
-            ))}
+        {draft.visibility === "custom" && (
+          <div className="mt-4">
+            <Field label="Chọn người được xem">
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {selectable.map(member => (
+                  <label key={member.id} className="flex items-center gap-2 rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(member)[0]}</span>
+                    <span className="min-w-0 flex-1 truncate">{memberName(member)}</span>
+                    <input type="checkbox" checked={draft.allowedMemberIds?.includes(member.id)} onChange={() => set("allowedMemberIds", draft.allowedMemberIds?.includes(member.id) ? draft.allowedMemberIds.filter(id => id !== member.id) : [...(draft.allowedMemberIds || []), member.id])} />
+                  </label>
+                ))}
+              </div>
+            </Field>
           </div>
-        </Field>
+        )}
+
+        <div className="mt-4">
+          <Field label="Thành viên liên quan">
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {selectable.map(member => {
+                const isChecked = (draft.relatedMemberIds || draft.memberIds || []).includes(member.id);
+                return (
+                  <label key={member.id} className="flex items-center gap-2 rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(member)[0]}</span>
+                    <span className="min-w-0 flex-1 truncate">{memberName(member)}</span>
+                    <input type="checkbox" checked={isChecked} onChange={() => {
+                      const current = draft.relatedMemberIds || draft.memberIds || [];
+                      const next = current.includes(member.id) ? current.filter(id => id !== member.id) : [...current, member.id];
+                      setDraft({ ...draft, relatedMemberIds: next, memberIds: next });
+                    }} />
+                  </label>
+                );
+              })}
+            </div>
+          </Field>
+        </div>
 
         <Field label="Ghi chú"><textarea rows={4} className={textarea} value={draft.note} onChange={event => set("note", event.target.value)} /></Field>
 
@@ -819,7 +867,7 @@ function EventEditor({ draft, calendars, members, user, setDraft, save, remove }
 
 function EventDetail({ item, calendars, members, close, edit, remove, markDone }: { item: CalendarEvent; calendars: Calendar[]; members: Member[]; close: () => void; edit: () => void; remove: () => void; markDone: () => void }) {
   const calendar = calendars.find(calendar => calendar.id === item.calendarId);
-  const related = members.filter(member => item.memberIds.includes(member.id)).map(memberName).join(", ");
+  const related = members.filter(member => item.relatedMemberIds?.includes(member.id) || item.memberIds.includes(member.id)).map(memberName).join(", ");
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/45 md:items-center md:justify-center md:p-6" onMouseDown={close}>
       <div onMouseDown={event => event.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-lg md:rounded-3xl">
@@ -834,7 +882,7 @@ function EventDetail({ item, calendars, members, close, edit, remove, markDone }
           <Info label="Thời gian" value={`${formatDateVN(item.startDate)} ${item.allDay ? "· Cả ngày" : `· ${item.startTime || "08:00"}${item.endTime ? ` - ${item.endTime}` : ""}`}`} />
           {item.endDate && item.endDate !== item.startDate && <Info label="Kết thúc" value={`${formatDateVN(item.endDate)} ${item.endTime || ""}`} />}
           <Info label="Lịch" value={calendar?.name || "Lịch"} />
-          {related && <Info label="Người liên quan" value={related} />}
+          {related && <Info label="Thành viên liên quan" value={related} />}
           {item.location && <Info label="Địa điểm" value={item.location} />}
           <Info label="Nhắc trước" value={reminderOptions.find(option => option.value === item.reminderMinutes)?.label || "Không"} />
           <Info label="Lặp lại" value={repeatOptions.find(option => option.value === item.repeatRule)?.label || "Không"} />

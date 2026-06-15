@@ -21,7 +21,10 @@ const fields = `
   e.created_at,
   COALESCE(e.label_color, c.color, e.color, '#6366f1') AS color,
   COALESCE(e.label_color, '') AS label_color,
-  ARRAY_REMOVE(ARRAY_AGG(DISTINCT em.member_id), NULL) AS member_ids
+  ARRAY_REMOVE(ARRAY_AGG(DISTINCT em.member_id), NULL) AS member_ids,
+  COALESCE(e.visibility, 'all') AS visibility,
+  COALESCE(e.allowed_member_ids, '[]') AS allowed_member_ids,
+  COALESCE(e.related_member_ids, '[]') AS related_member_ids
 `;
 
 function dateOnly(value: unknown) {
@@ -54,6 +57,9 @@ function view(row: Record<string, unknown>) {
     color: String(row.color ?? "#6366f1"),
     labelColor: String(row.label_color ?? ""),
     memberIds: Array.isArray(row.member_ids) ? row.member_ids.map(String) : [],
+    visibility: String(row.visibility || "all"),
+    allowedMemberIds: (() => { try { return JSON.parse(String(row.allowed_member_ids || "[]")); } catch { return []; } })(),
+    relatedMemberIds: (() => { try { return JSON.parse(String(row.related_member_ids || "[]")); } catch { return []; } })(),
     date: startDate,
     time: startTime,
     memberId: ""
@@ -93,6 +99,9 @@ async function ensureEventSchema() {
     )
   `);
   await pool.query(`INSERT INTO event_members (event_id, member_id) SELECT id, member_id FROM events WHERE member_id IS NOT NULL ON CONFLICT DO NOTHING`);
+  await pool.query("ALTER TABLE events ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'all'");
+  await pool.query("ALTER TABLE events ADD COLUMN IF NOT EXISTS allowed_member_ids TEXT");
+  await pool.query("ALTER TABLE events ADD COLUMN IF NOT EXISTS related_member_ids TEXT");
 }
 async function canUseCalendar(userId: string, role: string, calendarId: string, edit = false) {
   if (role === "full_access") return true;
@@ -119,6 +128,20 @@ export async function GET(request: NextRequest) {
     const month = Number(request.nextUrl.searchParams.get("month") || 0);
     const year = Number(request.nextUrl.searchParams.get("year") || 0);
     const accessWhere = actor.role === "full_access" ? "" : "AND (c.owner_user_id=$1 OR EXISTS (SELECT 1 FROM calendar_users cu WHERE cu.calendar_id=c.id AND cu.user_id=$1))";
+    
+    let visibilityWhere = "";
+    if (actor.role !== "full_access") {
+      const actorMemberId = actor.memberId || ""; // Using existing actor.memberId if available
+      visibilityWhere = `AND (
+        COALESCE(e.visibility, 'all') = 'all'
+        OR (e.visibility = 'private' AND e.created_by_user_id = $1)
+        OR (e.visibility = 'custom' AND (
+            e.created_by_user_id = $1 OR 
+            (COALESCE(e.allowed_member_ids, '[]')::jsonb ? '${actorMemberId}')
+        ))
+      )`;
+    }
+
     const params: Array<string | number> = actor.role === "full_access" ? [] : [actor.id];
     let dateWhere = "";
     if (month >= 1 && month <= 12 && year >= 1900) {
@@ -131,7 +154,7 @@ export async function GET(request: NextRequest) {
        FROM events e
        LEFT JOIN calendars c ON c.id=e.calendar_id
        LEFT JOIN event_members em ON em.event_id=e.id
-       WHERE TRUE ${accessWhere} ${dateWhere}
+       WHERE TRUE ${accessWhere} ${visibilityWhere} ${dateWhere}
        GROUP BY e.id,c.id
        ORDER BY COALESCE(e.start_date, e.date, e.event_date::date, e.created_at::date), COALESCE(e.all_day, e.is_all_day, FALSE) DESC, COALESCE(e.start_time, e.time, e.event_date::time), e.created_at`,
       params
@@ -166,6 +189,9 @@ async function save(request: NextRequest, update: boolean) {
       status?: string;
       labelColor?: string;
       memberIds?: string[];
+      visibility?: "all" | "private" | "custom";
+      allowedMemberIds?: string[];
+      relatedMemberIds?: string[];
     };
     if (!body.id || !body.calendarId || !body.title?.trim() || !isIsoDate(body.startDate)) {
       return NextResponse.json({ ok: false, error: "Tiêu đề, lịch và ngày bắt đầu là bắt buộc." }, { status: 400 });
@@ -184,20 +210,23 @@ async function save(request: NextRequest, update: boolean) {
     const eventDate = `${body.startDate} ${startTime || "00:00"}:00`;
     const type = body.type || "family";
     const status = body.status === "done" ? "done" : "open";
+    const visibility = body.visibility || "all";
+    const allowedMemberIds = JSON.stringify(body.allowedMemberIds || []);
+    const relatedMemberIds = JSON.stringify(body.relatedMemberIds || []);
 
     const result = update
       ? await pool.query(
         `UPDATE events
-         SET calendar_id=$2,title=$3,start_date=$4,start_time=$5,end_date=$6,end_time=$7,all_day=$8,is_all_day=$8,note=$9,description=$9,date=$4,time=$5,event_date=$10,label_color=$11,type=$12,location=$13,reminder_minutes=$14,repeat_rule=$15,status=$16
+         SET calendar_id=$2,title=$3,start_date=$4,start_time=$5,end_date=$6,end_time=$7,all_day=$8,is_all_day=$8,note=$9,description=$9,date=$4,time=$5,event_date=$10,label_color=$11,type=$12,location=$13,reminder_minutes=$14,repeat_rule=$15,status=$16,visibility=$17,allowed_member_ids=$18,related_member_ids=$19
          WHERE id=$1
          RETURNING id`,
-        [body.id, body.calendarId, body.title.trim(), body.startDate, startTime, endDate, endTime, allDay, body.note || "", eventDate, body.labelColor || null, type, body.location || "", Number(body.reminderMinutes || 0), body.repeatRule || "none", status]
+        [body.id, body.calendarId, body.title.trim(), body.startDate, startTime, endDate, endTime, allDay, body.note || "", eventDate, body.labelColor || null, type, body.location || "", Number(body.reminderMinutes || 0), body.repeatRule || "none", status, visibility, allowedMemberIds, relatedMemberIds]
       )
       : await pool.query(
-        `INSERT INTO events (id,calendar_id,title,start_date,start_time,end_date,end_time,all_day,is_all_day,note,description,created_by_user_id,date,time,event_date,color,type,label_color,location,reminder_minutes,repeat_rule,status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$9,$10,$4,$5,$11,'#6366f1',$12,$13,$14,$15,$16,$17)
+        `INSERT INTO events (id,calendar_id,title,start_date,start_time,end_date,end_time,all_day,is_all_day,note,description,created_by_user_id,date,time,event_date,color,type,label_color,location,reminder_minutes,repeat_rule,status,visibility,allowed_member_ids,related_member_ids)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$9,$10,$4,$5,$11,'#6366f1',$12,$13,$14,$15,$16,$17,$18,$19,$20)
          RETURNING id`,
-        [body.id, body.calendarId, body.title.trim(), body.startDate, startTime, endDate, endTime, allDay, body.note || "", actor.id, eventDate, type, body.labelColor || null, body.location || "", Number(body.reminderMinutes || 0), body.repeatRule || "none", status]
+        [body.id, body.calendarId, body.title.trim(), body.startDate, startTime, endDate, endTime, allDay, body.note || "", actor.id, eventDate, type, body.labelColor || null, body.location || "", Number(body.reminderMinutes || 0), body.repeatRule || "none", status, visibility, allowedMemberIds, relatedMemberIds]
       );
     await pool.query("DELETE FROM event_members WHERE event_id=$1", [body.id]);
     for (const memberId of [...new Set(body.memberIds || [])]) {
