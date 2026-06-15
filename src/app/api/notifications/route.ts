@@ -10,7 +10,8 @@ export async function GET() {
 
     let query = `
       SELECT id, title, message, created_by_name as "createdByName", created_at as "createdAt",
-             read_at as "readAt", is_read as "isRead", read_user_ids, user_id, visible_user_ids
+             read_at as "readAt", is_read as "isRead", read_user_ids, user_id, visible_user_ids,
+             source_type, source_id, metadata
       FROM notifications
       ORDER BY created_at DESC
     `;
@@ -18,7 +19,8 @@ export async function GET() {
     if (actor.role !== "full_access") {
       query = `
         SELECT id, title, message, created_by_name as "createdByName", created_at as "createdAt",
-               read_at as "readAt", is_read as "isRead", read_user_ids, user_id, visible_user_ids
+               read_at as "readAt", is_read as "isRead", read_user_ids, user_id, visible_user_ids,
+               source_type, source_id, metadata
         FROM notifications
         WHERE user_id = $1
            OR visible_user_ids::jsonb ? $1
@@ -44,6 +46,14 @@ export async function GET() {
         readUserIds = [];
       }
       const isRead = row.isRead || readUserIds.includes(actor.id);
+      let metadata = null;
+      try {
+        if (row.metadata) {
+          metadata = typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata;
+        }
+      } catch (e) {
+        // ignore
+      }
       return {
         id: row.id,
         title: row.title || row.message || "",
@@ -51,7 +61,10 @@ export async function GET() {
         createdByName: row.createdByName || "Family Hub",
         createdAt: row.createdAt,
         readAt: row.readAt,
-        isRead: isRead
+        isRead: isRead,
+        source_type: row.source_type,
+        source_id: row.source_id,
+        metadata
       };
     });
 

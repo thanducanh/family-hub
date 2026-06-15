@@ -42,6 +42,9 @@ export type CalendarNotification = {
   readUserIds?: string[];
   read_user_ids?: string[];
   message: string;
+  source_type?: string;
+  source_id?: string;
+  metadata?: any;
   items?: CalendarNotificationItem[];
   createdAt: string;
   read: boolean;

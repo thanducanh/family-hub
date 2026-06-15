@@ -308,7 +308,24 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
 
     const densityVal = localStorage.getItem("calendar_density");
     if (densityVal === "compact" || densityVal === "comfortable") setDensity(densityVal);
-  }, []);
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const actionParam = params.get("action");
+      if (actionParam === "create") {
+        setRightCollapsed(false);
+        setDraft(draftFor(todayIso(), "", user));
+        setDetail(null);
+      }
+      const viewParam = params.get("view");
+      if (viewParam === "today") {
+        const today = todayIso();
+        setSelectedDate(today);
+        setAnchor(new Date());
+        setDaySheetDate(today);
+      }
+    }
+  }, [user]);
 
   function toggleLunar() {
     const next = !showLunar;
@@ -468,15 +485,11 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
     await load();
   }
 
-  const gridLayoutClass = (leftCollapsed && rightCollapsed) ? "xl:grid-cols-[60px_minmax(0,1fr)_56px]" :
-                          (leftCollapsed && !rightCollapsed) ? "xl:grid-cols-[60px_minmax(0,1fr)_300px] 2xl:grid-cols-[60px_minmax(0,1fr)_320px]" :
-                          (!leftCollapsed && rightCollapsed) ? "xl:grid-cols-[240px_minmax(0,1fr)_56px]" :
-                          "xl:grid-cols-[240px_minmax(0,1fr)_300px] 2xl:grid-cols-[240px_minmax(0,1fr)_320px]";
+  const gridLayoutClass = ""; // Not used anymore
 
   return (
-    <section className="relative mx-auto min-h-[calc(100vh-80px)] max-w-[1800px] bg-slate-50 p-2 pb-24 dark:bg-slate-950 md:p-4 lg:p-5">
-      <div className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900 overflow-hidden">
-        <CalendarToolbar
+    <div className="flex h-[calc(100vh-64px)] w-full flex-col bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <CalendarToolbar
         anchor={anchor}
         view={view}
         setView={setView}
@@ -496,35 +509,39 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
         toggleLeft={toggleLeft}
         rightCollapsed={rightCollapsed}
         toggleRight={toggleRight}
-        density={density}
-        toggleDensity={toggleDensity}
+        enabledTypes={enabledTypes}
+        setEnabledTypes={setEnabledTypes}
       />
-      {error && <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">{error}</p>}
+      {error && <div className="bg-rose-50 px-4 py-2 text-sm text-rose-600">{error}</div>}
 
-      <div className={`grid transition-all duration-300 divide-x divide-slate-200 dark:divide-white/10 gap-px bg-slate-200 dark:bg-white/10 ${gridLayoutClass}`}>
-        <aside className={`hidden h-fit xl:block transition-all duration-300 overflow-hidden bg-slate-50 dark:bg-white/[0.02] ${leftCollapsed ? "px-2 py-2" : "p-4"}`}>
+      <div className="flex flex-1 overflow-hidden bg-slate-50 dark:bg-slate-900">
+        <aside className={`hidden xl:flex flex-col border-r border-slate-200 bg-white transition-all duration-300 dark:border-white/10 dark:bg-slate-900 ${leftCollapsed ? "w-[60px]" : "w-[260px]"}`}>
           <FilterContent calendars={calendars} events={allEvents} enabled={enabled} setEnabled={setEnabled} enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes} collapsed={leftCollapsed} toggle={toggleLeft} />
         </aside>
 
         {filterOpenMobile && (
-          <div className="fixed inset-0 z-50 flex items-end bg-black/45 xl:hidden" onMouseDown={() => setFilterOpenMobile(false)}>
-            <div onMouseDown={e => e.stopPropagation()} className="max-h-[80vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl">
-               <div className="mb-4 flex items-center justify-between">
-                 <h3 className="text-lg font-bold">Lịch hiển thị</h3>
-                 <button type="button" onClick={() => setFilterOpenMobile(false)} className="flex size-8 items-center justify-center rounded-full bg-slate-100 font-bold text-slate-500">×</button>
-               </div>
-               <FilterContent calendars={calendars} events={allEvents} enabled={enabled} setEnabled={setEnabled} enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes} collapsed={false} />
-            </div>
+          <div className="fixed inset-0 z-50 flex bg-black/45 xl:hidden" onMouseDown={() => setFilterOpenMobile(false)}>
+             <div onMouseDown={e => e.stopPropagation()} className="h-full w-[280px] overflow-y-auto bg-white p-4 shadow-2xl dark:bg-slate-900">
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-lg font-bold">Lịch hiển thị</h3>
+                  <button type="button" onClick={() => setFilterOpenMobile(false)} className="flex size-8 items-center justify-center rounded-full bg-slate-100 font-bold text-slate-500">×</button>
+                </div>
+                <FilterContent calendars={calendars} events={allEvents} enabled={enabled} setEnabled={setEnabled} enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes} collapsed={false} />
+             </div>
           </div>
         )}
 
-        <div className="min-w-0 bg-white dark:bg-slate-900">
+        <main className="flex-1 min-w-0 flex flex-col bg-white dark:bg-slate-950 overflow-hidden">
           {view === "monthly" && (
-            <div className="h-full flex flex-col">
-              <div className="grid grid-cols-7 border-b border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900">
-                {weekdays.map(day => <b key={day} className="py-3 text-center text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{day}</b>)}
+            <div className="flex flex-1 flex-col">
+              <div className="grid grid-cols-7 border-b border-slate-200 dark:border-white/10">
+                {weekdays.map((day, idx) => (
+                  <div key={day} className={`py-1.5 text-center text-[10px] font-medium uppercase tracking-wider ${idx === 6 ? "text-rose-500" : "text-slate-400"}`}>
+                    {day}
+                  </div>
+                ))}
               </div>
-              <div className="grid grid-cols-7 gap-px bg-slate-200 dark:bg-white/10 flex-1">
+              <div className="grid flex-1 grid-cols-7 grid-rows-6">
                 {days.map(date => {
                   const dateIso = iso(date);
                   return (
@@ -535,10 +552,9 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
                       selected={selectedDate === dateIso}
                       events={visibleEvents.filter(item => item.startDate === dateIso).sort(sortEvents)}
                       select={() => pickDate(dateIso)}
-                      add={() => openDaySheet(dateIso)}
+                      add={() => pickDate(dateIso, true)}
                       open={openEventDetail}
                       showLunar={showLunar}
-                      density={density}
                     />
                   );
                 })}
@@ -558,65 +574,56 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
           )}
 
           {view === "agenda" && (
-            <AgendaView
-              events={agendaEvents}
-              members={members}
-              open={openEventDetail}
-              edit={openEditEvent}
-              remove={deleteEvent}
-              openMenuId={openMenuId}
-              setOpenMenuId={setOpenMenuId}
-            />
+            <div className="overflow-y-auto p-4 flex-1">
+              <AgendaView
+                events={agendaEvents}
+                members={members}
+                open={openEventDetail}
+                edit={openEditEvent}
+                remove={deleteEvent}
+                openMenuId={openMenuId}
+                setOpenMenuId={setOpenMenuId}
+              />
+            </div>
           )}
-        </div>
+        </main>
 
-        {view !== "agenda" && (
-          <aside className="hidden xl:flex flex-col transition-all duration-300 w-full bg-slate-50 dark:bg-white/[0.02]">
-            {rightCollapsed ? (
-              <div className="flex h-full flex-col overflow-hidden">
-                <button type="button" onClick={toggleRight} className="flex h-12 w-full items-center justify-center bg-transparent text-slate-400 hover:bg-slate-200 hover:text-indigo-600 dark:hover:bg-white/10" title="Mở rộng Agenda">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line><path d="m10 15-3-3 3-3"></path></svg>
-                </button>
-                <div className="flex-1 flex justify-center pt-4">
-                  <span className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>Agenda</span>
-                </div>
+        <aside className={`hidden xl:flex flex-col border-l border-slate-200 bg-slate-50 transition-all duration-300 dark:border-white/10 dark:bg-slate-950 ${rightCollapsed ? "w-[60px]" : "w-[360px] relative"}`}>
+          {rightCollapsed ? (
+            <button onClick={toggleRight} className="flex flex-1 flex-col items-center py-4 text-slate-400 hover:text-indigo-600">
+               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+               <span className="mt-4 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-400" style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>Agenda</span>
+            </button>
+          ) : detail ? (
+             <EventDetailInline item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />
+          ) : draft ? (
+             <EventEditorInline draft={draft} calendars={calendars} members={members} user={user} setDraft={setDraft} close={() => setDraft(null)} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />
+          ) : (
+            <div className="relative flex flex-1 flex-col overflow-y-auto bg-white dark:bg-slate-900">
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/90 p-3 backdrop-blur dark:border-white/10 dark:bg-slate-900/90">
+                <h3 className="text-sm font-bold tracking-wide">Agenda</h3>
+                <button onClick={toggleRight} className="grid size-8 place-items-center rounded text-slate-400 hover:bg-slate-100 hover:text-indigo-600 dark:hover:bg-white/5" title="Thu gọn panel"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
               </div>
-            ) : (
-              <div className="relative flex h-full flex-col p-4">
-                <button type="button" onClick={toggleRight} className="absolute right-3 top-4 z-10 text-slate-400 hover:text-indigo-600" title="Thu gọn Agenda">
-                  <span className="text-lg font-bold">⇥</span>
-                </button>
-                <AgendaView
-                  title={`${dayGroupTitle(selectedDate)}`}
-                  date={selectedDate}
-                  events={selectedEvents}
-                  members={members}
-                  open={openEventDetail}
-                  edit={openEditEvent}
-                  remove={deleteEvent}
-                  openMenuId={openMenuId}
-                  setOpenMenuId={setOpenMenuId}
-                  emptyText="Chưa có sự kiện trong ngày này."
-                  addEmpty={() => openNewEvent(selectedDate)}
-                />
-                <button type="button" onClick={() => openNewEvent(selectedDate)} className="h-11 w-full rounded-xl bg-indigo-50 text-sm font-bold text-indigo-600 hover:bg-indigo-100">+ Thêm sự kiện ngày này</button>
+              <div className="flex-1 p-3">
+                 <AgendaView title={dayGroupTitle(selectedDate)} date={selectedDate} events={selectedEvents} members={members} open={openEventDetail} edit={openEditEvent} remove={deleteEvent} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} emptyText="Không có sự kiện" addEmpty={() => openNewEvent(selectedDate)} />
               </div>
-            )}
-          </aside>
-        )}
+            </div>
+          )}
+        </aside>
       </div>
 
-      <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-5 right-5 z-40 grid size-14 place-items-center rounded-full bg-indigo-600 text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 md:hidden" aria-label="Thêm sự kiện">+</button>
+      <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-5 right-5 z-40 grid size-14 place-items-center rounded-full bg-indigo-600 text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 xl:hidden" aria-label="Thêm sự kiện">+</button>
 
-      {daySheetDate && <DayEventsSheet date={daySheetDate} events={visibleEvents.filter(item => item.startDate === daySheetDate).sort(sortEvents)} members={members} close={() => setDaySheetDate(null)} add={() => openNewEvent(daySheetDate)} open={openEventDetail} edit={openEditEvent} remove={deleteEvent} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} />}
-      {draft && <EventEditor draft={draft} calendars={calendars} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
-      {detail && <EventDetail item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />}
+      <div className="xl:hidden">
+        {daySheetDate && <DayEventsSheet date={daySheetDate} events={visibleEvents.filter(item => item.startDate === daySheetDate).sort(sortEvents)} members={members} close={() => setDaySheetDate(null)} add={() => openNewEvent(daySheetDate)} open={openEventDetail} edit={openEditEvent} remove={deleteEvent} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} />}
+        {draft && <EventEditorSheet draft={draft} calendars={calendars} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
+        {detail && <EventDetailSheet item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />}
       </div>
-    </section>
+    </div>
   );
 }
 
-function CalendarToolbar({ anchor, view, setView, today, prev, next, add, quickPickerOpen, setQuickPickerOpen, setAnchor, setSelectedDate, showLunar, toggleLunar, filterOpenMobile, setFilterOpenMobile, leftCollapsed, toggleLeft, rightCollapsed, toggleRight, density, toggleDensity }: {
+function CalendarToolbar({ anchor, view, setView, today, prev, next, add, quickPickerOpen, setQuickPickerOpen, setAnchor, setSelectedDate, showLunar, toggleLunar, filterOpenMobile, setFilterOpenMobile, leftCollapsed, toggleLeft, rightCollapsed, toggleRight, enabledTypes, setEnabledTypes }: {
   anchor: Date;
   view: CalendarView;
   setView: (view: CalendarView) => void;
@@ -636,152 +643,137 @@ function CalendarToolbar({ anchor, view, setView, today, prev, next, add, quickP
   toggleLeft?: () => void;
   rightCollapsed?: boolean;
   toggleRight?: () => void;
-  density?: "compact" | "comfortable";
-  toggleDensity?: () => void;
+  enabledTypes: EventType[];
+  setEnabledTypes: React.Dispatch<React.SetStateAction<EventType[]>>;
 }) {
   const [month, setMonth] = useState(anchor.getMonth() + 1);
   const [year, setYear] = useState(anchor.getFullYear());
   useEffect(() => { setMonth(anchor.getMonth() + 1); setYear(anchor.getFullYear()); }, [anchor]);
-  function applyQuickPick() {
-    const date = new Date(year, month - 1, 1);
-    setAnchor(date);
-    setSelectedDate(iso(date));
-    setQuickPickerOpen(false);
-  }
+  
   return (
-    <div className="border-b border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-slate-900">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={today} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200">Hôm nay</button>
-          <button type="button" onClick={prev} className="grid size-10 place-items-center rounded-xl border border-slate-200 bg-white text-xl font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5" aria-label="Tháng trước">‹</button>
-          <button type="button" onClick={next} className="grid size-10 place-items-center rounded-xl border border-slate-200 bg-white text-xl font-bold text-slate-600 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5" aria-label="Tháng sau">›</button>
-          <h2 className="min-w-[170px] text-xl font-black tracking-tight text-slate-900 md:text-3xl dark:text-white">{monthLabel(anchor)}</h2>
-          <div className="relative">
-            <button type="button" onClick={() => setQuickPickerOpen(!quickPickerOpen)} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-white/5">Chọn tháng/năm</button>
-            {quickPickerOpen && (
-              <div className="absolute left-0 top-full z-30 mt-2 w-72 rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 shadow-xl">
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Tháng"><select className={input} value={month} onChange={event => setMonth(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select></Field>
-                  <Field label="Năm"><input className={input} type="number" value={year} onChange={event => setYear(Number(event.target.value))} /></Field>
-                </div>
-                <button type="button" onClick={applyQuickPick} className="mt-3 h-11 w-full rounded-xl bg-indigo-600 text-sm font-bold text-white">Áp dụng</button>
-              </div>
-            )}
+    <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 sm:px-4 dark:border-white/10 dark:bg-slate-950">
+      <div className="flex items-center sm:gap-4">
+        {toggleLeft && (
+          <button type="button" onClick={toggleLeft} className="hidden sm:grid size-10 place-items-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/5 dark:hover:text-slate-200 xl:grid" aria-label="Menu">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+        )}
+        <button type="button" onClick={() => setFilterOpenMobile(!filterOpenMobile)} className="grid size-10 place-items-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-white/5 dark:hover:text-slate-200 xl:hidden" aria-label="Menu Mobile">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        
+        <div className="hidden lg:flex items-center gap-4">
+          <span className="text-xl font-black text-slate-800 dark:text-white tracking-tight">Family Calendar</span>
+          <button type="button" onClick={today} className="px-3 py-1 text-sm font-medium rounded hover:bg-slate-50 dark:hover:bg-white/5 border border-slate-200 dark:border-white/10">Today</button>
+          <div className="flex items-center text-slate-400">
+            <button type="button" onClick={prev} className="p-1 hover:text-slate-800 dark:hover:text-white"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+            <button type="button" onClick={next} className="p-1 hover:text-slate-800 dark:hover:text-white"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
           </div>
+          <span className="text-xl font-bold tracking-tight text-slate-800 dark:text-white">{anchor.getFullYear()} Tháng {anchor.getMonth() + 1}</span>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="hidden xl:flex items-center gap-2 mr-2 border-r border-slate-200 pr-4 dark:border-white/10">
-            {toggleLeft && (
-              <button type="button" onClick={toggleLeft} className={`h-9 rounded-xl border px-3 text-xs font-bold shadow-sm transition ${leftCollapsed ? "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5" : "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"}`} title="Ẩn/hiện bộ lọc">
-                Bộ lọc
-              </button>
-            )}
-            {toggleRight && (
-              <button type="button" onClick={toggleRight} className={`h-9 rounded-xl border px-3 text-xs font-bold shadow-sm transition ${rightCollapsed ? "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5" : "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"}`} title="Ẩn/hiện agenda">
-                Agenda
-              </button>
-            )}
-            {toggleDensity && (
-              <button type="button" onClick={toggleDensity} className={`h-9 rounded-xl border px-3 text-xs font-bold shadow-sm transition ${density === "compact" ? "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5"}`} title="Chuyển chế độ Gọn/Đầy đủ">
-                {density === "compact" ? "Gọn" : "Đầy đủ"}
-              </button>
-            )}
-          </div>
-          <label className={`mr-1 flex h-10 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm font-bold shadow-sm transition ${showLunar ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600"} dark:border-white/10 dark:bg-white/5 dark:text-slate-300`}>
+      </div>
+
+      <div className="flex items-center gap-1 sm:gap-3">
+        <div className="hidden lg:flex items-center gap-2">
+          <label className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-bold transition ${showLunar ? "bg-slate-100 text-indigo-700 dark:bg-white/10 dark:text-indigo-300" : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-white/5"}`}>
              <input type="checkbox" checked={showLunar} onChange={toggleLunar} className="sr-only" />
-             <span className={`relative h-6 w-10 rounded-full transition ${showLunar ? "bg-indigo-600" : "bg-slate-300"}`}><span className={`absolute top-1 size-4 rounded-full bg-white shadow transition ${showLunar ? "left-5" : "left-1"}`} /></span>
              Âm lịch
           </label>
-          <button type="button" onClick={() => setFilterOpenMobile(!filterOpenMobile)} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 xl:hidden">Lịch hiển thị</button>
-          <div className="grid grid-cols-3 rounded-xl border border-slate-200 bg-slate-100/80 p-1 shadow-inner dark:border-white/10 dark:bg-white/5">
-            {[
-              ["monthly", "Tháng"],
-              ["weekly", "Tuần"],
-              ["agenda", "Danh sách"]
-            ].map(([value, label]) => (
-              <button key={value} type="button" onClick={() => setView(value as CalendarView)} className={`h-9 rounded-xl px-3 text-sm font-extrabold transition ${view === value ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "text-slate-500 hover:bg-white dark:hover:bg-white/10"}`}>{label}</button>
-            ))}
-          </div>
-          <button type="button" onClick={add} className="h-10 rounded-xl bg-indigo-600 px-5 text-sm font-extrabold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-700">+ Thêm sự kiện</button>
+          <label className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-bold transition ${enabledTypes.includes("birthday") ? "bg-amber-50 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300" : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-white/5"}`}>
+             <input type="checkbox" checked={enabledTypes.includes("birthday")} onChange={() => setEnabledTypes(curr => curr.includes("birthday") ? curr.filter(t => t !== "birthday") : [...curr, "birthday"])} className="sr-only" />
+             <i className="size-2 rounded-full bg-amber-500" /> Sinh nhật
+          </label>
+          <label className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-bold transition ${enabledTypes.includes("holiday") ? "bg-red-50 text-red-700 dark:bg-red-500/20 dark:text-red-300" : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-white/5"}`}>
+             <input type="checkbox" checked={enabledTypes.includes("holiday")} onChange={() => setEnabledTypes(curr => curr.includes("holiday") ? curr.filter(t => t !== "holiday") : [...curr, "holiday"])} className="sr-only" />
+             <i className="size-2 rounded-full bg-red-500" /> Ngày lễ
+          </label>
         </div>
+
+        <div className="hidden rounded bg-slate-100 p-0.5 dark:bg-white/5 md:flex mx-2">
+          {["monthly", "weekly", "agenda"].map(val => (
+            <button key={val} onClick={() => setView(val as CalendarView)} className={`px-3 py-1 text-[11px] font-semibold rounded ${view === val ? "bg-white shadow-sm text-slate-900 dark:bg-slate-700 dark:text-white" : "text-slate-500 hover:text-slate-800 dark:text-slate-400"}`}>{val === "monthly" ? "Tháng" : val === "weekly" ? "Tuần" : "DS"}</button>
+          ))}
+        </div>
+        
+        <button type="button" className="p-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hidden sm:block"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+        <button type="button" onClick={add} className="p-2 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <div className="size-7 sm:size-8 rounded-full bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-center text-xs font-bold ml-1">U</div>
       </div>
     </div>
   );
 }
 
-function DayCell({ date, anchor, selected, events, select, add, open, showLunar, density = "comfortable" }: { date: Date; anchor: Date; selected: boolean; events: CalendarEvent[]; select: () => void; add: () => void; open: (event: CalendarEvent) => void; showLunar?: boolean; density?: "compact" | "comfortable" }) {
+function DayCell({ date, anchor, selected, events, select, add, open, showLunar }: { date: Date; anchor: Date; selected: boolean; events: CalendarEvent[]; select: () => void; add: () => void; open: (event: CalendarEvent) => void; showLunar?: boolean; density?: "compact" | "comfortable" }) {
   const dateIso = iso(date);
   const isToday = dateIso === todayIso();
   const inMonth = date.getMonth() === anchor.getMonth();
-  const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-  const visible = events.slice(0, density === "compact" ? 5 : 3);
-  
+  const visible = events.slice(0, 5); 
   const lunarInfo = showLunar ? getLunarText(dateIso) : { text: "", important: false };
-  const lunarText = lunarInfo.text;
-  const isLunarImportant = lunarInfo.important;
 
   return (
-    <button type="button" onClick={add} onFocus={select} className={`calendar-day-cell relative min-h-[124px] p-2 text-left outline-none transition-all md:min-h-[160px] md:p-3 2xl:min-h-[176px] ${!inMonth ? "bg-slate-50/80 text-slate-400 dark:bg-white/[0.02]" : isWeekend ? "bg-slate-50/70 dark:bg-white/[0.04]" : "bg-white dark:bg-white/[0.03]"} ${selected ? "selected-day z-10 bg-indigo-50/70 ring-2 ring-inset ring-indigo-500" : ""} ${isToday ? "bg-indigo-50/60 dark:bg-indigo-400/10" : ""} hover:z-10 hover:bg-indigo-50/50 hover:shadow-[inset_0_0_0_1px_rgba(99,102,241,0.22)]`}>
-      <div className="mb-1 flex h-6 w-full items-start justify-between">
-        <div className="flex items-center gap-1">
-          {isToday && <span className="size-1.5 shrink-0 rounded-full bg-indigo-600" />}
-          <span className={`text-sm md:text-base font-bold leading-none ${isToday ? "text-indigo-600" : inMonth ? "text-slate-900 dark:text-white" : "text-slate-400"}`}>{date.getDate()}</span>
-        </div>
-        {showLunar && (
-           <span className={`text-[10px] ${isLunarImportant ? "font-extrabold text-rose-500" : "font-semibold text-slate-400"} ${isToday && !isLunarImportant ? "text-indigo-400" : ""}`}>{lunarText}</span>
-        )}
+    <div onClick={select} onDoubleClick={add} className={`group relative flex flex-col min-w-0 bg-white dark:bg-slate-900 border-b border-r border-slate-100 dark:border-white/5 outline-none transition-colors ${!inMonth ? "bg-slate-50/30 text-slate-400 dark:bg-white/[0.01]" : ""} ${selected ? "bg-indigo-50/20" : ""} hover:bg-slate-50/50 dark:hover:bg-white/[0.03]`}>
+      <div className="flex items-center justify-center pt-1 pb-0.5 relative">
+         {isToday ? (
+           <span className="flex size-[22px] items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white">{date.getDate()}</span>
+         ) : (
+           <span className={`text-[12px] font-semibold leading-none pt-[1px] ${date.getDay() === 0 ? "text-rose-500" : inMonth ? "text-slate-700 dark:text-slate-300" : "text-slate-400"} ${selected ? "text-indigo-600 font-bold" : ""}`}>{date.getDate()}</span>
+         )}
+         {showLunar && <span className={`absolute right-1 text-[9px] leading-none pt-[1px] ${lunarInfo.important ? "text-rose-500 font-bold" : "text-slate-400"}`}>{lunarInfo.text}</span>}
       </div>
-      <div className={`space-y-[2px] ${density === "compact" ? "md:space-y-[2px]" : "md:space-y-1"}`}>
+      <div className="flex-1 space-y-[1px] px-0.5 pb-0.5 overflow-hidden">
         {visible.map(item => {
           const tone = eventTone(item.type);
+          if (item.allDay) {
+             return (
+               <div key={item.id} onClick={(e) => { e.stopPropagation(); open(item); }} className={`cursor-pointer rounded-sm px-1 py-0.5 text-[10px] font-semibold truncate leading-none ${tone.bg} ${tone.text}`}>
+                 {item.title}
+               </div>
+             );
+          }
           return (
-            <span
-              key={item.id}
-              onClick={(event) => { event.preventDefault(); event.stopPropagation(); open(item); }}
-              className={`group flex min-w-0 items-center justify-between gap-1.5 truncate rounded px-1 py-[2px] text-left text-[11px] font-semibold leading-tight transition-colors hover:bg-slate-100 dark:hover:bg-white/10 md:text-xs ${tone.text}`}
-            >
-              <div className="flex flex-1 min-w-0 items-center gap-1.5 truncate">
-                {item.type === "birthday" ? <span className="shrink-0 text-[10px]">🎂</span> : item.type === "holiday" ? <span className="shrink-0 text-[10px]">🇻🇳</span> : <i className={`size-1.5 shrink-0 rounded-full ${tone.dot}`} />}
-                <span className="truncate">{item.title}</span>
-              </div>
-              {!item.allDay && <span className="shrink-0 tabular-nums opacity-60 text-[10px] md:text-[11px]">{eventTimeLabel(item)}</span>}
-            </span>
+            <div key={item.id} onClick={(e) => { e.stopPropagation(); open(item); }} className="flex cursor-pointer items-center gap-1 px-1 py-0.5 text-[11px] font-medium leading-none hover:bg-slate-100 dark:hover:bg-white/5">
+               <i className={`size-1.5 shrink-0 rounded-full ${tone.dot}`} />
+               <span className={`flex-1 truncate ${tone.text}`}>{item.title}</span>
+               <span className="shrink-0 text-[9px] text-slate-500 tabular-nums">{item.startTime}</span>
+            </div>
           );
         })}
-        {events.length > visible.length && <span className="block px-1 py-[2px] text-left text-[11px] font-extrabold text-indigo-600 hover:bg-indigo-50">+ {events.length - visible.length} sự kiện</span>}
+        {events.length > visible.length && <span className="block px-1 text-[10px] font-medium text-slate-400">+{events.length - visible.length} more</span>}
       </div>
-    </button>
+    </div>
   );
 }
 
 function WeeklyView({ days, events, selectedDate, selectDate, add, open }: { days: Date[]; events: CalendarEvent[]; selectedDate: string; selectDate: (date: string) => void; add: (date: string) => void; open: (event: CalendarEvent) => void }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] shadow-sm">
-      <div className="grid grid-cols-7 border-b border-[var(--app-border)]">
-        {days.map(date => {
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900">
+      <div className="grid grid-cols-7 border-b border-slate-200 dark:border-white/10">
+        {days.map((date, idx) => {
           const dateIso = iso(date);
           return (
-            <button key={dateIso} type="button" onClick={() => selectDate(dateIso)} className={`p-3 text-center ${selectedDate === dateIso ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-400/10 dark:text-indigo-200" : ""}`}>
-              <b className="block text-xs text-slate-400">{weekdays[(date.getDay() + 6) % 7]}</b>
-              <span className="mt-1 block text-lg font-bold">{date.getDate()}</span>
+            <button key={dateIso} type="button" onClick={() => selectDate(dateIso)} onDoubleClick={() => add(dateIso)} className={`p-2 text-center ${selectedDate === dateIso ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-400/10 dark:text-indigo-200" : "hover:bg-slate-50 dark:hover:bg-white/5"}`}>
+              <b className={`block text-[11px] uppercase tracking-wider ${idx === 6 ? "text-rose-500" : "text-slate-500"}`}>{weekdays[(date.getDay() + 6) % 7]}</b>
+              <span className="mt-0.5 block text-lg font-bold">{date.getDate()}</span>
             </button>
           );
         })}
       </div>
-      <div className="grid min-h-[420px] grid-cols-7">
+      <div className="grid flex-1 grid-cols-7 overflow-y-auto">
         {days.map(date => {
           const dateIso = iso(date);
           const dayEvents = events.filter(item => item.startDate === dateIso).sort(sortEvents);
           return (
-            <div key={dateIso} className="border-r border-[var(--app-border)] p-2 last:border-r-0">
-              <button type="button" onClick={() => add(dateIso)} className="mb-2 h-9 w-full rounded-lg border border-dashed border-[var(--app-border)] text-xs font-bold text-slate-400 hover:border-indigo-300 hover:text-indigo-600">+ Thêm</button>
-              <div className="space-y-2">
-                {dayEvents.map(item => (
-                  <button key={item.id} type="button" onClick={() => open(item)} className="w-full rounded-xl border border-[var(--app-border)] p-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-white/5">
-                    <span className="font-bold" style={{ color: eventColor(item) }}>{eventTimeLabel(item)}</span>
-                    <b className="mt-1 block truncate">{item.title}</b>
-                  </button>
-                ))}
+            <div key={dateIso} onClick={() => selectDate(dateIso)} onDoubleClick={() => add(dateIso)} className={`border-r border-slate-200 p-1 last:border-r-0 dark:border-white/10 ${selectedDate === dateIso ? "bg-indigo-50/20" : ""}`}>
+              <div className="space-y-1">
+                {dayEvents.map(item => {
+                  const tone = eventTone(item.type);
+                  return (
+                    <div key={item.id} onClick={(e) => { e.stopPropagation(); open(item); }} className={`cursor-pointer rounded border p-1.5 text-left hover:opacity-80 ${tone.bg} ${tone.border} ${tone.text}`}>
+                      <span className="block text-[10px] font-bold tabular-nums opacity-70">{eventTimeLabel(item)}</span>
+                      <b className="block truncate text-xs">{item.title}</b>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
@@ -791,41 +783,37 @@ function WeeklyView({ days, events, selectedDate, selectDate, add, open }: { day
   );
 }
 
-function AgendaView({ events, members, open, edit, remove, openMenuId, setOpenMenuId, title = "Danh sách sự kiện", date, emptyText = "Chưa có sự kiện trong tháng này.", addEmpty }: { events: CalendarEvent[]; members: Member[]; open: (event: CalendarEvent) => void; edit: (event: CalendarEvent) => void; remove: (event: CalendarEvent) => void; openMenuId: string | null; setOpenMenuId: (id: string | null) => void; title?: string; date?: string; emptyText?: string; addEmpty?: () => void }) {
+function AgendaView({ events, members, open, edit, remove, openMenuId, setOpenMenuId, title, date, emptyText = "Chưa có sự kiện", addEmpty }: { events: CalendarEvent[]; members: Member[]; open: (event: CalendarEvent) => void; edit: (event: CalendarEvent) => void; remove: (event: CalendarEvent) => void; openMenuId: string | null; setOpenMenuId: (id: string | null) => void; title?: string; date?: string; emptyText?: string; addEmpty?: () => void }) {
   const groups = events.reduce<Record<string, CalendarEvent[]>>((acc, item) => {
     acc[item.startDate] = [...(acc[item.startDate] || []), item];
     return acc;
   }, {});
   return (
-    <section className="rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/5">
-      <div className="rounded-xl bg-slate-50/80 p-3 dark:bg-white/5">
-        <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-indigo-500">Agenda</p>
-        <h3 className="mt-1 text-lg font-black tracking-tight text-slate-900 dark:text-white">{title}</h3>
-        {date && <p className="mt-1 text-sm font-semibold text-slate-500">{formatDateVN(date)} · Âm lịch {getLunarText(date).text}</p>}
-      </div>
-      <div className="mt-4 space-y-4">
-        {Object.keys(groups).length ? Object.entries(groups).sort(([left], [right]) => left.localeCompare(right)).map(([date, items]) => (
-          <div key={date}>
-            <h4 className="mb-2 text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">{dayGroupTitle(date)}</h4>
-            <div className="space-y-2">
-              {items.sort(sortEvents).map(item => <AgendaItem key={item.id} item={item} members={members} open={open} edit={edit} remove={remove} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} />)}
-            </div>
+    <div className="space-y-6">
+      {Object.keys(groups).length ? Object.entries(groups).sort(([left], [right]) => left.localeCompare(right)).map(([dateKey, items]) => (
+        <div key={dateKey}>
+          <div className="mb-2 flex items-center gap-2">
+            <span className={`text-sm font-bold ${localDate(dateKey)?.getDay() === 0 ? "text-rose-500" : "text-slate-800 dark:text-slate-200"}`}>{dateKey === todayIso() ? "Hôm nay" : formatDateVN(dateKey)}</span>
+            <span className="text-[10px] font-semibold text-slate-400">{getLunarText(dateKey).text}</span>
+            <div className="h-px flex-1 bg-slate-100 dark:bg-white/5"></div>
           </div>
-        )) : (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center dark:border-white/10 dark:bg-white/5">
-            <span className="mb-2 text-3xl">📅</span>
-            <p className="text-sm font-bold text-slate-600">{emptyText}</p>
-            {addEmpty && <button type="button" onClick={addEmpty} className="mt-4 h-10 rounded-xl bg-indigo-600 px-4 text-sm font-extrabold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-700">+ Thêm sự kiện ngày này</button>}
+          <div className="space-y-1.5">
+            {items.sort(sortEvents).map(item => <AgendaItem key={item.id} item={item} members={members} open={open} edit={edit} remove={remove} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} />)}
           </div>
-        )}
-      </div>
-    </section>
+        </div>
+      )) : (
+        <div className="flex flex-col items-center justify-center py-4 text-center">
+          <span className="mb-1 text-xl">📅</span>
+          <p className="text-xs font-bold text-slate-500">{emptyText}</p>
+          {addEmpty && <button type="button" onClick={addEmpty} className="mt-2 h-7 rounded-md bg-indigo-50 px-3 text-xs font-bold text-indigo-600 hover:bg-indigo-100">+ Tạo sự kiện</button>}
+        </div>
+      )}
+    </div>
   );
 }
 
 function AgendaItem({ item, members, open, edit, remove, openMenuId, setOpenMenuId }: { item: CalendarEvent; members: Member[]; open: (event: CalendarEvent) => void; edit: (event: CalendarEvent) => void; remove: (event: CalendarEvent) => void; openMenuId: string | null; setOpenMenuId: (id: string | null) => void }) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const related = members.filter(member => item.relatedMemberIds?.includes(member.id) || item.memberIds.includes(member.id)).map(memberName).join(", ");
   const meta = eventTypeMeta(item.type);
   const tone = eventTone(item.type);
   useEffect(() => {
@@ -837,219 +825,19 @@ function AgendaItem({ item, members, open, edit, remove, openMenuId, setOpenMenu
     return () => document.removeEventListener("mousedown", close);
   }, [item.id, openMenuId, setOpenMenuId]);
   return (
-    <div className={`relative flex min-h-16 items-center gap-2 rounded-xl border bg-white p-2.5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-white/5 ${tone.border}`}>
-      <button type="button" onClick={() => open(item)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-        <span className={`grid h-10 w-14 shrink-0 place-items-center rounded-xl text-xs font-black tabular-nums ${tone.bg} ${tone.text}`}>{eventTimeLabel(item)}</span>
-        <i className={`h-10 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
-        <span className="min-w-0 flex-1">
-          <b className={`block truncate text-sm font-extrabold ${item.status === "done" ? "text-slate-400 line-through" : "text-slate-900 dark:text-white"}`}>
-            {item.visibility === "private" && <span className="mr-1 inline-flex items-center justify-center rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500">🔒 Riêng tư</span>}
-            {item.visibility === "custom" && <span className="mr-1 inline-flex items-center justify-center rounded bg-slate-100 px-1 text-[10px] font-bold text-slate-500">👁️ Tùy chọn</span>}
-            {item.title}
-          </b>
-          <small className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-slate-400"><span className={`rounded-full px-2 py-0.5 font-bold ${tone.bg} ${tone.text}`}>{meta.label}</span>{related && <span className="truncate">{related}</span>}{item.location && <span className="truncate">· {item.location}</span>}</small>
-        </span>
-      </button>
-      <div ref={menuRef} className="relative shrink-0">
-        <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpenMenuId(openMenuId === item.id ? null : item.id); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100/60 hover:text-slate-800">⋮</button>
-        {openMenuId === item.id && (
-          <div className="pointer-events-auto absolute right-0 top-full z-50 mt-2 w-36 rounded-xl border border-slate-100 bg-white p-2 shadow-lg dark:border-white/10 dark:bg-slate-900">
-            <button type="button" onClick={() => { setOpenMenuId(null); open(item); }} className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50 dark:hover:bg-white/5">Xem</button>
-            {item.calendarId !== "fixed-birthday" && item.calendarId !== "fixed-holiday" && (
-              <>
-                <button type="button" onClick={() => { setOpenMenuId(null); edit(item); }} className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50 dark:hover:bg-white/5">Sửa</button>
-                <button type="button" onClick={() => { setOpenMenuId(null); void remove(item); }} className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-400/10">Xóa</button>
-              </>
-            )}
-          </div>
-        )}
+    <div className="group relative flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer" onClick={() => open(item)}>
+      <div className="w-9 shrink-0 text-right">
+        <span className={`text-[10px] font-bold tabular-nums ${item.allDay ? "text-slate-400" : tone.text}`}>{eventTimeLabel(item)}</span>
+      </div>
+      <i className={`h-6 w-1 shrink-0 rounded-full ${tone.dot}`} />
+      <div className="min-w-0 flex-1">
+        <b className={`block truncate text-xs ${item.status === "done" ? "text-slate-400 line-through" : "text-slate-900 dark:text-white"}`}>
+          {item.title}
+        </b>
+        {item.location && <small className="block truncate text-[10px] text-slate-400">{item.location}</small>}
       </div>
     </div>
   );
-}
-
-function DayEventsSheet({ date, events, members, close, add, open, edit, remove, openMenuId, setOpenMenuId }: { date: string; events: CalendarEvent[]; members: Member[]; close: () => void; add: () => void; open: (event: CalendarEvent) => void; edit: (event: CalendarEvent) => void; remove: (event: CalendarEvent) => void; openMenuId: string | null; setOpenMenuId: (id: string | null) => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/45 md:items-center md:justify-center md:p-6" onMouseDown={close}>
-      <div onMouseDown={event => event.stopPropagation()} className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl border border-white/70 bg-white p-4 shadow-2xl md:max-w-2xl md:rounded-2xl">
-        <div className="flex items-start justify-between gap-3 rounded-2xl bg-slate-50 p-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Sự kiện ngày này</p>
-            <h3 className="mt-1 text-xl font-bold">{dayGroupTitle(date)} · {formatDateVN(date)}</h3>
-            <p className="mt-1 text-sm text-slate-500">Âm lịch: {getLunarText(date).text}</p>
-          </div>
-          <button type="button" onClick={close} className="grid size-10 place-items-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/5">×</button>
-        </div>
-        <button type="button" onClick={add} className="mt-4 h-11 w-full rounded-xl bg-indigo-600 text-sm font-bold text-white shadow-md shadow-indigo-600/20 hover:bg-indigo-700">+ Thêm sự kiện ngày này</button>
-        <div className="mt-4">
-          <AgendaView
-            title="Danh sách trong ngày"
-            events={events}
-            members={members}
-            open={open}
-            edit={edit}
-            remove={remove}
-            openMenuId={openMenuId}
-            setOpenMenuId={setOpenMenuId}
-            emptyText="Chưa có sự kiện trong ngày này."
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EventEditor({ draft, calendars, members, user, setDraft, save, remove }: { draft: EventDraft; calendars: Calendar[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; remove?: () => void }) {
-  const selectable = user?.role === "self_only" ? members.filter(member => member.id === user.memberId) : members;
-  const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) => setDraft({ ...draft, [key]: value });
-  return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/45 md:items-center md:justify-center md:p-6" onMouseDown={() => setDraft(null)}>
-      <form onSubmit={save} onMouseDown={event => event.stopPropagation()} className="max-h-[96vh] w-full overflow-y-auto rounded-t-3xl border border-white/70 bg-slate-50 p-4 shadow-2xl md:max-w-3xl md:rounded-3xl md:p-6">
-        <div className="mb-5 flex items-center justify-between gap-3 rounded-3xl bg-white p-4 shadow-sm">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">{draft.id ? "Sửa sự kiện" : "Thêm sự kiện"}</p>
-            <h3 className="mt-1 text-xl font-bold">{draft.title || "Sự kiện mới"}</h3>
-          </div>
-          <button type="button" onClick={() => setDraft(null)} className="grid size-10 place-items-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/5">×</button>
-        </div>
-
-        <div className="space-y-4">
-          <section className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-sm">
-            <h4 className="mb-3 text-sm font-black tracking-wide text-slate-600">Thông tin chính</h4>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Tiêu đề"><input required autoFocus className={input} value={draft.title} onChange={event => set("title", event.target.value)} /></Field>
-              <Field label="Lịch"><select className={input} value={draft.calendarId} onChange={event => set("calendarId", event.target.value)}>{calendars.map(calendar => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></Field>
-              <Field label="Loại sự kiện"><select className={input} value={draft.type} onChange={event => set("type", event.target.value as EventType)}>{eventTypes.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></Field>
-              <Field label="Trạng thái"><select className={input} value={draft.status} onChange={event => set("status", event.target.value as EventStatus)}><option value="open">Đang mở</option><option value="done">Hoàn thành</option></select></Field>
-            </div>
-          </section>
-
-          <section className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-sm">
-            <h4 className="mb-3 text-sm font-black tracking-wide text-slate-600">Thời gian</h4>
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className={`col-span-full flex min-h-11 w-max cursor-pointer items-center gap-2 rounded-2xl border px-4 text-sm font-bold shadow-sm transition ${draft.allDay ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600"}`}><input type="checkbox" checked={draft.allDay} onChange={event => setDraft({ ...draft, allDay: event.target.checked, startTime: event.target.checked ? "" : draft.startTime || "08:00", endTime: event.target.checked ? "" : draft.endTime })} className="sr-only" /><span className={`relative h-6 w-10 rounded-full transition ${draft.allDay ? "bg-indigo-600" : "bg-slate-300"}`}><span className={`absolute top-1 size-4 rounded-full bg-white shadow transition ${draft.allDay ? "left-5" : "left-1"}`} /></span>Sự kiện cả ngày / Không có giờ cụ thể</label>
-              <Field label="Ngày bắt đầu"><input required type="date" className={input} value={draft.startDate} onChange={event => { setDraft({ ...draft, startDate: event.target.value, endDate: draft.endDate || event.target.value }); }} /></Field>
-              <Field label="Giờ bắt đầu"><input type="time" disabled={draft.allDay} className={`${input} ${draft.allDay ? 'opacity-50' : ''}`} value={draft.startTime} onChange={event => set("startTime", event.target.value)} /></Field>
-              <Field label="Ngày kết thúc"><input type="date" className={input} value={draft.endDate} onChange={event => set("endDate", event.target.value)} /></Field>
-              <Field label="Giờ kết thúc"><input type="time" disabled={draft.allDay} className={`${input} ${draft.allDay ? 'opacity-50' : ''}`} value={draft.endTime} onChange={event => set("endTime", event.target.value)} /></Field>
-            </div>
-          </section>
-
-          <section className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-sm">
-            <h4 className="mb-3 text-sm font-black tracking-wide text-slate-600">Người liên quan & Quyền xem</h4>
-            <div className="space-y-4">
-              <Field label="Thành viên được phép xem">
-                <select className={input} value={draft.visibility || "all"} onChange={event => set("visibility", event.target.value as "all" | "private" | "custom")}>
-                  <option value="all">Tất cả thành viên</option>
-                  <option value="private">Chỉ mình tôi</option>
-                  <option value="custom">Chọn thành viên cụ thể</option>
-                </select>
-              </Field>
-
-              {draft.visibility === "custom" && (
-                <Field label="Chọn người được xem">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {selectable.map(member => (
-                      <label key={member.id} className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-3 py-2 text-sm shadow-sm transition hover:bg-slate-50 ${draft.allowedMemberIds?.includes(member.id) ? "border-indigo-100 bg-indigo-50/70" : "border-slate-200 bg-white"}`}>
-                        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(member)[0]}</span>
-                        <span className="min-w-0 flex-1 truncate font-medium">{memberName(member)}</span>
-                        <input type="checkbox" checked={draft.allowedMemberIds?.includes(member.id)} onChange={() => set("allowedMemberIds", draft.allowedMemberIds?.includes(member.id) ? draft.allowedMemberIds.filter(id => id !== member.id) : [...(draft.allowedMemberIds || []), member.id])} className="sr-only" />
-                        <span className={`grid size-5 shrink-0 place-items-center rounded-full border text-[11px] font-black ${draft.allowedMemberIds?.includes(member.id) ? "border-indigo-500 bg-indigo-600 text-white" : "border-slate-300 bg-white text-transparent"}`}>✓</span>
-                      </label>
-                    ))}
-                  </div>
-                </Field>
-              )}
-
-              <Field label="Thành viên liên quan (Tag)">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {selectable.map(member => {
-                    const isChecked = (draft.relatedMemberIds || draft.memberIds || []).includes(member.id);
-                    return (
-                      <label key={member.id} className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-3 py-2 text-sm shadow-sm transition hover:bg-slate-50 ${isChecked ? "border-indigo-100 bg-indigo-50/70" : "border-slate-200 bg-white"}`}>
-                        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(member)[0]}</span>
-                        <span className="min-w-0 flex-1 truncate font-medium">{memberName(member)}</span>
-                        <input type="checkbox" checked={isChecked} onChange={() => {
-                          const current = draft.relatedMemberIds || draft.memberIds || [];
-                          const next = current.includes(member.id) ? current.filter(id => id !== member.id) : [...current, member.id];
-                          setDraft({ ...draft, relatedMemberIds: next, memberIds: next });
-                        }} className="sr-only" />
-                        <span className={`grid size-5 shrink-0 place-items-center rounded-full border text-[11px] font-black ${isChecked ? "border-indigo-500 bg-indigo-600 text-white" : "border-slate-300 bg-white text-transparent"}`}>✓</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </Field>
-            </div>
-          </section>
-
-          <section className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-sm">
-            <h4 className="mb-3 text-sm font-black tracking-wide text-slate-600">Nhắc nhở / lặp lại / ghi chú</h4>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Địa điểm"><input className={input} value={draft.location} placeholder="Nhập địa điểm..." onChange={event => set("location", event.target.value)} /></Field>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Nhắc trước"><select className={input} value={draft.reminderMinutes} onChange={event => set("reminderMinutes", Number(event.target.value))}>{reminderOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
-                <Field label="Lặp lại"><select className={input} value={draft.repeatRule} onChange={event => set("repeatRule", event.target.value)}>{repeatOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
-              </div>
-              <div className="col-span-full">
-                <Field label="Ghi chú"><textarea rows={4} className={textarea} placeholder="Thêm mô tả chi tiết..." value={draft.note} onChange={event => set("note", event.target.value)} /></Field>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        <div className="mt-5 flex flex-wrap justify-end gap-3 rounded-3xl bg-white p-4 shadow-sm">
-          {remove && <button type="button" onClick={remove} className="mr-auto rounded-xl bg-rose-50 px-5 py-2.5 text-sm font-bold text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20">Xóa sự kiện</button>}
-          <button type="button" onClick={() => setDraft(null)} className="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5">Hủy</button>
-          <button className="rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg">Lưu sự kiện</button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function EventDetail({ item, calendars, members, close, edit, remove, markDone }: { item: CalendarEvent; calendars: Calendar[]; members: Member[]; close: () => void; edit: () => void; remove: () => void; markDone: () => void }) {
-  const calendar = calendars.find(calendar => calendar.id === item.calendarId);
-  const related = members.filter(member => item.relatedMemberIds?.includes(member.id) || item.memberIds.includes(member.id)).map(memberName).join(", ");
-  return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/45 md:items-center md:justify-center md:p-6" onMouseDown={close}>
-      <div onMouseDown={event => event.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-lg md:rounded-3xl">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <span className="rounded-full px-2 py-1 text-xs font-bold text-white" style={{ background: eventColor(item) }}>{eventTypeMeta(item.type).label}</span>
-            <h3 className={`mt-3 text-2xl font-bold ${item.status === "done" ? "text-slate-400 line-through" : ""}`}>{item.title}</h3>
-          </div>
-          <button type="button" onClick={close} className="grid size-10 place-items-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/5">×</button>
-        </div>
-        <div className="mt-5 space-y-3 text-sm">
-          <Info label="Thời gian" value={`${formatDateVN(item.startDate)} ${item.allDay ? "· Cả ngày" : `· ${item.startTime || "08:00"}${item.endTime ? ` - ${item.endTime}` : ""}`}`} />
-          {item.endDate && item.endDate !== item.startDate && <Info label="Kết thúc" value={`${formatDateVN(item.endDate)} ${item.endTime || ""}`} />}
-          <Info label="Lịch" value={calendar?.name || "Lịch"} />
-          {related && <Info label="Thành viên liên quan" value={related} />}
-          {item.location && <Info label="Địa điểm" value={item.location} />}
-          <Info label="Nhắc trước" value={reminderOptions.find(option => option.value === item.reminderMinutes)?.label || "Không"} />
-          <Info label="Lặp lại" value={repeatOptions.find(option => option.value === item.repeatRule)?.label || "Không"} />
-          <Info label="Ghi chú" value={item.note || "Không có ghi chú."} />
-        </div>
-        <div className="mt-5 flex flex-wrap gap-2">
-          {item.calendarId !== "fixed-birthday" && item.calendarId !== "fixed-holiday" && (
-            <>
-              <button type="button" onClick={markDone} className="rounded-xl border border-emerald-200 px-4 py-2.5 text-sm font-bold text-emerald-600 hover:bg-emerald-50">{item.status === "done" ? "Mở lại" : "Đánh dấu hoàn thành"}</button>
-              <button type="button" onClick={edit} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white">Sửa</button>
-              <button type="button" onClick={remove} className="rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-bold text-rose-500 hover:bg-rose-50">Xóa</button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block text-sm font-semibold">{label}<div className="mt-1">{children}</div></label>;
-}
-function Info({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl border border-[var(--app-border)] p-3"><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-semibold">{value}</p></div>;
 }
 
 function FilterContent({ calendars, events, enabled, setEnabled, enabledTypes, setEnabledTypes, collapsed, toggle }: { calendars: Calendar[]; events: CalendarEvent[]; enabled: string[]; setEnabled: React.Dispatch<React.SetStateAction<string[]>>; enabledTypes: EventType[]; setEnabledTypes: React.Dispatch<React.SetStateAction<EventType[]>>; collapsed?: boolean; toggle?: () => void; }) {
@@ -1060,93 +848,362 @@ function FilterContent({ calendars, events, enabled, setEnabled, enabledTypes, s
   
   if (collapsed) {
     return (
-      <div className="flex flex-col items-center py-2 space-y-4">
-        <button type="button" onClick={toggle} className="mb-2 text-slate-400 hover:text-indigo-600" title="Mở rộng bộ lọc">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg>
-        </button>
-        <div className="w-full border-b border-slate-200 dark:border-white/10" />
+      <div className="flex flex-col items-center py-4 space-y-4 h-full">
         <div className="flex flex-col items-center space-y-3">
-          {filterGroups.map(group => (
-            <label key={group.value} className="cursor-pointer" title={group.label}>
-              <input type="checkbox" checked={enabledTypes.includes(group.value)} onChange={() => setEnabledTypes(current => current.includes(group.value) ? current.filter(id => id !== group.value) : [...current, group.value])} className="sr-only" />
-              <i className={`block size-3 rounded-full shadow-sm transition-all ${enabledTypes.includes(group.value) ? "ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-900" : "opacity-40 hover:opacity-100"}`} style={{ background: eventTypeMeta(group.value).color }} />
-            </label>
+          {calendars.map(calendar => (
+            <div key={calendar.id} className="cursor-pointer" title={calendar.name} onClick={() => setEnabled(current => current.includes(calendar.id) ? current.filter(id => id !== calendar.id) : [...current, calendar.id])}>
+              <div className={`block size-6 rounded flex items-center justify-center shadow-sm transition-all ${enabled.includes(calendar.id) ? "opacity-100" : "opacity-40 hover:opacity-80"}`} style={{ background: calendar.color }}>
+                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            </div>
           ))}
         </div>
-        {calendars.length > 0 && (
-          <>
-            <div className="w-full border-b border-slate-200 dark:border-white/10" />
-            <div className="flex flex-col items-center space-y-3">
-              {calendars.map(calendar => (
-                <label key={calendar.id} className="cursor-pointer" title={calendar.name}>
-                  <input type="checkbox" checked={enabled.includes(calendar.id)} onChange={() => setEnabled(current => current.includes(calendar.id) ? current.filter(id => id !== calendar.id) : [...current, calendar.id])} className="sr-only" />
-                  <i className={`block size-3 rounded-full shadow-sm transition-all ${enabled.includes(calendar.id) ? "ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-900" : "opacity-40 hover:opacity-100"}`} style={{ background: calendar.color }} />
-                </label>
-              ))}
-            </div>
-          </>
-        )}
       </div>
     );
   }
 
   return (
-    <>
-      <div className="mb-4 rounded-xl bg-slate-50/80 p-3 dark:bg-white/5 relative group">
-        <div className="flex items-center justify-between">
-          <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-indigo-500">Bộ lọc</p>
-          {toggle && (
-            <button type="button" onClick={toggle} className="text-slate-400 hover:text-indigo-600" title="Thu gọn bộ lọc">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><path d="m15 15-3-3 3-3"></path></svg>
-            </button>
-          )}
+    <div className="flex h-full flex-col overflow-y-auto py-2">
+       <div className="px-4 pb-2 pt-2">
+         <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Lịch người dùng</h2>
+       </div>
+       <div className="space-y-0.5 px-2">
+          {calendars.map(calendar => (
+             <div key={calendar.id} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer" onClick={() => setEnabled(current => current.includes(calendar.id) ? current.filter(id => id !== calendar.id) : [...current, calendar.id])}>
+                <div className={`size-6 rounded flex items-center justify-center shrink-0 transition-opacity ${enabled.includes(calendar.id) ? "opacity-100" : "opacity-30"}`} style={{ backgroundColor: calendar.color }}>
+                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{calendar.name}</p>
+                </div>
+                <div className="shrink-0 size-5 rounded-full bg-slate-200 text-[9px] font-bold text-slate-600 flex items-center justify-center">O</div>
+                <button className="p-1 hover:bg-slate-200 dark:hover:bg-white/10 rounded text-slate-400" onClick={e => e.stopPropagation()}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+             </div>
+          ))}
+          <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-white/5 w-full text-slate-500 hover:text-slate-800">
+             <div className="size-6 rounded border border-dashed border-slate-300 flex items-center justify-center shrink-0">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+             </div>
+             <span className="text-sm font-medium">Thêm lịch</span>
+          </button>
+       </div>
+
+       <div className="px-4 pb-2 pt-6">
+         <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Bộ lọc sự kiện</h2>
+       </div>
+       <div className="space-y-0.5 px-2">
+          {filterGroups.filter(g => g.value !== "birthday" && g.value !== "holiday").map(group => (
+             <div key={group.value} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer" onClick={() => setEnabledTypes(current => current.includes(group.value) ? current.filter(id => id !== group.value) : [...current, group.value])}>
+                <div className={`size-6 rounded-full flex items-center justify-center shrink-0 transition-opacity ${enabledTypes.includes(group.value) ? "opacity-100" : "opacity-30"}`} style={{ backgroundColor: eventTypeMeta(group.value).color }}>
+                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate flex-1">{group.label}</span>
+                {countByType[group.value] > 0 && <span className="text-xs text-slate-400">{countByType[group.value]}</span>}
+             </div>
+          ))}
+       </div>
+    </div>
+  );
+}
+
+function EventEditorInline({ draft, calendars, members, user, setDraft, save, close, remove }: { draft: EventDraft; calendars: Calendar[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; close: () => void; remove?: () => void }) {
+  const [activePopup, setActivePopup] = useState<string | null>(null);
+  const selectable = user?.role === "self_only" ? members.filter(member => member.id === user.memberId) : members;
+  const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) => setDraft({ ...draft, [key]: value });
+
+  return (
+    <div className="flex h-full flex-col bg-slate-50 dark:bg-slate-950 relative w-full overflow-hidden">
+      
+      {/* Main Form Layer */}
+      <div className={`absolute inset-0 flex flex-col bg-slate-50 dark:bg-slate-950 transition-transform duration-300 ease-in-out ${activePopup ? '-translate-x-[30%] opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}`}>
+        <div className="flex items-center justify-between px-3 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 shrink-0">
+          <button type="button" onClick={close} className="p-1 text-slate-400 hover:text-slate-800"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+          <span className="font-bold text-[13px] uppercase tracking-wider">{draft.id ? "Edit Event" : "Create Event"}</span>
+          <button type="button" onClick={save as any} className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-bold shadow-sm hover:bg-indigo-700">Save</button>
         </div>
-        <h3 className="mt-1 text-lg font-black tracking-tight text-slate-900 dark:text-white">Lịch hiển thị</h3>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => { setEnabledTypes(allTypes); setEnabled(allCals); }} className="h-8 rounded-full bg-indigo-600 text-xs font-extrabold text-white shadow-sm hover:bg-indigo-700">Bật tất cả</button>
-          <button type="button" onClick={() => { setEnabledTypes([]); setEnabled([]); }} className="h-8 rounded-full border border-slate-200 bg-white text-xs font-extrabold text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5">Tắt tất cả</button>
+
+        <div className="flex-1 overflow-y-auto pb-8">
+           <div className="flex px-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 mb-2">
+              <button className="flex-1 py-2 text-sm font-bold text-indigo-600 border-b-2 border-indigo-600">Event</button>
+              <button className="flex-1 py-2 text-sm font-bold text-slate-400 hover:text-slate-600">Memo</button>
+           </div>
+
+           <div className="bg-white dark:bg-slate-900 px-4 py-3 mb-2 shadow-sm">
+              <input autoFocus className="w-full text-lg font-bold placeholder:text-slate-300 outline-none bg-transparent" placeholder="Event title" value={draft.title} onChange={e => set("title", e.target.value)} />
+           </div>
+
+           <div className="bg-white dark:bg-slate-900 mb-2 shadow-sm border-y border-slate-200 dark:border-white/5">
+              <Row label="Calendar" value={calendars.find(c => c.id === draft.calendarId)?.name || ""} onClick={() => setActivePopup("Calendar")} />
+              <Row label="Label" value={eventTypes.find(t => t.value === draft.type)?.label || ""} onClick={() => setActivePopup("Label")} />
+           </div>
+
+           <div className="bg-white dark:bg-slate-900 mb-2 shadow-sm border-y border-slate-200 dark:border-white/5">
+              <Row label="All-day" right={<input type="checkbox" checked={draft.allDay} onChange={e => setDraft({ ...draft, allDay: e.target.checked })} className="size-4" />} />
+              <Row label="Starts" value={formatDateVN(draft.startDate) + (draft.allDay ? "" : ` ${draft.startTime}`)} onClick={() => setActivePopup("Starts")} />
+              <Row label="Ends" value={formatDateVN(draft.endDate) + (draft.allDay ? "" : ` ${draft.endTime}`)} onClick={() => setActivePopup("Ends")} />
+              <Row label="Repeat" value={repeatOptions.find(o => o.value === draft.repeatRule)?.label || "Không"} onClick={() => setActivePopup("Repeat")} />
+              <Row label="Remind" value={reminderOptions.find(o => o.value === draft.reminderMinutes)?.label || "Không"} onClick={() => setActivePopup("Remind")} />
+           </div>
+
+           <div className="bg-white dark:bg-slate-900 mb-2 shadow-sm border-y border-slate-200 dark:border-white/5">
+              <Row label="Members" value={draft.memberIds.length ? `${draft.memberIds.length} người` : "Không"} onClick={() => setActivePopup("Members")} />
+              <Row label="Location" value={draft.location || "Thêm địa điểm"} onClick={() => setActivePopup("Location")} />
+              <Row label="Note" value={draft.note ? "Có ghi chú" : "Thêm ghi chú"} onClick={() => setActivePopup("Note")} />
+           </div>
+
+           <div className="bg-white dark:bg-slate-900 shadow-sm border-y border-slate-200 dark:border-white/5">
+              <Row label="Visibility" value={draft.visibility === "private" ? "Chỉ mình tôi" : "Tất cả"} onClick={() => setActivePopup("Visibility")} />
+           </div>
+
+           {remove && (
+             <div className="mt-6 px-4">
+                <button type="button" onClick={remove} className="w-full py-2 bg-white dark:bg-slate-900 text-rose-500 font-bold text-sm rounded shadow-sm border border-rose-100 dark:border-rose-900">Delete Event</button>
+             </div>
+           )}
         </div>
       </div>
 
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-xs font-extrabold uppercase tracking-[0.18em] text-slate-500">Sự kiện</h3>
-        <button type="button" onClick={() => setEnabledTypes(enabledTypes.length === allTypes.length ? [] : allTypes)} className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600">
-          {enabledTypes.length === allTypes.length ? "Bỏ chọn" : "Chọn tất cả"}
-        </button>
+      {/* Sub Panel Picker Layer */}
+      <div className={`absolute inset-0 flex flex-col bg-slate-50 dark:bg-slate-950 z-20 transition-transform duration-300 ease-in-out ${activePopup ? 'translate-x-0 shadow-[-10px_0_20px_-10px_rgba(0,0,0,0.1)]' : 'translate-x-full'}`}>
+        <div className="flex items-center justify-between px-3 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 shrink-0 shadow-sm relative z-10">
+          <button onClick={() => setActivePopup(null)} className="p-1 text-slate-500 hover:text-slate-800 flex items-center gap-0.5">
+             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+             <span className="text-[13px] font-bold">Back</span>
+          </button>
+          <span className="font-bold text-[13px] uppercase tracking-wider text-slate-600 dark:text-slate-400 absolute left-1/2 -translate-x-1/2">{activePopup}</span>
+          <button onClick={() => setActivePopup(null)} className="p-1 text-indigo-600 font-bold text-[13px]">Done</button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-950">
+           {activePopup === "Calendar" && (
+             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
+               {calendars.map(c => (
+                  <div key={c.id} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { set("calendarId", c.id); setActivePopup(null); }}>
+                    <div className="size-4 rounded-full" style={{ backgroundColor: c.color }} />
+                    <span className="font-medium text-sm flex-1">{c.name}</span>
+                    {draft.calendarId === c.id && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+                  </div>
+               ))}
+             </div>
+           )}
+
+           {activePopup === "Label" && (
+             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
+               {eventTypes.map(c => (
+                  <div key={c.value} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { set("type", c.value as EventType); setActivePopup(null); }}>
+                    <div className="size-4 rounded-full" style={{ backgroundColor: c.color }} />
+                    <span className="font-medium text-sm flex-1">{c.label}</span>
+                    {draft.type === c.value && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+                  </div>
+               ))}
+             </div>
+           )}
+
+           {activePopup === "Repeat" && (
+             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
+               {repeatOptions.map(o => (
+                  <div key={o.value} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { set("repeatRule", o.value); setActivePopup(null); }}>
+                    <span className="font-medium text-sm flex-1">{o.label}</span>
+                    <div className={`size-5 rounded-full border-2 flex items-center justify-center ${draft.repeatRule === o.value ? "border-indigo-600" : "border-slate-300"}`}>
+                      {draft.repeatRule === o.value && <div className="size-2.5 bg-indigo-600 rounded-full" />}
+                    </div>
+                  </div>
+               ))}
+             </div>
+           )}
+
+           {activePopup === "Remind" && (
+             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
+               {reminderOptions.map(o => (
+                  <div key={o.value} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { set("reminderMinutes", o.value); setActivePopup(null); }}>
+                    <span className="font-medium text-sm flex-1">{o.label}</span>
+                    <div className={`size-5 rounded-full border-2 flex items-center justify-center ${draft.reminderMinutes === o.value ? "border-indigo-600" : "border-slate-300"}`}>
+                      {draft.reminderMinutes === o.value && <div className="size-2.5 bg-indigo-600 rounded-full" />}
+                    </div>
+                  </div>
+               ))}
+             </div>
+           )}
+
+           {(activePopup === "Starts" || activePopup === "Ends") && (
+              <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5 p-4 space-y-4">
+                 <div>
+                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Ngày</label>
+                   <input type="date" className={input} value={activePopup === "Starts" ? draft.startDate : draft.endDate} onChange={e => {
+                      const val = e.target.value;
+                      if (activePopup === "Starts") {
+                         setDraft({ ...draft, startDate: val, endDate: val > (draft.endDate||"") ? val : draft.endDate });
+                      } else {
+                         set("endDate", val);
+                      }
+                   }} />
+                 </div>
+                 {!draft.allDay && (
+                   <div className="pt-2">
+                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Giờ</label>
+                     <input type="time" className={input} value={activePopup === "Starts" ? draft.startTime : draft.endTime} onChange={e => set(activePopup === "Starts" ? "startTime" : "endTime", e.target.value)} />
+                   </div>
+                 )}
+              </div>
+           )}
+
+           {activePopup === "Location" && (
+              <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5 p-4">
+                 <input autoFocus className={input} placeholder="Nhập địa điểm..." value={draft.location} onChange={e => set("location", e.target.value)} />
+              </div>
+           )}
+
+           {activePopup === "Note" && (
+              <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5 p-4 flex flex-col h-[50vh]">
+                 <textarea autoFocus className="w-full flex-1 rounded-xl border border-slate-200 p-3 text-sm resize-none outline-none focus:border-indigo-500 dark:bg-slate-800 dark:border-white/10 dark:text-white" placeholder="Thêm ghi chú..." value={draft.note} onChange={e => set("note", e.target.value)} />
+              </div>
+           )}
+
+           {activePopup === "Members" && (
+             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
+               {selectable.map(m => (
+                  <label key={m.id} className="flex items-center gap-3 py-3 px-4 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer border-b border-slate-100 dark:border-white/5 last:border-0">
+                     <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(m)[0]}</span>
+                     <span className="flex-1 text-sm font-medium">{memberName(m)}</span>
+                     <input type="checkbox" checked={draft.memberIds.includes(m.id)} onChange={(e) => {
+                        const next = e.target.checked ? [...draft.memberIds, m.id] : draft.memberIds.filter(id => id !== m.id);
+                        setDraft({ ...draft, memberIds: next, relatedMemberIds: next });
+                     }} className="size-5 rounded border-slate-300" />
+                  </label>
+               ))}
+             </div>
+           )}
+
+           {activePopup === "Visibility" && (
+             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
+               {[
+                  { value: "all", label: "Tất cả thành viên" },
+                  { value: "private", label: "Chỉ mình tôi" }
+               ].map(o => (
+                  <div key={o.value} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { set("visibility", o.value as "all"|"private"); setActivePopup(null); }}>
+                    <span className="font-medium text-sm flex-1">{o.label}</span>
+                    <div className={`size-5 rounded-full border-2 flex items-center justify-center ${draft.visibility === o.value ? "border-indigo-600" : "border-slate-300"}`}>
+                      {draft.visibility === o.value && <div className="size-2.5 bg-indigo-600 rounded-full" />}
+                    </div>
+                  </div>
+               ))}
+             </div>
+           )}
+        </div>
       </div>
-      <div className="mb-6 space-y-1">
-        {filterGroups.map(group => (
-          <label key={group.value} className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-2 text-sm shadow-sm transition hover:bg-slate-50 ${enabledTypes.includes(group.value) ? "border-indigo-100 bg-indigo-50/70" : "border-transparent bg-white/60"} dark:border-white/10 dark:bg-white/5`}>
-            <input type="checkbox" checked={enabledTypes.includes(group.value)} onChange={() => setEnabledTypes(current => current.includes(group.value) ? current.filter(id => id !== group.value) : [...current, group.value])} className="sr-only" />
-            <span className={`grid size-5 shrink-0 place-items-center rounded-full border text-[11px] font-black ${enabledTypes.includes(group.value) ? "border-indigo-500 bg-indigo-600 text-white" : "border-slate-300 bg-white text-transparent"}`}>✓</span>
-            <i className="size-3.5 shrink-0 rounded-full shadow-sm" style={{ background: eventTypeMeta(group.value).color }} />
-            <span className="min-w-0 flex-1 truncate font-bold text-slate-700 dark:text-slate-200">{group.label}</span>
-            {countByType[group.value] > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-white/10 dark:text-slate-300">{countByType[group.value]}</span>}
-          </label>
-        ))}
+    </div>
+  );
+}
+
+function EventDetailInline({ item, calendars, members, edit, remove, markDone, close }: { item: CalendarEvent; calendars: Calendar[]; members: Member[]; edit: () => void; remove: () => void; markDone: () => void; close: () => void }) {
+  const calendar = calendars.find(calendar => calendar.id === item.calendarId);
+  const tone = eventTone(item.type);
+  const isFixed = item.calendarId === "fixed-birthday" || item.calendarId === "fixed-holiday";
+
+  return (
+    <div className="flex h-full flex-col bg-slate-50 dark:bg-slate-950 relative w-full overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 shrink-0">
+        <button type="button" onClick={close} className="p-1 text-slate-400 hover:text-slate-800"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        <span className="font-bold text-[13px] uppercase tracking-wider text-slate-600 dark:text-slate-400">Event Details</span>
+        {!isFixed ? (
+           <button type="button" onClick={edit} className="p-1 text-indigo-600 font-bold hover:bg-indigo-50 dark:hover:bg-white/5 rounded"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>
+        ) : <div className="size-7" />}
       </div>
-      
-      {calendars.length > 0 && (
-        <>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-xs font-extrabold uppercase tracking-[0.18em] text-slate-500">Lịch người dùng</h3>
-            <button type="button" onClick={() => setEnabled(enabled.length === allCals.length ? [] : allCals)} className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600">
-              {enabled.length === allCals.length ? "Bỏ chọn" : "Chọn tất cả"}
+
+      <div className="flex-1 overflow-y-auto pb-8">
+         <div className="bg-white dark:bg-slate-900 px-5 py-6 mb-2 shadow-sm border-b border-slate-200 dark:border-white/10">
+            <h2 className={`text-2xl font-bold mb-2 ${item.status === "done" ? "text-slate-400 line-through" : "text-slate-800 dark:text-white"}`}>{item.title}</h2>
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-4">
+               <span>{formatDateVN(item.startDate)} {item.allDay ? "" : item.startTime}</span>
+               {item.endDate && item.endDate !== item.startDate && (
+                  <>
+                    <span>→</span>
+                    <span>{formatDateVN(item.endDate)} {item.endTime}</span>
+                  </>
+               )}
+            </div>
+            <div className="flex items-center gap-2">
+               <div className={`size-3 rounded-full ${tone.dot}`} />
+               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{calendar?.name || eventTypeMeta(item.type).label}</span>
+            </div>
+         </div>
+
+         <div className="bg-white dark:bg-slate-900 mb-2 shadow-sm border-y border-slate-200 dark:border-white/5 px-2">
+            {item.location && <Row label="Location" value={item.location} />}
+            {item.reminderMinutes > 0 && <Row label="Remind" value={reminderOptions.find(option => option.value === item.reminderMinutes)?.label} />}
+            {item.repeatRule !== "none" && <Row label="Repeat" value={repeatOptions.find(option => option.value === item.repeatRule)?.label} />}
+            {item.memberIds?.length > 0 && <Row label="Members" value={`${item.memberIds.length} người`} />}
+         </div>
+
+         {item.note && (
+            <div className="bg-white dark:bg-slate-900 mb-2 shadow-sm border-y border-slate-200 dark:border-white/5 p-4">
+               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Note</h4>
+               <p className="text-sm whitespace-pre-wrap text-slate-700 dark:text-slate-300">{item.note}</p>
+            </div>
+         )}
+      </div>
+
+      {!isFixed && (
+         <div className="flex items-center border-t border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 p-3 shrink-0 gap-3">
+            <button onClick={markDone} className="flex-1 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 py-2.5 rounded text-sm font-bold text-slate-700 dark:text-slate-300">
+               {item.status === "done" ? "Mở lại" : "Hoàn thành"}
             </button>
-          </div>
-          <div className="space-y-1">
-            {calendars.map(calendar => (
-              <label key={calendar.id} className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-2 text-sm shadow-sm transition hover:bg-slate-50 ${enabled.includes(calendar.id) ? "border-indigo-100 bg-indigo-50/70" : "border-transparent bg-white/60"} dark:border-white/10 dark:bg-white/5`}>
-                <input type="checkbox" checked={enabled.includes(calendar.id)} onChange={() => setEnabled(current => current.includes(calendar.id) ? current.filter(id => id !== calendar.id) : [...current, calendar.id])} className="sr-only" />
-                <span className={`grid size-5 shrink-0 place-items-center rounded-full border text-[11px] font-black ${enabled.includes(calendar.id) ? "border-indigo-500 bg-indigo-600 text-white" : "border-slate-300 bg-white text-transparent"}`}>✓</span>
-                <i className="size-3.5 shrink-0 rounded-full shadow-sm" style={{ background: calendar.color }} />
-                <span className="min-w-0 flex-1 truncate font-bold text-slate-700 dark:text-slate-200">{calendar.name}</span>
-                {countByCal[calendar.id] > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-white/10 dark:text-slate-300">{countByCal[calendar.id]}</span>}
-              </label>
-            ))}
-          </div>
-        </>
+            <button onClick={remove} className="flex-1 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 py-2.5 rounded text-sm font-bold text-rose-600">
+               Xóa sự kiện
+            </button>
+         </div>
       )}
-    </>
+    </div>
+  );
+}
+
+function EventEditorSheet({ draft, calendars, members, user, setDraft, save, remove }: { draft: EventDraft; calendars: Calendar[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; remove?: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 dark:bg-slate-950">
+      <EventEditorInline draft={draft} calendars={calendars} members={members} user={user} setDraft={setDraft} save={saveEvent => { save(saveEvent); setDraft(null); }} close={() => setDraft(null)} remove={remove ? () => { remove(); setDraft(null); } : undefined} />
+    </div>
+  );
+}
+
+function EventDetailSheet({ item, calendars, members, close, edit, remove, markDone }: { item: CalendarEvent; calendars: Calendar[]; members: Member[]; close: () => void; edit: () => void; remove: () => void; markDone: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 dark:bg-slate-950">
+      <EventDetailInline item={item} calendars={calendars} members={members} close={close} edit={edit} remove={remove} markDone={markDone} />
+    </div>
+  );
+}
+
+function DayEventsSheet({ date, events, members, close, add, open, edit, remove, openMenuId, setOpenMenuId }: { date: string; events: CalendarEvent[]; members: Member[]; close: () => void; add: () => void; open: (event: CalendarEvent) => void; edit: (event: CalendarEvent) => void; remove: (event: CalendarEvent) => void; openMenuId: string | null; setOpenMenuId: (id: string | null) => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/45" onMouseDown={close}>
+      <div onMouseDown={e => e.stopPropagation()} className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 dark:bg-slate-900">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-bold">{formatDateVN(date)}</h3>
+          <button type="button" onClick={close} className="grid size-8 place-items-center rounded-full bg-slate-100 font-bold text-slate-500">×</button>
+        </div>
+        <button type="button" onClick={add} className="mb-4 h-10 w-full rounded-xl bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-700">+ Tạo sự kiện</button>
+        <AgendaView events={events} members={members} open={open} edit={edit} remove={remove} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} emptyText="Trống" />
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="block text-sm font-semibold">{label}<div className="mt-1">{children}</div></label>;
+}
+function Info({ label, value }: { label: string; value: string }) {
+  return <div className="mb-2"><p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{label}</p><p className="mt-0.5 text-sm font-medium">{value}</p></div>;
+}
+
+function Row({ label, value, onClick, right }: { label: string; value?: string; onClick?: () => void; right?: React.ReactNode }) {
+  return (
+    <div className={`flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-white/5 last:border-0 ${onClick ? "cursor-pointer hover:bg-slate-50 dark:hover:bg-white/[0.02]" : ""}`} onClick={onClick}>
+       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</span>
+       <div className="flex items-center gap-2 text-sm text-slate-500">
+          {value && <span className="truncate max-w-[150px] text-right">{value}</span>}
+          {right}
+          {onClick && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>}
+       </div>
+    </div>
   );
 }

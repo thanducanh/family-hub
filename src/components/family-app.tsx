@@ -173,8 +173,21 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   const [theme, setTheme] = useState<Theme>("system");
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [editor, setEditor] = useState<Editor>(null);
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState<CalendarNotification[]>([]);
+  
+  const unreadNotificationsCount = user ? notifications.filter(n => isCalendarNotificationUnread(n, user)).length : 0;
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && 'setAppBadge' in navigator) {
+      if (unreadNotificationsCount > 0) {
+        (navigator as any).setAppBadge(unreadNotificationsCount).catch(() => {});
+      } else {
+        (navigator as any).clearAppBadge().catch(() => {});
+      }
+    }
+  }, [unreadNotificationsCount]);
+
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [profilePageOpen, setProfilePageOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -197,6 +210,15 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       setSidebarCollapsed(localStorage.getItem("sidebarCollapsed") === "true");
       setSidebarPreferenceLoaded(true);
     });
+    
+    // Parse URL params for PWA shortcuts
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const initialScreen = params.get("screen") as Screen;
+      if (initialScreen) {
+        setScreen(initialScreen);
+      }
+    }
   }, []);
   useEffect(() => {
     if (!user) return;
@@ -1078,6 +1100,67 @@ function CategoryChart({ data }: { data: [string, number][] }) {
 function CompletionChart({ value, done, total }: { value: number; done: number; total: number }) { return <Card className="p-5"><div className="flex items-center justify-between"><b>Tỷ lệ hoàn thành công việc</b><b className="text-emerald-500">{value}%</b></div><div className="mt-8 grid place-items-center"><div className="grid size-36 place-items-center rounded-full bg-emerald-50 text-3xl font-bold text-emerald-500 ring-8 ring-emerald-100 dark:bg-emerald-400/10 dark:ring-emerald-400/20">{value}%</div></div><p className="mt-8 text-center text-xs text-slate-400">{total ? `${done}/${total} công việc đã hoàn thành` : "Chưa có dữ liệu công việc"}</p></Card>; }
 function NotificationsView({ user, notifications, setNotifications }: { user: AuthUser; notifications: CalendarNotification[]; setNotifications: React.Dispatch<React.SetStateAction<CalendarNotification[]>> }) {
   const [selected, setSelected] = useState<CalendarNotification | null>(null);
+  const [pushStatus, setPushStatus] = useState<"checking" | "subscribed" | "unsubscribed" | "denied">("checking");
+  const [isSubscribing, setIsSubscribing] = useState(false);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPushStatus("denied");
+      return;
+    }
+    navigator.serviceWorker.getRegistration().then(reg => {
+      if (!reg) {
+        setPushStatus("unsubscribed");
+        return;
+      }
+      reg.pushManager.getSubscription().then(sub => {
+        if (sub) setPushStatus("subscribed");
+        else setPushStatus("unsubscribed");
+      });
+    });
+  }, []);
+
+  const handleSubscribePush = async () => {
+    try {
+      setIsSubscribing(true);
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setPushStatus("denied");
+        alert("Bạn đã từ chối quyền gửi thông báo.");
+        return;
+      }
+      
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      await reg.update();
+      
+      const vapidRes = await fetch("/api/vapid-public-key");
+      const { publicKey } = await vapidRes.json();
+      if (!publicKey) throw new Error("Không lấy được VAPID key");
+      
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: publicKey
+      });
+      
+      const res = await fetch("/api/push-subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: sub.endpoint, keys: sub.toJSON().keys })
+      });
+      
+      if (res.ok) {
+        setPushStatus("subscribed");
+        alert("Đăng ký nhận thông báo thành công!");
+      } else {
+        throw new Error("Lỗi khi lưu subscription");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Có lỗi xảy ra khi đăng ký nhận thông báo.");
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
 
   const handleMarkRead = (item: CalendarNotification) => {
     markNotificationRead(item.id, user);
@@ -1093,6 +1176,25 @@ function NotificationsView({ user, notifications, setNotifications }: { user: Au
   };
 
   return (
+    <div className="space-y-4 md:space-y-6">
+      {pushStatus === "unsubscribed" && (
+        <Card className="p-4 bg-indigo-50/50 dark:bg-indigo-500/10 border-indigo-100 dark:border-indigo-500/20">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <h3 className="font-semibold text-indigo-900 dark:text-indigo-100 text-sm">Bật thông báo trên điện thoại</h3>
+              <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1">Nhận thông báo push khi có sự kiện mới hoặc sắp tới.</p>
+            </div>
+            <button
+              onClick={handleSubscribePush}
+              disabled={isSubscribing}
+              className="whitespace-nowrap px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50"
+            >
+              {isSubscribing ? "Đang xử lý..." : "Bật thông báo"}
+            </button>
+          </div>
+        </Card>
+      )}
+      
     <div className="grid grid-cols-12 gap-4 md:gap-6">
       {/* Mobile Detail Overlay */}
       {selected && (
@@ -1172,6 +1274,64 @@ function NotificationsView({ user, notifications, setNotifications }: { user: Au
             {notifications.length ? (
               notifications.map(item => {
                 const unread = isCalendarNotificationUnread(item, user);
+                
+                if (item.source_type === "event" && item.metadata) {
+                  const meta = item.metadata;
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => setSelected(item)}
+                      className={`p-3 md:p-4 rounded-xl border border-[var(--app-border)] cursor-pointer transition hover:bg-slate-50 dark:hover:bg-white/5 flex flex-col gap-2 ${
+                        unread ? "bg-orange-50/30 dark:bg-orange-400/5 ring-1 ring-orange-200/50 dark:ring-orange-500/10" : ""
+                      } ${selected?.id === item.id ? "ring-2 ring-indigo-500 bg-slate-50/50 dark:bg-white/5" : ""}`}
+                    >
+                      <div className="flex justify-between items-start gap-2 mb-1">
+                        <div className="flex items-center gap-2">
+                          <div className="bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 grid size-6 place-items-center rounded-full shrink-0 scale-75">
+                            <CalendarIcon />
+                          </div>
+                          <h4 className={`text-xs md:text-sm text-slate-800 dark:text-white truncate ${unread ? "font-bold" : "font-semibold"}`}>
+                            {item.title || "Thông báo sự kiện"}
+                          </h4>
+                        </div>
+                        <span className="text-[9px] md:text-[10px] text-slate-400 shrink-0 mt-0.5">
+                          {formatDateVN(item.createdAt)}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-[110px_1fr] gap-x-2 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-[var(--app-border)]">
+                        <div className="text-slate-500">Sự kiện:</div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200">{meta.eventTitle}</div>
+                        
+                        <div className="text-slate-500">Thời gian:</div>
+                        <div>
+                          <span className="font-medium text-indigo-600 dark:text-indigo-400">
+                            {meta.startTime ? `${meta.startTime} ` : ""}
+                          </span>
+                          {new Date(meta.eventDate).toLocaleDateString("vi-VN", { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                        </div>
+                        
+                        <div className="text-slate-500">Lịch:</div>
+                        <div>{meta.calendarName}</div>
+                        
+                        {meta.relatedMembers && (
+                          <>
+                            <div className="text-slate-500">Người liên quan:</div>
+                            <div className="text-slate-700 dark:text-slate-300">{meta.relatedMembers}</div>
+                          </>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-[10px] md:text-[11px] text-slate-400 pt-1">
+                        <span>Tạo bởi: <span className="font-medium text-slate-600 dark:text-slate-300">{meta.creatorName || "Family Hub"}</span></span>
+                        <span className={unread ? "text-orange-500 font-bold bg-orange-100 dark:bg-orange-500/20 px-2 py-0.5 rounded-full" : "text-slate-400"}>
+                          {unread ? "Chưa đọc" : "Đã đọc"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={item.id}
@@ -1206,6 +1366,7 @@ function NotificationsView({ user, notifications, setNotifications }: { user: Au
           </div>
         </Card>
       </div>
+    </div>
     </div>
   );
 }
