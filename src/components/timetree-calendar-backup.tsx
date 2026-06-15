@@ -41,14 +41,14 @@ const input = "h-11 w-full rounded-xl border border-[var(--app-border)] bg-[var(
 const textarea = "w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500";
 const viDateFormatter = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 const eventTypes: Array<{ value: EventType; label: string; color: string }> = [
-  { value: "family", label: "Gia đình", color: "#3b82f6" },
-  { value: "personal", label: "Cá nhân", color: "#8b5cf6" },
-  { value: "work", label: "Công việc", color: "#10b981" },
+  { value: "family", label: "Gia đình", color: "#2563eb" },
+  { value: "personal", label: "Cá nhân", color: "#7c3aed" },
+  { value: "work", label: "Công việc", color: "#16a34a" },
   { value: "study", label: "Học tập", color: "#f97316" },
-  { value: "payment", label: "Thanh toán", color: "#f43f5e" },
+  { value: "payment", label: "Thanh toán", color: "#dc2626" },
   { value: "reminder", label: "Nhắc nhở", color: "#ec4899" },
-  { value: "birthday", label: "Sinh nhật", color: "#f59e0b" },
-  { value: "holiday", label: "Ngày lễ", color: "#ef4444" },
+  { value: "birthday", label: "Sinh nhật", color: "#d97706" },
+  { value: "holiday", label: "Ngày lễ", color: "#e11d48" },
   { value: "other", label: "Khác", color: "#64748b" }
 ];
 const filterGroups: Array<{ value: EventType; label: string; }> = [
@@ -93,16 +93,6 @@ function formatDateVN(value: string) {
 }
 function todayIso() {
   return iso(new Date());
-}
-function getLunarText(dateString: string): { text: string, important: boolean } {
-  const parsed = localDate(dateString);
-  if (!parsed) return { text: "", important: false };
-  const solar = Solar.fromYmd(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
-  const lunar = solar.getLunar();
-  const lDay = lunar.getDay();
-  const lMonth = lunar.getMonth();
-  const important = lDay === 1 || lDay === 15;
-  return { text: lDay === 1 ? `${lDay}/${lMonth}` : `${lDay}`, important };
 }
 function addDays(value: string, days: number) {
   const date = localDate(value) || new Date();
@@ -444,9 +434,9 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
       />
       {error && <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">{error}</p>}
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_320px]">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="hidden h-fit rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 shadow-sm xl:block">
-          <FilterContent calendars={calendars} events={allEvents} enabled={enabled} setEnabled={setEnabled} enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes} />
+          <FilterContent calendars={calendars} enabled={enabled} setEnabled={setEnabled} enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes} />
         </aside>
 
         {filterOpenMobile && (
@@ -456,7 +446,7 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
                  <h3 className="text-lg font-bold">Lịch hiển thị</h3>
                  <button type="button" onClick={() => setFilterOpenMobile(false)} className="flex size-8 items-center justify-center rounded-full bg-slate-100 font-bold text-slate-500">×</button>
                </div>
-               <FilterContent calendars={calendars} events={allEvents} enabled={enabled} setEnabled={setEnabled} enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes} />
+               <FilterContent calendars={calendars} enabled={enabled} setEnabled={setEnabled} enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes} />
             </div>
           </div>
         )}
@@ -510,24 +500,23 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
               setOpenMenuId={setOpenMenuId}
             />
           )}
-        </div>
 
-        {view !== "agenda" && (
-          <aside className="hidden xl:flex flex-col gap-4">
-            <AgendaView
-              title={`${dayGroupTitle(selectedDate)}`}
-              events={selectedEvents}
-              members={members}
-              open={openEventDetail}
-              edit={openEditEvent}
-              remove={deleteEvent}
-              openMenuId={openMenuId}
-              setOpenMenuId={setOpenMenuId}
-              emptyText="Chưa có sự kiện trong ngày này."
-            />
-            <button type="button" onClick={() => openNewEvent(selectedDate)} className="h-11 w-full rounded-xl bg-indigo-50 text-sm font-bold text-indigo-600 hover:bg-indigo-100">+ Thêm sự kiện ngày này</button>
-          </aside>
-        )}
+          {view !== "agenda" && (
+            <div className="mt-4">
+              <AgendaView
+                title={`Sự kiện ${dayGroupTitle(selectedDate)}`}
+                events={selectedEvents}
+                members={members}
+                open={openEventDetail}
+                edit={openEditEvent}
+                remove={deleteEvent}
+                openMenuId={openMenuId}
+                setOpenMenuId={setOpenMenuId}
+                emptyText="Chưa có sự kiện trong ngày này."
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-5 right-5 z-40 grid size-14 place-items-center rounded-full bg-indigo-600 text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 md:hidden" aria-label="Thêm sự kiện">+</button>
@@ -612,36 +601,47 @@ function DayCell({ date, anchor, selected, events, select, add, open, showLunar 
   const dateIso = iso(date);
   const isToday = dateIso === todayIso();
   const inMonth = date.getMonth() === anchor.getMonth();
-  const isWeekend = date.getDay() === 0 || date.getDay() === 6;
   const visible = events.slice(0, 3);
   
-  const lunarInfo = showLunar ? getLunarText(dateIso) : { text: "", important: false };
-  const lunarText = lunarInfo.text;
-  const isLunarImportant = lunarInfo.important;
+  let lunarText = "";
+  let isLunarImportant = false;
+  if (showLunar) {
+    const solar = Solar.fromYmd(date.getFullYear(), date.getMonth() + 1, date.getDate());
+    const lunar = solar.getLunar();
+    const lDay = lunar.getDay();
+    const lMonth = lunar.getMonth();
+    isLunarImportant = lDay === 1 || lDay === 15;
+    if (lDay === 1) {
+      lunarText = `${lDay}/${lMonth}`;
+    } else {
+      lunarText = `${lDay}`;
+    }
+  }
 
   return (
-    <button type="button" onClick={add} onFocus={select} className={`calendar-day-cell relative min-h-[112px] p-1.5 text-left outline-none transition-all md:min-h-[132px] md:p-2 hover:bg-slate-50 dark:hover:bg-white/5 ${!inMonth ? "bg-slate-50/50 text-slate-400 dark:bg-white/[0.01]" : isWeekend ? "bg-slate-50/30 dark:bg-white/[0.02]" : "bg-white/60 dark:bg-white/[0.02]"} ${selected ? "selected-day z-10 ring-2 ring-inset ring-indigo-500" : "border-r border-b border-[var(--app-border)]"} ${isToday ? "bg-indigo-50/30 dark:bg-indigo-400/5" : ""}`}>
-      <div className="mb-1.5 flex items-start justify-between">
-        <div className="flex flex-col items-start pl-0.5">
-          <span className={`grid size-7 place-items-center rounded-full text-sm font-bold md:size-8 md:text-base ${isToday ? "bg-indigo-600 text-white shadow-sm" : ""}`}>{date.getDate()}</span>
+    <button type="button" onClick={add} onFocus={select} className={`calendar-day-cell min-h-[112px] p-1.5 text-left transition md:min-h-[132px] md:p-2.5 ${inMonth ? "bg-white/60 dark:bg-white/[0.02]" : "bg-slate-50/70 text-slate-400 dark:bg-white/[0.01]"} ${selected ? "selected-day ring-2 ring-inset ring-indigo-300" : ""} ${isToday ? "bg-indigo-50/70 dark:bg-indigo-400/10" : ""}`}>
+      <div className="mb-1 flex items-start justify-between">
+        <div className="flex flex-col items-center">
+          <span className={`grid size-8 place-items-center rounded-full text-base font-bold md:text-lg ${isToday ? "bg-indigo-600 text-white" : ""}`}>{date.getDate()}</span>
           {showLunar && (
-             <span className={`mt-0.5 pl-1 text-[10px] ${isLunarImportant ? "font-bold text-rose-500" : "font-medium text-slate-400"} ${isToday && !isLunarImportant ? "text-indigo-400" : ""}`}>{lunarText}</span>
+             <span className={`mt-0.5 text-[10px] ${isLunarImportant ? "font-bold text-rose-500" : "font-medium text-slate-400"} ${isToday && !isLunarImportant ? "text-indigo-300" : ""}`}>{lunarText}</span>
           )}
         </div>
+        {events.length > 0 && <span className="mt-1.5 text-[11px] font-semibold text-slate-400">{events.length}</span>}
       </div>
       <div className="space-y-1">
         {visible.map(item => (
           <span
             key={item.id}
             onClick={(event) => { event.preventDefault(); event.stopPropagation(); open(item); }}
-            className="block truncate rounded px-1.5 py-1 text-left text-[11px] font-bold leading-4 transition-all hover:scale-[1.02] hover:shadow-sm active:scale-[0.98] md:text-xs"
-            style={{ background: `${eventColor(item)}1a`, color: eventColor(item), borderLeft: `3px solid ${eventColor(item)}` }}
+            className="block h-6 truncate rounded-md px-1.5 py-1 text-left text-[11px] font-bold leading-4 shadow-sm md:text-xs"
+            style={{ background: `${eventColor(item)}1f`, color: eventColor(item), borderLeft: `3px solid ${eventColor(item)}` }}
           >
-            {!item.allDay && <span className="mr-1 tabular-nums opacity-80">{eventTimeLabel(item)}</span>}
+            {!item.allDay && <span className="mr-1 tabular-nums">{eventTimeLabel(item)}</span>}
             <span>{item.title}</span>
           </span>
         ))}
-        {events.length > visible.length && <span className="block pl-1 text-left text-[11px] font-bold text-indigo-500 hover:text-indigo-600">+ {events.length - visible.length} sự kiện</span>}
+        {events.length > visible.length && <span className="block rounded-md px-1.5 py-1 text-left text-[11px] font-bold text-indigo-600">+ {events.length - visible.length} sự kiện</span>}
       </div>
     </button>
   );
@@ -700,12 +700,7 @@ function AgendaView({ events, members, open, edit, remove, openMenuId, setOpenMe
               {items.sort(sortEvents).map(item => <AgendaItem key={item.id} item={item} members={members} open={open} edit={edit} remove={remove} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} />)}
             </div>
           </div>
-        )) : (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--app-border)] bg-slate-50/50 py-12 dark:bg-white/5">
-            <span className="mb-2 text-4xl">📅</span>
-            <p className="text-sm font-medium text-slate-500">{emptyText}</p>
-          </div>
-        )}
+        )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] px-4 py-8 text-center text-sm text-slate-400">{emptyText}</p>}
       </div>
     </section>
   );
@@ -763,7 +758,6 @@ function DayEventsSheet({ date, events, members, close, add, open, edit, remove,
           <div>
             <p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Sự kiện ngày này</p>
             <h3 className="mt-1 text-xl font-bold">{dayGroupTitle(date)} · {formatDateVN(date)}</h3>
-            <p className="mt-1 text-sm text-slate-500">Âm lịch: {getLunarText(date).text}</p>
           </div>
           <button type="button" onClick={close} className="grid size-10 place-items-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/5">×</button>
         </div>
@@ -800,93 +794,71 @@ function EventEditor({ draft, calendars, members, user, setDraft, save, remove }
           <button type="button" onClick={() => setDraft(null)} className="grid size-10 place-items-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/5">×</button>
         </div>
 
-        <div className="space-y-6">
-          <section>
-            <h4 className="mb-3 text-sm font-bold tracking-wide text-slate-500">Thông tin chính</h4>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Tiêu đề"><input required autoFocus className={input} value={draft.title} onChange={event => set("title", event.target.value)} /></Field>
-              <Field label="Lịch"><select className={input} value={draft.calendarId} onChange={event => set("calendarId", event.target.value)}>{calendars.map(calendar => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></Field>
-              <Field label="Loại sự kiện"><select className={input} value={draft.type} onChange={event => set("type", event.target.value as EventType)}>{eventTypes.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></Field>
-              <Field label="Trạng thái"><select className={input} value={draft.status} onChange={event => set("status", event.target.value as EventStatus)}><option value="open">Đang mở</option><option value="done">Hoàn thành</option></select></Field>
-            </div>
-          </section>
-
-          <section>
-            <h4 className="mb-3 text-sm font-bold tracking-wide text-slate-500">Thời gian</h4>
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="col-span-full flex min-h-11 w-max cursor-pointer items-center gap-2 rounded-xl border border-[var(--app-border)] px-4 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-white/5"><input type="checkbox" checked={draft.allDay} onChange={event => setDraft({ ...draft, allDay: event.target.checked, startTime: event.target.checked ? "" : draft.startTime || "08:00", endTime: event.target.checked ? "" : draft.endTime })} className="accent-indigo-600" />Sự kiện cả ngày / Không có giờ cụ thể</label>
-              <Field label="Ngày bắt đầu"><input required type="date" className={input} value={draft.startDate} onChange={event => { setDraft({ ...draft, startDate: event.target.value, endDate: draft.endDate || event.target.value }); }} /></Field>
-              <Field label="Giờ bắt đầu"><input type="time" disabled={draft.allDay} className={`${input} ${draft.allDay ? 'opacity-50' : ''}`} value={draft.startTime} onChange={event => set("startTime", event.target.value)} /></Field>
-              <Field label="Ngày kết thúc"><input type="date" className={input} value={draft.endDate} onChange={event => set("endDate", event.target.value)} /></Field>
-              <Field label="Giờ kết thúc"><input type="time" disabled={draft.allDay} className={`${input} ${draft.allDay ? 'opacity-50' : ''}`} value={draft.endTime} onChange={event => set("endTime", event.target.value)} /></Field>
-            </div>
-          </section>
-
-          <section>
-            <h4 className="mb-3 text-sm font-bold tracking-wide text-slate-500">Người liên quan & Quyền xem</h4>
-            <div className="space-y-4">
-              <Field label="Thành viên được phép xem">
-                <select className={input} value={draft.visibility || "all"} onChange={event => set("visibility", event.target.value as "all" | "private" | "custom")}>
-                  <option value="all">Tất cả thành viên</option>
-                  <option value="private">Chỉ mình tôi</option>
-                  <option value="custom">Chọn thành viên cụ thể</option>
-                </select>
-              </Field>
-
-              {draft.visibility === "custom" && (
-                <Field label="Chọn người được xem">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {selectable.map(member => (
-                      <label key={member.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/5">
-                        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(member)[0]}</span>
-                        <span className="min-w-0 flex-1 truncate font-medium">{memberName(member)}</span>
-                        <input type="checkbox" checked={draft.allowedMemberIds?.includes(member.id)} onChange={() => set("allowedMemberIds", draft.allowedMemberIds?.includes(member.id) ? draft.allowedMemberIds.filter(id => id !== member.id) : [...(draft.allowedMemberIds || []), member.id])} className="accent-indigo-600" />
-                      </label>
-                    ))}
-                  </div>
-                </Field>
-              )}
-
-              <Field label="Thành viên liên quan (Tag)">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {selectable.map(member => {
-                    const isChecked = (draft.relatedMemberIds || draft.memberIds || []).includes(member.id);
-                    return (
-                      <label key={member.id} className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/5">
-                        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(member)[0]}</span>
-                        <span className="min-w-0 flex-1 truncate font-medium">{memberName(member)}</span>
-                        <input type="checkbox" checked={isChecked} onChange={() => {
-                          const current = draft.relatedMemberIds || draft.memberIds || [];
-                          const next = current.includes(member.id) ? current.filter(id => id !== member.id) : [...current, member.id];
-                          setDraft({ ...draft, relatedMemberIds: next, memberIds: next });
-                        }} className="accent-indigo-600" />
-                      </label>
-                    );
-                  })}
-                </div>
-              </Field>
-            </div>
-          </section>
-
-          <section>
-            <h4 className="mb-3 text-sm font-bold tracking-wide text-slate-500">Khác</h4>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Địa điểm"><input className={input} value={draft.location} placeholder="Nhập địa điểm..." onChange={event => set("location", event.target.value)} /></Field>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Nhắc trước"><select className={input} value={draft.reminderMinutes} onChange={event => set("reminderMinutes", Number(event.target.value))}>{reminderOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
-                <Field label="Lặp lại"><select className={input} value={draft.repeatRule} onChange={event => set("repeatRule", event.target.value)}>{repeatOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
-              </div>
-              <div className="col-span-full">
-                <Field label="Ghi chú"><textarea rows={4} className={textarea} placeholder="Thêm mô tả chi tiết..." value={draft.note} onChange={event => set("note", event.target.value)} /></Field>
-              </div>
-            </div>
-          </section>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Field label="Tiêu đề"><input required autoFocus className={input} value={draft.title} onChange={event => set("title", event.target.value)} /></Field>
+          <Field label="Loại"><select className={input} value={draft.type} onChange={event => set("type", event.target.value as EventType)}>{eventTypes.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></Field>
+          <Field label="Ngày bắt đầu"><input required type="date" className={input} value={draft.startDate} onChange={event => { setDraft({ ...draft, startDate: event.target.value, endDate: draft.endDate || event.target.value }); }} /></Field>
+          <Field label="Giờ bắt đầu"><input type="time" disabled={draft.allDay} className={input} value={draft.startTime} onChange={event => set("startTime", event.target.value)} /></Field>
+          <Field label="Ngày kết thúc"><input type="date" className={input} value={draft.endDate} onChange={event => set("endDate", event.target.value)} /></Field>
+          <Field label="Giờ kết thúc"><input type="time" disabled={draft.allDay} className={input} value={draft.endTime} onChange={event => set("endTime", event.target.value)} /></Field>
+          <label className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--app-border)] px-3 text-sm font-semibold"><input type="checkbox" checked={draft.allDay} onChange={event => setDraft({ ...draft, allDay: event.target.checked, startTime: event.target.checked ? "" : draft.startTime || "08:00", endTime: event.target.checked ? "" : draft.endTime })} />Cả ngày / Không có giờ</label>
+          <Field label="Lịch"><select className={input} value={draft.calendarId} onChange={event => set("calendarId", event.target.value)}>{calendars.map(calendar => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></Field>
+          <Field label="Địa điểm"><input className={input} value={draft.location} onChange={event => set("location", event.target.value)} /></Field>
+          <Field label="Nhắc trước"><select className={input} value={draft.reminderMinutes} onChange={event => set("reminderMinutes", Number(event.target.value))}>{reminderOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+          <Field label="Lặp lại"><select className={input} value={draft.repeatRule} onChange={event => set("repeatRule", event.target.value)}>{repeatOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+          <Field label="Trạng thái"><select className={input} value={draft.status} onChange={event => set("status", event.target.value as EventStatus)}><option value="open">Đang mở</option><option value="done">Hoàn thành</option></select></Field>
+          <Field label="Thành viên được phép xem">
+            <select className={input} value={draft.visibility || "all"} onChange={event => set("visibility", event.target.value as "all" | "private" | "custom")}>
+              <option value="all">Tất cả thành viên</option>
+              <option value="private">Chỉ mình tôi</option>
+              <option value="custom">Chọn thành viên cụ thể</option>
+            </select>
+          </Field>
         </div>
 
-        <div className="mt-8 flex flex-wrap justify-end gap-3 border-t border-[var(--app-border)] pt-5">
-          {remove && <button type="button" onClick={remove} className="mr-auto rounded-xl bg-rose-50 px-5 py-2.5 text-sm font-bold text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20">Xóa sự kiện</button>}
-          <button type="button" onClick={() => setDraft(null)} className="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5">Hủy</button>
-          <button className="rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition-all hover:bg-indigo-700 hover:shadow-lg">Lưu sự kiện</button>
+        {draft.visibility === "custom" && (
+          <div className="mt-4">
+            <Field label="Chọn người được xem">
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {selectable.map(member => (
+                  <label key={member.id} className="flex items-center gap-2 rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(member)[0]}</span>
+                    <span className="min-w-0 flex-1 truncate">{memberName(member)}</span>
+                    <input type="checkbox" checked={draft.allowedMemberIds?.includes(member.id)} onChange={() => set("allowedMemberIds", draft.allowedMemberIds?.includes(member.id) ? draft.allowedMemberIds.filter(id => id !== member.id) : [...(draft.allowedMemberIds || []), member.id])} />
+                  </label>
+                ))}
+              </div>
+            </Field>
+          </div>
+        )}
+
+        <div className="mt-4">
+          <Field label="Thành viên liên quan">
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {selectable.map(member => {
+                const isChecked = (draft.relatedMemberIds || draft.memberIds || []).includes(member.id);
+                return (
+                  <label key={member.id} className="flex items-center gap-2 rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(member)[0]}</span>
+                    <span className="min-w-0 flex-1 truncate">{memberName(member)}</span>
+                    <input type="checkbox" checked={isChecked} onChange={() => {
+                      const current = draft.relatedMemberIds || draft.memberIds || [];
+                      const next = current.includes(member.id) ? current.filter(id => id !== member.id) : [...current, member.id];
+                      setDraft({ ...draft, relatedMemberIds: next, memberIds: next });
+                    }} />
+                  </label>
+                );
+              })}
+            </div>
+          </Field>
+        </div>
+
+        <Field label="Ghi chú"><textarea rows={4} className={textarea} value={draft.note} onChange={event => set("note", event.target.value)} /></Field>
+
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          {remove && <button type="button" onClick={remove} className="mr-auto rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-bold text-rose-500 hover:bg-rose-50">Xóa</button>}
+          <button type="button" onClick={() => setDraft(null)} className="rounded-xl border border-[var(--app-border)] px-4 py-2.5 text-sm font-bold">Hủy</button>
+          <button className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-indigo-700">Lưu nhanh</button>
         </div>
       </form>
     </div>
@@ -937,46 +909,29 @@ function Info({ label, value }: { label: string; value: string }) {
   return <div className="rounded-xl border border-[var(--app-border)] p-3"><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-semibold">{value}</p></div>;
 }
 
-function FilterContent({ calendars, events, enabled, setEnabled, enabledTypes, setEnabledTypes }: { calendars: Calendar[]; events: CalendarEvent[]; enabled: string[]; setEnabled: React.Dispatch<React.SetStateAction<string[]>>; enabledTypes: EventType[]; setEnabledTypes: React.Dispatch<React.SetStateAction<EventType[]>> }) {
-  const allTypes = filterGroups.map(g => g.value);
-  const allCals = calendars.map(c => c.id);
-  const countByType = events.reduce((acc, ev) => { acc[ev.type] = (acc[ev.type] || 0) + 1; return acc; }, {} as Record<string, number>);
-  const countByCal = events.reduce((acc, ev) => { acc[ev.calendarId] = (acc[ev.calendarId] || 0) + 1; return acc; }, {} as Record<string, number>);
-  
+function FilterContent({ calendars, enabled, setEnabled, enabledTypes, setEnabledTypes }: { calendars: Calendar[]; enabled: string[]; setEnabled: React.Dispatch<React.SetStateAction<string[]>>; enabledTypes: EventType[]; setEnabledTypes: React.Dispatch<React.SetStateAction<EventType[]>> }) {
   return (
     <>
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">Nhóm sự kiện</h3>
-        <button type="button" onClick={() => setEnabledTypes(enabledTypes.length === allTypes.length ? [] : allTypes)} className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600">
-          {enabledTypes.length === allTypes.length ? "Bỏ chọn" : "Chọn tất cả"}
-        </button>
-      </div>
-      <div className="mb-6 space-y-1">
+      <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-slate-500">Nhóm sự kiện</h3>
+      <div className="mb-6 space-y-2">
         {filterGroups.map(group => (
-          <label key={group.value} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/5">
-            <input type="checkbox" checked={enabledTypes.includes(group.value)} onChange={() => setEnabledTypes(current => current.includes(group.value) ? current.filter(id => id !== group.value) : [...current, group.value])} className="accent-indigo-600" />
-            <i className="size-3 shrink-0 rounded-full" style={{ background: eventTypeMeta(group.value).color }} />
-            <span className="min-w-0 flex-1 truncate font-medium">{group.label}</span>
-            {countByType[group.value] > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-white/10 dark:text-slate-300">{countByType[group.value]}</span>}
+          <label key={group.value} className="flex items-center gap-2 rounded-xl px-2 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5">
+            <input type="checkbox" checked={enabledTypes.includes(group.value)} onChange={() => setEnabledTypes(current => current.includes(group.value) ? current.filter(id => id !== group.value) : [...current, group.value])} />
+            <i className="size-3 rounded-full" style={{ background: eventTypeMeta(group.value).color }} />
+            <span className="truncate">{group.label}</span>
           </label>
         ))}
       </div>
       
       {calendars.length > 0 && (
         <>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">Lịch người dùng</h3>
-            <button type="button" onClick={() => setEnabled(enabled.length === allCals.length ? [] : allCals)} className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600">
-              {enabled.length === allCals.length ? "Bỏ chọn" : "Chọn tất cả"}
-            </button>
-          </div>
-          <div className="space-y-1">
+          <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-slate-500">Lịch người dùng</h3>
+          <div className="space-y-2">
             {calendars.map(calendar => (
-              <label key={calendar.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/5">
-                <input type="checkbox" checked={enabled.includes(calendar.id)} onChange={() => setEnabled(current => current.includes(calendar.id) ? current.filter(id => id !== calendar.id) : [...current, calendar.id])} className="accent-indigo-600" />
-                <i className="size-3 shrink-0 rounded-full" style={{ background: calendar.color }} />
-                <span className="min-w-0 flex-1 truncate font-medium">{calendar.name}</span>
-                {countByCal[calendar.id] > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-white/10 dark:text-slate-300">{countByCal[calendar.id]}</span>}
+              <label key={calendar.id} className="flex items-center gap-2 rounded-xl px-2 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5">
+                <input type="checkbox" checked={enabled.includes(calendar.id)} onChange={() => setEnabled(current => current.includes(calendar.id) ? current.filter(id => id !== calendar.id) : [...current, calendar.id])} />
+                <i className="size-3 rounded-full" style={{ background: calendar.color }} />
+                <span className="truncate">{calendar.name}</span>
               </label>
             ))}
           </div>
