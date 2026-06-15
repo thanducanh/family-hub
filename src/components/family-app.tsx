@@ -11,7 +11,7 @@ import { useUI } from "@/components/ui-context";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
-import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberJob, MemberJobStatus, MemberSim, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
+import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, CardReward, CardRewardType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberJob, MemberJobStatus, MemberSim, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
 import * as XLSX from "xlsx";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
@@ -3463,6 +3463,50 @@ function getCardDisplayName(b: BankAccount) {
   return `${b.bankName} · ${b.cardType} · ****${last4}`;
 }
 function bankProgress(account: BankAccount) { const spent = 0, target = account.annualFeeWaiverTarget || 0, missing = Math.max(0, target - spent); return { spent, target, missing, label: target ? `Đã chi ${money(spent)} / ${money(target)} để miễn phí thường niên` : "Không có điều kiện miễn phí" }; }
+type CardYearStats = {
+  cardId: string;
+  year: number;
+  eligibleSpending: number;
+  annualFeeWaiverTarget: number;
+  annualFeeAmount: number;
+  remainingToWaive: number;
+  waiverProgress: number;
+  isAnnualFeeWaived: boolean;
+  rewardAmount: number;
+  rewardPoints: number;
+  rewardsCount: number;
+};
+type CardRewardFormState = {
+  id?: string;
+  rewardDate: string;
+  type: CardRewardType;
+  amount: string;
+  points: string;
+  title: string;
+  note: string;
+};
+const cardRewardTypeOptions: Array<{ value: CardRewardType; label: string }> = [
+  { value: "cashback", label: "Cashback" },
+  { value: "redeem_points", label: "Đổi điểm" },
+  { value: "voucher", label: "Voucher" },
+  { value: "gift", label: "Quà tặng" },
+  { value: "other", label: "Khác" }
+];
+const emptyCardRewardForm = (): CardRewardFormState => ({
+  rewardDate: new Date().toISOString().slice(0, 10),
+  type: "cashback",
+  amount: "0",
+  points: "0",
+  title: "",
+  note: ""
+});
+function isCreditBankCard(account: BankAccount) {
+  const text = `${account.cardType || ""} ${account.accountType || ""}`.toLowerCase();
+  return text.includes("tín dụng") || text.includes("credit");
+}
+function rewardTypeLabel(type: CardRewardType) {
+  return cardRewardTypeOptions.find(option => option.value === type)?.label || "Khác";
+}
 function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }) {
   const ui = useUI();
   const canEdit = user.role === "full_access" || user.memberId === member.id;
@@ -4236,6 +4280,36 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
   const fees = parseFees(account.note || "", account.productName || "");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const isCreditCard = isCreditBankCard(account);
+  const currentYear = new Date().getFullYear();
+  const [statsYear, setStatsYear] = useState(currentYear);
+  const [cardStats, setCardStats] = useState<CardYearStats | null>(null);
+  const [cardRewards, setCardRewards] = useState<CardReward[]>([]);
+  const [cardStatsLoading, setCardStatsLoading] = useState(false);
+  const [rewardEditor, setRewardEditor] = useState<CardRewardFormState | null>(null);
+  const [rewardMenuId, setRewardMenuId] = useState<string | null>(null);
+  const rewardMenuRef = useRef<HTMLDivElement>(null);
+
+  const loadCardYearData = useCallback(async () => {
+    if (!isCreditCard || !account.id) return;
+    setCardStatsLoading(true);
+    try {
+      const [statsResponse, rewardsResponse] = await Promise.all([
+        fetch(`/api/bank-accounts/${encodeURIComponent(account.id)}/stats?year=${statsYear}`, { cache: "no-store" }),
+        fetch(`/api/card-rewards?bank_account_id=${encodeURIComponent(account.id)}&year=${statsYear}`, { cache: "no-store" })
+      ]);
+      const statsResult = await readJsonSafe<{ ok?: boolean; data?: CardYearStats; error?: string }>(statsResponse);
+      const rewardsResult = await readJsonSafe<{ ok?: boolean; data?: CardReward[]; error?: string }>(rewardsResponse);
+      setCardStats(statsResponse.ok && statsResult?.data ? statsResult.data : null);
+      setCardRewards(rewardsResponse.ok && rewardsResult?.data ? rewardsResult.data : []);
+    } finally {
+      setCardStatsLoading(false);
+    }
+  }, [account.id, isCreditCard, statsYear]);
+
+  useEffect(() => {
+    void loadCardYearData();
+  }, [loadCardYearData]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -4247,6 +4321,69 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
     document.addEventListener("mousedown", clickOutside);
     return () => document.removeEventListener("mousedown", clickOutside);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!rewardMenuId) return;
+    const clickOutside = (e: MouseEvent) => {
+      if (rewardMenuRef.current && !rewardMenuRef.current.contains(e.target as Node)) {
+        setRewardMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", clickOutside);
+    return () => document.removeEventListener("mousedown", clickOutside);
+  }, [rewardMenuId]);
+
+  async function saveCardReward(event: React.FormEvent) {
+    event.preventDefault();
+    if (!rewardEditor) return;
+    const payload = {
+      bankAccountId: account.id,
+      rewardDate: rewardEditor.rewardDate,
+      type: rewardEditor.type,
+      amount: parseVndInput(rewardEditor.amount),
+      points: Number(rewardEditor.points || 0),
+      status: "received",
+      title: rewardEditor.title,
+      note: rewardEditor.note
+    };
+    const response = await fetch(rewardEditor.id ? `/api/card-rewards/${rewardEditor.id}` : "/api/card-rewards", {
+      method: rewardEditor.id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const result = await readJsonSafe<{ ok?: boolean; error?: string }>(response);
+    if (!response.ok || result?.ok === false) {
+      ui.toast(result?.error || "Không thể lưu hoàn tiền/điểm thưởng.", "error");
+      return;
+    }
+    ui.toast(rewardEditor.id ? "Đã cập nhật hoàn tiền/điểm thưởng." : "Đã thêm hoàn tiền/điểm thưởng.", "success");
+    setRewardEditor(null);
+    await loadCardYearData();
+  }
+
+  async function deleteCardReward(reward: CardReward) {
+    if (!window.confirm("Bạn có chắc muốn xóa khoản hoàn tiền/điểm thưởng này không?")) return;
+    const response = await fetch(`/api/card-rewards/${reward.id}`, { method: "DELETE" });
+    const result = await readJsonSafe<{ ok?: boolean; error?: string }>(response);
+    if (!response.ok || result?.ok === false) {
+      ui.toast(result?.error || "Không thể xóa hoàn tiền/điểm thưởng.", "error");
+      return;
+    }
+    ui.toast("Đã xóa hoàn tiền/điểm thưởng.", "success");
+    await loadCardYearData();
+  }
+
+  function editCardReward(reward: CardReward) {
+    setRewardEditor({
+      id: reward.id,
+      rewardDate: reward.rewardDate || new Date().toISOString().slice(0, 10),
+      type: reward.type,
+      amount: String(reward.amount || 0),
+      points: String(reward.points || 0),
+      title: reward.title || "",
+      note: reward.note || ""
+    });
+  }
 
   const content = (
     <>
@@ -4384,6 +4521,83 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
           </div>
         </section>
         
+        {isCreditCard && (
+          <section className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="font-semibold">Thống kê & Hoàn tiền năm</h3>
+              <div className="flex items-center gap-2">
+                <select value={statsYear} onChange={event => setStatsYear(Number(event.target.value))} className="h-10 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm font-semibold outline-none focus:border-indigo-400">
+                  {Array.from({ length: 6 }, (_, index) => currentYear - 3 + index).map(year => <option key={year} value={year}>{year}</option>)}
+                </select>
+                <button type="button" onClick={() => setRewardEditor(emptyCardRewardForm())} className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-700">+ Thêm hoàn tiền</button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                ["Chi tiêu hợp lệ", money(cardStats?.eligibleSpending || 0)],
+                ["Mức cần đạt miễn phí thường niên", cardStats?.annualFeeWaiverTarget ? money(cardStats.annualFeeWaiverTarget) : "Không yêu cầu"],
+                ["Còn thiếu", money(cardStats?.remainingToWaive || 0)],
+                ["Trạng thái", !cardStats?.annualFeeWaiverTarget ? "Không yêu cầu" : cardStats.isAnnualFeeWaived ? "Đã đủ" : "Chưa đủ"],
+                ["Hoàn tiền năm", money(cardStats?.rewardAmount || 0)],
+                ["Điểm đã đổi", vnMoneyFormatter.format(cardStats?.rewardPoints || 0)]
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl border border-[var(--app-border)] p-3">
+                  <p className="text-xs text-slate-400">{label}</p>
+                  <b className="mt-1 block text-sm">{value}</b>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4">
+              <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500"><span>Tiến độ chi tiêu</span><span>{Math.round(cardStats?.waiverProgress || 0)}%</span></div>
+              <div className="h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${Math.min(cardStats?.waiverProgress || 0, 100)}%` }} /></div>
+            </div>
+
+            {rewardEditor && (
+              <form onSubmit={saveCardReward} className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 dark:border-indigo-400/20 dark:bg-indigo-400/10">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Ngày nhận"><input type="date" value={rewardEditor.rewardDate} onChange={event => setRewardEditor(prev => prev ? { ...prev, rewardDate: event.target.value } : prev)} className="h-11 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400" /></Field>
+                  <Field label="Loại"><select value={rewardEditor.type} onChange={event => setRewardEditor(prev => prev ? { ...prev, type: event.target.value as CardRewardType } : prev)} className="h-11 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400">{cardRewardTypeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+                  <Field label="Số tiền quy đổi"><input type="text" value={formatVndInput(rewardEditor.amount)} onChange={event => setRewardEditor(prev => prev ? { ...prev, amount: String(parseVndInput(event.target.value)) } : prev)} className="h-11 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-right text-sm outline-none focus:border-indigo-400" /></Field>
+                  <Field label="Điểm nếu có"><input type="number" min="0" value={rewardEditor.points} onChange={event => setRewardEditor(prev => prev ? { ...prev, points: event.target.value } : prev)} className="h-11 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-right text-sm outline-none focus:border-indigo-400" /></Field>
+                  <Field label="Nội dung"><input value={rewardEditor.title} onChange={event => setRewardEditor(prev => prev ? { ...prev, title: event.target.value } : prev)} className="h-11 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400" /></Field>
+                  <Field label="Ghi chú"><input value={rewardEditor.note} onChange={event => setRewardEditor(prev => prev ? { ...prev, note: event.target.value } : prev)} className="h-11 w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400" /></Field>
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button type="button" onClick={() => setRewardEditor(null)} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">Hủy</button>
+                  <button type="submit" className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700">Lưu</button>
+                </div>
+              </form>
+            )}
+
+            <div className="mt-4 space-y-3">
+              {cardStatsLoading ? (
+                <div className="animate-pulse space-y-2"><div className="h-4 w-3/4 rounded bg-slate-100 dark:bg-white/10"></div><div className="h-4 w-1/2 rounded bg-slate-100 dark:bg-white/10"></div></div>
+              ) : cardRewards.length ? cardRewards.map(reward => (
+                <div key={reward.id} className="relative rounded-xl border border-[var(--app-border)] p-4 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <b>{reward.title || rewardTypeLabel(reward.type)}</b>
+                      <p className="mt-1 text-slate-500">{rewardTypeLabel(reward.type)} · {money(reward.amount)} · {reward.points ? `${vnMoneyFormatter.format(reward.points)} điểm` : "Không có điểm"}</p>
+                      <p className="mt-1 text-xs text-slate-400">{formatDateVN(reward.rewardDate, "Chưa có ngày")} · {reward.note || "Không có ghi chú"}</p>
+                    </div>
+                    <div ref={rewardMenuId === reward.id ? rewardMenuRef : undefined} className="relative shrink-0">
+                      <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setRewardMenuId(current => current === reward.id ? null : reward.id); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100/60 hover:text-slate-800">⋮</button>
+                      {rewardMenuId === reward.id && (
+                        <div className="pointer-events-auto absolute right-0 top-full z-50 mt-2 w-32 rounded-xl border border-slate-100 bg-white p-2 shadow-lg dark:border-white/10 dark:bg-slate-900">
+                          <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setRewardMenuId(null); editCardReward(reward); }} className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50 dark:hover:bg-white/5">Sửa</button>
+                          <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setRewardMenuId(null); void deleteCardReward(reward); }} className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-400/10">Xóa</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-slate-400">Chưa có hoàn tiền/điểm thưởng ghi nhận.</p>}
+            </div>
+          </section>
+        )}
+
         <section>
           <h3 className="font-semibold">Ưu đãi đang áp dụng</h3>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -4398,24 +4612,6 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
           </div>
         </section>
 
-        <section>
-          <h3 className="font-semibold">Hoàn tiền / điểm thưởng đã ghi nhận</h3>
-          <div className="mt-3 space-y-3">
-            {loading ? (
-              <div className="animate-pulse space-y-2">
-                <div className="h-4 bg-slate-100 dark:bg-white/10 rounded w-3/4"></div>
-                <div className="h-4 bg-slate-100 dark:bg-white/10 rounded w-1/2"></div>
-              </div>
-            ) : account.rewards?.length ? account.rewards.map(reward => (
-              <div key={reward.id} className="rounded-xl border border-[var(--app-border)] p-4 text-sm">
-                <b>{reward.title || reward.rewardType}</b>
-                <p className="mt-2 text-slate-500">{reward.rewardType} · {money(reward.amount)} · {reward.points ? `${reward.points} điểm` : "Không có điểm"}</p>
-                <p className="mt-1 text-xs text-slate-400">{reward.recordedAt || "Chưa có ngày"} · {reward.note || "Không có ghi chú"}</p>
-              </div>
-            )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] p-4 text-sm text-slate-400">Chưa có hoàn tiền/điểm thưởng ghi nhận.</p>}
-          </div>
-        </section>
-        
         <section>
           <h3 className="font-semibold">Thống kê tháng này</h3>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

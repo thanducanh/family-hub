@@ -4,7 +4,7 @@ import { canAccessBankMember, ensureBankAccountsTable } from "@/lib/bank-account
 import { pool } from "@/lib/db";
 import type { CardRewardStatus, CardRewardType } from "@/types";
 
-const rewardTypes: CardRewardType[] = ["cashback", "points", "redeem_points", "voucher", "annual_fee_refund", "other"];
+const rewardTypes: CardRewardType[] = ["cashback", "points", "redeem_points", "voucher", "gift", "annual_fee_refund", "other"];
 const rewardStatuses: CardRewardStatus[] = ["expected", "received", "used", "expired"];
 
 function rewardFromRow(row: Record<string, unknown>) {
@@ -57,7 +57,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
        WHERE id = $8
        RETURNING *`,
       [
-        body.rewardDate ? String(body.rewardDate).trim() : null,
+        body.rewardDate || body.reward_date ? String(body.rewardDate || body.reward_date).trim() : null,
         type,
         Number(body.amount ?? existing.amount),
         Number(body.points ?? existing.points),

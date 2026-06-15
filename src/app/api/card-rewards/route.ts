@@ -5,7 +5,7 @@ import { canAccessBankMember, ensureBankAccountsTable } from "@/lib/bank-account
 import { pool } from "@/lib/db";
 import type { CardRewardStatus, CardRewardType } from "@/types";
 
-const rewardTypes: CardRewardType[] = ["cashback", "points", "redeem_points", "voucher", "annual_fee_refund", "other"];
+const rewardTypes: CardRewardType[] = ["cashback", "points", "redeem_points", "voucher", "gift", "annual_fee_refund", "other"];
 const rewardStatuses: CardRewardStatus[] = ["expected", "received", "used", "expired"];
 
 function rewardFromRow(row: Record<string, unknown>) {
@@ -36,15 +36,20 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ ok: false, error: "Chưa đăng nhập." }, { status: 401 });
     await ensureBankAccountsTable();
 
-    const bankAccountId = request.nextUrl.searchParams.get("bankAccountId") || "";
+    const bankAccountId = request.nextUrl.searchParams.get("bank_account_id") || request.nextUrl.searchParams.get("bankAccountId") || "";
     const memberId = request.nextUrl.searchParams.get("memberId") || "";
+    const year = Number(request.nextUrl.searchParams.get("year") || 0);
     const accessMemberId = bankAccountId ? await memberForBankAccount(bankAccountId) : memberId;
     if (!accessMemberId) return NextResponse.json({ ok: false, error: "Thiếu thông tin thẻ hoặc thành viên." }, { status: 400 });
     if (!await canAccessBankMember(user, accessMemberId)) return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });
 
     const result = bankAccountId
-      ? await pool.query("SELECT * FROM card_rewards WHERE bank_account_id = $1 ORDER BY reward_date DESC NULLS LAST, created_at DESC", [bankAccountId])
-      : await pool.query("SELECT * FROM card_rewards WHERE member_id = $1 ORDER BY reward_date DESC NULLS LAST, created_at DESC", [memberId]);
+      ? year
+        ? await pool.query("SELECT * FROM card_rewards WHERE bank_account_id = $1 AND EXTRACT(YEAR FROM COALESCE(reward_date, created_at)) = $2 ORDER BY reward_date DESC NULLS LAST, created_at DESC", [bankAccountId, year])
+        : await pool.query("SELECT * FROM card_rewards WHERE bank_account_id = $1 ORDER BY reward_date DESC NULLS LAST, created_at DESC", [bankAccountId])
+      : year
+        ? await pool.query("SELECT * FROM card_rewards WHERE member_id = $1 AND EXTRACT(YEAR FROM COALESCE(reward_date, created_at)) = $2 ORDER BY reward_date DESC NULLS LAST, created_at DESC", [memberId, year])
+        : await pool.query("SELECT * FROM card_rewards WHERE member_id = $1 ORDER BY reward_date DESC NULLS LAST, created_at DESC", [memberId]);
     return NextResponse.json({ ok: true, data: result.rows.map(rewardFromRow) });
   } catch (error) {
     console.error("[api/card-rewards] GET failed", error);
@@ -59,7 +64,7 @@ export async function POST(request: NextRequest) {
     await ensureBankAccountsTable();
 
     const body = await request.json();
-    const bankAccountId = String(body.bankAccountId || "").trim();
+    const bankAccountId = String(body.bankAccountId || body.bank_account_id || "").trim();
     const memberId = bankAccountId ? await memberForBankAccount(bankAccountId) : String(body.memberId || "").trim();
     if (!memberId) return NextResponse.json({ ok: false, error: "Thiếu thành viên." }, { status: 400 });
     if (!await canAccessBankMember(user, memberId)) return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });
@@ -74,7 +79,7 @@ export async function POST(request: NextRequest) {
         body.id || randomUUID(),
         memberId,
         bankAccountId || null,
-        String(body.rewardDate || "").trim() || null,
+        String(body.rewardDate || body.reward_date || "").trim() || null,
         type,
         Number(body.amount || 0),
         Number(body.points || 0),

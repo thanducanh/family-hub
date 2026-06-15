@@ -54,7 +54,7 @@ export type BankBenefitType = string;
 export interface BankCardBenefit { id: string; bankAccountId: string; name: string; category: BankBenefitCategory; benefitType: BankBenefitType; benefitValue: number; monthlyCap: number; minTransactionAmount: number; conditionNote: string; active: boolean; createdAt?: string; updatedAt?: string; }
 export type BankCardRewardType = string;
 export interface BankCardReward { id: string; bankAccountId: string; rewardType: BankCardRewardType; title: string; amount: number; points: number; recordedAt: string; note: string; createdAt?: string; updatedAt?: string; }
-export type CardRewardType = "cashback" | "points" | "redeem_points" | "voucher" | "annual_fee_refund" | "other";
+export type CardRewardType = "cashback" | "points" | "redeem_points" | "voucher" | "gift" | "annual_fee_refund" | "other";
 export type CardRewardStatus = "expected" | "received" | "used" | "expired";
 export interface CardReward { id: string; memberId: string; bankAccountId: string | null; rewardDate: string; type: CardRewardType; amount: number; points: number; status: CardRewardStatus; title: string; note: string; createdAt?: string; updatedAt?: string; }
 export interface BankAccount {

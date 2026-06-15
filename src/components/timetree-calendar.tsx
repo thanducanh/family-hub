@@ -1,139 +1,894 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Member } from "@/types";
-import { addCalendarNotification, addDailyEventNotification, loadVisibleCalendarNotifications } from "@/lib/calendar-notifications";
 
-type Calendar = { id: string; name: string; color: string; visible: boolean; type: string; ownerUserId: string; viewerUserIds: string[] };
-type CalendarDraft = { id?: string; name: string; color: string; type: string; ownerUserId?: string; viewerUserIds: string[] };
-type Item = { id: string; calendarId: string; title: string; startDate: string; startTime: string; endDate: string; endTime: string; allDay: boolean; note: string; color: string; labelColor: string; memberIds: string[]; createdByUserId?: string; createdAt?: string };
-type EventDraft = Omit<Item, "id" | "color"> & { id?: string };
+import { Solar } from "lunar-javascript";
+
 type Actor = { id: string; role: "full_access" | "self_only"; displayName?: string; avatar?: string; memberId?: string };
-type Drop = { item: Item; date: string; x: number; y: number };
-type CalendarView = "monthly" | "weekly";
-const weekdays = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
-const calendarTypes = [{ id: "family", label: "Family", icon: "⌂" }, { id: "personal", label: "Personal", icon: "●" }, { id: "work", label: "Work", icon: "▣" }, { id: "study", label: "Study", icon: "✎" }, { id: "health", label: "Health", icon: "✚" }, { id: "other", label: "Other", icon: "＋" }];
-const palette = [{ name: "Emerald green", value: "#10b981" }, { name: "Modern cyan", value: "#06b6d4" }, { name: "Deep sky blue", value: "#0ea5e9" }, { name: "Pastel brown", value: "#a78b71" }, { name: "Midnight black", value: "#334155" }, { name: "Apple red", value: "#ef4444" }, { name: "French rose", value: "#ec4899" }, { name: "Coral pink", value: "#fb7185" }, { name: "Bright orange", value: "#f97316" }, { name: "Soft violet", value: "#8b5cf6" }];
-const input = "w-full rounded-xl border border-[var(--app-border)] bg-transparent px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500";
-const viDateFormatter = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+type Calendar = { id: string; name: string; color: string; visible: boolean; type: string; ownerUserId: string; viewerUserIds: string[] };
+type CalendarView = "monthly" | "weekly" | "agenda";
+type EventType = "family" | "personal" | "work" | "study" | "payment" | "reminder" | "birthday" | "holiday" | "other";
+type EventStatus = "open" | "done";
+type CalendarEvent = {
+  id: string;
+  calendarId: string;
+  title: string;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+  allDay: boolean;
+  type: EventType;
+  location: string;
+  note: string;
+  reminderMinutes: number;
+  repeatRule: string;
+  status: EventStatus;
+  color: string;
+  labelColor: string;
+  memberIds: string[];
+  createdByUserId?: string;
+  createdAt?: string;
+};
+type EventDraft = Omit<CalendarEvent, "id" | "color" | "createdAt"> & { id?: string };
 
-async function readJson<T>(response: Response) { const text = await response.text(); try { return text ? JSON.parse(text) as T : null; } catch { return null; } }
-function iso(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
-function parseIsoDate(value: string) { const date = new Date(`${value}T00:00:00`); return Number.isNaN(date.getTime()) ? null : date; }
-function formatDateVN(value: string) { const date = parseIsoDate(value); return date ? viDateFormatter.format(date) : value; }
-function isoDateFromVN(value: string) {
-  const trimmed = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!match) return "";
-  const day = Number(match[1]), month = Number(match[2]), year = Number(match[3]);
-  const date = new Date(year, month - 1, day);
-  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? iso(date) : "";
+const weekdays = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+const input = "h-11 w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none transition focus:border-indigo-500";
+const textarea = "w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] px-3 py-2.5 text-sm outline-none transition focus:border-indigo-500";
+const viDateFormatter = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+const eventTypes: Array<{ value: EventType; label: string; color: string }> = [
+  { value: "family", label: "Gia đình", color: "#2563eb" },
+  { value: "personal", label: "Cá nhân", color: "#7c3aed" },
+  { value: "work", label: "Công việc", color: "#16a34a" },
+  { value: "study", label: "Học tập", color: "#f97316" },
+  { value: "payment", label: "Thanh toán", color: "#dc2626" },
+  { value: "reminder", label: "Nhắc nhở", color: "#ec4899" },
+  { value: "birthday", label: "Sinh nhật", color: "#d97706" },
+  { value: "holiday", label: "Ngày lễ", color: "#e11d48" },
+  { value: "other", label: "Khác", color: "#64748b" }
+];
+const filterGroups: Array<{ value: EventType; label: string; }> = [
+  { value: "family", label: "Lịch gia đình" },
+  { value: "personal", label: "Lịch cá nhân" },
+  { value: "birthday", label: "Sinh nhật" },
+  { value: "holiday", label: "Ngày lễ" },
+  { value: "work", label: "Công việc" },
+  { value: "study", label: "Học tập" },
+  { value: "reminder", label: "Nhắc nhở" }
+];
+const reminderOptions = [
+  { value: 0, label: "Không" },
+  { value: 5, label: "5 phút" },
+  { value: 15, label: "15 phút" },
+  { value: 60, label: "1 giờ" },
+  { value: 1440, label: "1 ngày" }
+];
+const repeatOptions = [
+  { value: "none", label: "Không" },
+  { value: "daily", label: "Hằng ngày" },
+  { value: "weekly", label: "Hằng tuần" },
+  { value: "monthly", label: "Hằng tháng" },
+  { value: "yearly", label: "Hằng năm" }
+];
+
+async function readJson<T>(response: Response) {
+  const text = await response.text();
+  try { return text ? JSON.parse(text) as T : null; } catch { return null; }
 }
-function monthCells(anchor: Date) { const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1), start = new Date(first); start.setDate(first.getDate() - ((first.getDay() + 6) % 7)); return Array.from({ length: 42 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); return date; }); }
-function weekCells(anchor: Date) { const start = new Date(anchor); start.setDate(anchor.getDate() - ((anchor.getDay() + 6) % 7)); return Array.from({ length: 7 }, (_, index) => { const date = new Date(start); date.setDate(start.getDate() + index); return date; }); }
-function lunar(date: Date) { try { const parts = new Intl.DateTimeFormat("vi-VN-u-ca-chinese", { day: "numeric", month: "numeric" }).formatToParts(date); return `${parts.find(part => part.type === "day")?.value}/${parts.find(part => part.type === "month")?.value} âm`; } catch { return ""; } }
-function hasBirthday(member: Member, date: Date) { const [, month, day] = (member.birthday || "").slice(0, 10).split("-").map(Number); return month === date.getMonth() + 1 && day === date.getDate(); }
-function blankEvent(date: string, calendarId: string, memberId = ""): EventDraft { return { calendarId, title: "", startDate: date, startTime: "", endDate: date, endTime: "", allDay: false, note: "", labelColor: "", memberIds: memberId ? [memberId] : [] }; }
-function shiftedEnd(start: string, end: string, target: string) { const days = Math.max(0, Math.round((new Date(`${end}T00:00`).getTime() - new Date(`${start}T00:00`).getTime()) / 86400000)), date = new Date(`${target}T00:00`); date.setDate(date.getDate() + days); return iso(date); }
-function sortItems(left: Item, right: Item) { return Number(right.allDay) - Number(left.allDay) || left.startTime.localeCompare(right.startTime); }
-function typeIcon(type: string) { return calendarTypes.find(item => item.id === type)?.icon || "●"; }
-function eventDate(value: string) { return formatDateVN(value); }
-function eventTime(value: string) { if (!value) return "Chưa đặt giờ"; const [hour, minute] = value.split(":").map(Number); return new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(2000, 0, 1, hour, minute)); }
-function hourLabel(hour: number) { return new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", hour12: false }).format(new Date(2000, 0, 1, hour, 0)); }
-function eventLabel(item: Item) { return item.allDay ? "All-day" : item.startTime || "Chưa đặt giờ"; }
-function dayTitle(value: string) { const today = iso(new Date()); if (value === today) return "Hôm nay"; return formatDateVN(value); }
-function memberInitial(member?: Member) { return member ? (member.nickname || member.name)[0]?.toUpperCase() || "?" : ""; }
-function timeMinutes(value: string) { const [hour, minute] = value.split(":").map(Number); return (Number.isFinite(hour) ? hour : 0) * 60 + (Number.isFinite(minute) ? minute : 0); }
-function timeFromMinutes(value: number) { const hour = Math.max(0, Math.min(23, Math.floor(value / 60))), minute = Math.max(0, Math.min(59, value % 60)); return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`; }
-function actorName(user?: Actor) { return user?.displayName || "Quản trị viên"; }
-function visibleUserIdsFor(item: Pick<Item, "calendarId" | "memberIds" | "createdByUserId">, calendars: Calendar[], members: Member[], user?: Actor) {
-  const calendar = calendars.find(value => value.id === item.calendarId);
-  return [...new Set([user?.id, item.createdByUserId, calendar?.ownerUserId, ...(calendar?.viewerUserIds || []), ...members.filter(member => item.memberIds.includes(member.id)).flatMap(member => member.user?.id ? [member.user.id] : [])].filter(Boolean) as string[])];
+function iso(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
-function notifyEvent(item: Pick<Item, "id" | "calendarId" | "title" | "memberIds" | "createdByUserId" | "startDate">, action: "created" | "updated" | "copied" | "moved" | "deleted", calendars: Calendar[], members: Member[], user?: Actor, movedToDate?: string) {
-  if (!user) return;
-  addCalendarNotification({ eventId: item.id, action, title: item.title, actor: { id: user.id, name: actorName(user), avatar: user.avatar }, calendarId: item.calendarId, visibleUserIds: visibleUserIdsFor(item, calendars, members, user), visibleMemberIds: item.memberIds, movedToDate });
+function localDate(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+function formatDateVN(value: string) {
+  const date = localDate(value);
+  return date ? viDateFormatter.format(date) : value;
+}
+function todayIso() {
+  return iso(new Date());
+}
+function addDays(value: string, days: number) {
+  const date = localDate(value) || new Date();
+  date.setDate(date.getDate() + days);
+  return iso(date);
+}
+function monthCells(anchor: Date) {
+  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const start = new Date(first);
+  start.setDate(first.getDate() - ((first.getDay() + 6) % 7));
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return date;
+  });
+}
+function weekCells(selectedDate: string) {
+  const anchor = localDate(selectedDate) || new Date();
+  const start = new Date(anchor);
+  start.setDate(anchor.getDate() - ((anchor.getDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return date;
+  });
+}
+function timeFromMinutes(value: number) {
+  const hour = Math.max(0, Math.min(23, Math.floor(value / 60)));
+  const minute = Math.max(0, Math.min(59, value % 60));
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+function defaultStartTime() {
+  const now = new Date();
+  return timeFromMinutes(now.getHours() * 60 + (now.getMinutes() >= 30 ? 30 : 0)) || "08:00";
+}
+function timeMinutes(value: string) {
+  const [hour, minute] = value.split(":").map(Number);
+  return (Number.isFinite(hour) ? hour : 0) * 60 + (Number.isFinite(minute) ? minute : 0);
+}
+function eventTypeMeta(type: string) {
+  return eventTypes.find(item => item.value === type) || eventTypes[eventTypes.length - 1];
+}
+function sortEvents(left: CalendarEvent, right: CalendarEvent) {
+  return Number(right.allDay) - Number(left.allDay) || left.startTime.localeCompare(right.startTime) || left.title.localeCompare(right.title);
+}
+function eventTimeLabel(item: Pick<CalendarEvent, "allDay" | "startTime">) {
+  return item.allDay ? "Cả ngày" : item.startTime || "08:00";
+}
+function dayGroupTitle(date: string) {
+  const today = todayIso();
+  if (date === today) return "Hôm nay";
+  if (date === addDays(today, 1)) return "Ngày mai";
+  return formatDateVN(date);
+}
+function monthLabel(anchor: Date) {
+  return `Tháng ${anchor.getMonth() + 1} / ${anchor.getFullYear()}`;
+}
+function eventColor(item: Pick<CalendarEvent, "type" | "color" | "labelColor">) {
+  return item.labelColor || eventTypeMeta(item.type).color || item.color || "#6366f1";
+}
+function memberName(member?: Member) {
+  return member ? member.nickname || member.name : "";
+}
+function draftFor(date: string, calendarId: string, user?: Actor): EventDraft {
+  const startTime = defaultStartTime();
+  return {
+    calendarId,
+    title: "",
+    startDate: date,
+    startTime,
+    endDate: date,
+    endTime: timeFromMinutes(timeMinutes(startTime) + 60),
+    allDay: false,
+    type: "family",
+    location: "",
+    note: "",
+    reminderMinutes: 0,
+    repeatRule: "none",
+    status: "open",
+    labelColor: "",
+    memberIds: user?.memberId ? [user.memberId] : [],
+    createdByUserId: user?.id
+  };
+}
+
+function generateFixedEvents(year: number, members: Member[]): CalendarEvent[] {
+  const fixed: CalendarEvent[] = [];
+  
+  // Holidays
+  const holidays = [
+    { date: "01-01", title: "Tết Dương lịch" },
+    { date: "04-30", title: "Giải phóng miền Nam" },
+    { date: "05-01", title: "Quốc tế Lao động" },
+    { date: "09-02", title: "Quốc khánh" }
+  ];
+  holidays.forEach((h) => {
+    fixed.push({
+      id: `holiday-${year}-${h.date}`,
+      calendarId: "fixed-holiday",
+      title: h.title,
+      startDate: `${year}-${h.date}`,
+      startTime: "",
+      endDate: `${year}-${h.date}`,
+      endTime: "",
+      allDay: true,
+      type: "holiday",
+      location: "",
+      note: "Ngày lễ cố định",
+      reminderMinutes: 0,
+      repeatRule: "yearly",
+      status: "open",
+      color: "#e11d48",
+      labelColor: "#e11d48",
+      memberIds: [],
+    });
+  });
+
+  // Birthdays
+  members.forEach(member => {
+    if (member.birthday) {
+      const parts = member.birthday.split("-");
+      if (parts.length === 3) {
+        const mmdd = `${parts[1]}-${parts[2]}`;
+        fixed.push({
+          id: `birthday-${member.id}-${year}`,
+          calendarId: "fixed-birthday",
+          title: `Sinh nhật ${memberName(member)}`,
+          startDate: `${year}-${mmdd}`,
+          startTime: "",
+          endDate: `${year}-${mmdd}`,
+          endTime: "",
+          allDay: true,
+          type: "birthday",
+          location: "",
+          note: "Sinh nhật thành viên",
+          reminderMinutes: 0,
+          repeatRule: "yearly",
+          status: "open",
+          color: "#d97706",
+          labelColor: "#d97706",
+          memberIds: [member.id],
+        });
+      }
+    }
+  });
+
+  return fixed;
 }
 
 export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: Actor }) {
-  const [anchor, setAnchor] = useState(new Date()), [selectedDate, setSelectedDate] = useState(iso(new Date())), [calendarView, setCalendarView] = useState<CalendarView>("monthly"), [calendars, setCalendars] = useState<Calendar[]>([]), [events, setEvents] = useState<Item[]>([]), [enabled, setEnabled] = useState<string[]>([]), [birthdays, setBirthdays] = useState(true), [showLunar, setShowLunar] = useState(true), [eventDraft, setEventDraft] = useState<EventDraft | null>(null), [eventDetail, setEventDetail] = useState<Item | null>(null), [calendarDraft, setCalendarDraft] = useState<CalendarDraft | null>(null), [chooseType, setChooseType] = useState(false), [drop, setDrop] = useState<Drop | null>(null), [calendarListCollapsed, setCalendarListCollapsed] = useState(false), [drawerCollapsed, setDrawerCollapsed] = useState(false), [error, setError] = useState("");
-  const days = useMemo(() => monthCells(anchor), [anchor]);
-  const weekDays = useMemo(() => weekCells(new Date(`${selectedDate}T00:00:00`)), [selectedDate]);
-  const load = useCallback(async () => { const [calendarResponse, eventResponse] = await Promise.all([fetch("/api/calendars", { cache: "no-store" }), fetch("/api/events", { cache: "no-store" })]), calendarResult = await readJson<{ ok: boolean; data?: Calendar[]; error?: string }>(calendarResponse), eventResult = await readJson<{ ok: boolean; data?: Item[]; error?: string }>(eventResponse); if (!calendarResponse.ok || !eventResponse.ok) return setError(calendarResult?.error || eventResult?.error || "Không thể tải lịch."); const next = calendarResult?.data || [], nextEvents = eventResult?.data || []; setCalendars(next); setEvents(nextEvents); setEnabled(current => current.length ? current.filter(id => next.some(item => item.id === id)) : next.map(item => item.id)); if (user?.id) { const today = iso(new Date()), visibleIds = next.map(item => item.id), todayEvents = nextEvents.filter(item => visibleIds.includes(item.calendarId) && item.startDate === today).sort(sortItems); addDailyEventNotification(user.id, today, todayEvents.length, todayEvents.slice(0, 3).map(item => ({ time: item.allDay ? "All-day" : item.startTime, title: item.title }))); } setError(""); }, [user]);
-  useEffect(() => { void Promise.resolve().then(load); }, [load]);
+  const [anchor, setAnchor] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(todayIso());
+  const [view, setView] = useState<CalendarView>("monthly");
+  const [calendars, setCalendars] = useState<Calendar[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [enabled, setEnabled] = useState<string[]>([]);
+  const [enabledTypes, setEnabledTypes] = useState<EventType[]>(["family", "personal", "birthday", "holiday", "work", "study", "reminder", "payment", "other"]);
+  const [showLunar, setShowLunar] = useState(true);
+  const [filterOpenMobile, setFilterOpenMobile] = useState(false);
+  const [draft, setDraft] = useState<EventDraft | null>(null);
+  const [detail, setDetail] = useState<CalendarEvent | null>(null);
+  const [daySheetDate, setDaySheetDate] = useState<string | null>(null);
+  const [quickPickerOpen, setQuickPickerOpen] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
   useEffect(() => {
-    const openFromNotification = (event: Event) => {
-      const detail = (event as CustomEvent<{ event?: Item }>).detail?.event;
-      if (!detail) return;
-      setCalendarDraft(null); setChooseType(false); setEventDraft(null); setEventDetail(detail); setDrawerCollapsed(false); setAnchor(new Date(`${detail.startDate}T00:00:00`)); setSelectedDate(detail.startDate);
-    };
-    window.addEventListener("family-hub:open-calendar-event", openFromNotification);
-    return () => window.removeEventListener("family-hub:open-calendar-event", openFromNotification);
+    const val = localStorage.getItem("calendar-show-lunar");
+    if (val !== null) setShowLunar(val === "true");
   }, []);
-  function openDay(date: string, startTime = "") { const id = enabled[0] || calendars[0]?.id; if (id) { const endTime = startTime ? timeFromMinutes(timeMinutes(startTime) + 60) : ""; setSelectedDate(date); setAnchor(new Date(`${date}T00:00:00`)); setCalendarDraft(null); setChooseType(false); setEventDetail(null); setEventDraft({ ...blankEvent(date, id, user?.memberId), startTime, endTime }); setDrawerCollapsed(false); } }
-  function addFromHeader() { const now = new Date(), time = calendarView === "weekly" ? timeFromMinutes(now.getHours() * 60) || "08:00" : ""; openDay(selectedDate, calendarView === "weekly" ? time : ""); }
-  function closeDrawer() { setEventDraft(null); setEventDetail(null); setCalendarDraft(null); setChooseType(false); setDrawerCollapsed(false); }
-  async function saveEvent(event: React.FormEvent) { event.preventDefault(); if (!eventDraft) return; const action = eventDraft.id ? "updated" : "created", id = eventDraft.id || crypto.randomUUID(), notificationItem = { ...eventDraft, id, createdByUserId: eventDraft.createdByUserId || user?.id }; const response = await fetch("/api/events", { method: eventDraft.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...eventDraft, id }) }), result = await readJson<{ ok: boolean; error?: string }>(response); if (!response.ok || !result?.ok) return setError(result?.error || "Không thể lưu sự kiện."); notifyEvent(notificationItem, action, calendars, members, user); setEventDraft(null); await load(); }
-  async function removeEvent() { if (!eventDraft?.id) return; const current = { ...eventDraft, id: eventDraft.id, createdByUserId: eventDraft.createdByUserId || user?.id }, id = eventDraft.id; const response = await fetch(`/api/events?id=${id}`, { method: "DELETE" }); if (!response.ok) return setError("Không thể xóa sự kiện."); notifyEvent(current, "deleted", calendars, members, user); setEventDraft(null); await load(); }
-  async function removeDetail() { if (!eventDetail) return; const current = eventDetail, response = await fetch(`/api/events?id=${current.id}`, { method: "DELETE" }); if (!response.ok) return setError("Không thể xóa sự kiện."); notifyEvent(current, "deleted", calendars, members, user); setEventDetail(null); await load(); }
-  async function copyDetail() { if (!eventDetail) return; const current = eventDetail, response = await fetch("/api/events/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: current.id, startDate: current.startDate }) }), result = await readJson<{ ok: boolean; data?: { id: string }; error?: string }>(response); if (!response.ok || !result?.ok || !result.data) return setError(result?.error || "Không thể copy sự kiện."); notifyEvent({ ...current, id: result.data.id, createdByUserId: user?.id }, "copied", calendars, members, user); setEventDetail(null); await load(); }
-  async function saveCalendar(event: React.FormEvent) { event.preventDefault(); if (!calendarDraft) return; const response = await fetch("/api/calendars", { method: calendarDraft.id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...calendarDraft, id: calendarDraft.id || crypto.randomUUID(), visible: true }) }); if (!response.ok) return setError("Không thể lưu lịch."); setCalendarDraft(null); await load(); }
-  async function removeCalendar(id: string) { const response = await fetch(`/api/calendars?id=${id}`, { method: "DELETE" }), result = await readJson<{ ok: boolean; error?: string }>(response); if (!response.ok || !result?.ok) return setError(result?.error || "Không thể xóa lịch."); setCalendarDraft(null); setEventDraft(current => current?.calendarId === id ? null : current); setEventDetail(current => current?.calendarId === id ? null : current); await load(); }
-  async function applyDrop(copy: boolean) { if (!drop) return; const { item, date } = drop; const response = copy ? await fetch("/api/events/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: item.id, startDate: date }) }) : await fetch("/api/events", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...item, startDate: date, endDate: shiftedEnd(item.startDate, item.endDate, date) }) }), result = await readJson<{ ok: boolean; data?: { id: string }; error?: string }>(response); if (!response.ok || !result?.ok) setError(result?.error || (copy ? "Không thể copy sự kiện." : "Không thể di chuyển sự kiện.")); else notifyEvent({ ...item, id: result.data?.id || item.id, createdByUserId: copy ? user?.id : item.createdByUserId, startDate: date }, copy ? "copied" : "moved", calendars, members, user, copy ? undefined : date); setDrop(null); await load(); }
-  const drawer = eventDraft ? <EventEditor draft={eventDraft} calendars={calendars} members={members} actor={user} setDraft={setEventDraft} save={saveEvent} remove={removeEvent} /> : eventDetail ? <EventDetail item={eventDetail} calendars={calendars} members={members} actor={user} collapse={() => setDrawerCollapsed(true)} close={closeDrawer} edit={() => { setEventDraft({ ...eventDetail }); setEventDetail(null); setDrawerCollapsed(false); }} copy={copyDetail} remove={removeDetail} /> : chooseType ? <TypePicker choose={type => { setChooseType(false); setCalendarDraft({ name: calendarTypes.find(item => item.id === type)?.label || "Calendar", color: "#6366f1", type, viewerUserIds: type === "family" ? members.flatMap(member => member.user?.id ? [member.user.id] : []) : user ? [user.id] : [] }); setDrawerCollapsed(false); }} close={closeDrawer} /> : calendarDraft ? <CalendarSettings draft={calendarDraft} members={members} fullAccess={user?.role === "full_access"} canRemove={user?.role === "full_access" || calendarDraft.ownerUserId === user?.id} setDraft={setCalendarDraft} save={saveCalendar} remove={removeCalendar} /> : null;
-  const calendarColumns = calendarListCollapsed ? "md:grid-cols-[52px_minmax(0,1fr)]" : "md:grid-cols-[280px_minmax(0,1fr)]";
-  const drawerColumns = drawer ? drawerCollapsed ? calendarListCollapsed ? "xl:grid-cols-[52px_minmax(0,1fr)_48px]" : "xl:grid-cols-[280px_minmax(0,1fr)_48px]" : calendarListCollapsed ? "xl:grid-cols-[52px_minmax(0,1fr)_400px]" : "xl:grid-cols-[280px_minmax(0,1fr)_400px]" : "";
-  const openEvent = (item: Item) => { setCalendarDraft(null); setChooseType(false); setEventDraft(null); setEventDetail(item); setDrawerCollapsed(false); };
-  return <><MobileCalendarView anchor={anchor} setAnchor={setAnchor} selectedDate={selectedDate} selectDate={date => { setSelectedDate(date); setAnchor(new Date(`${date}T00:00:00`)); }} events={events} enabled={enabled} members={members} days={days} openEvent={openEvent} add={() => openDay(selectedDate)} />
-    <div className={`hidden min-h-[calc(100vh-94px)] items-start gap-3 md:grid ${calendarColumns} ${drawerColumns}`}>
-      <CalendarList collapsed={calendarListCollapsed} collapse={() => setCalendarListCollapsed(value => !value)} calendars={calendars} enabled={enabled} birthdays={birthdays} showLunar={showLunar} toggle={id => setEnabled(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])} setBirthdays={setBirthdays} setShowLunar={setShowLunar} add={() => { setEventDetail(null); setEventDraft(null); setCalendarDraft(null); setChooseType(true); setDrawerCollapsed(false); }} settings={calendar => { setEventDetail(null); setEventDraft(null); setChooseType(false); setCalendarDraft({ ...calendar }); setDrawerCollapsed(false); }} />
-      <section className="min-w-0 self-start overflow-hidden rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] shadow-sm"><CalendarHeader view={calendarView} setView={setCalendarView} anchor={anchor} selectedDate={selectedDate} weekDays={weekDays} setAnchor={setAnchor} setSelectedDate={setSelectedDate} add={addFromHeader} />{error && <p className="m-3 rounded-lg bg-rose-50 p-2 text-sm text-rose-600">{error}</p>}{calendarView === "monthly" ? <div className="grid grid-cols-7">{weekdays.map(day => <b key={day} className="border-b border-[var(--app-border)] p-2.5 text-center text-xs text-slate-400">{day}</b>)}{days.map(date => <DayCell key={iso(date)} date={date} anchor={anchor} events={events} enabled={enabled} members={members} birthdays={birthdays} showLunar={showLunar} selectedDate={selectedDate} selectedId={eventDraft?.id || eventDetail?.id} openDay={openDay} openEvent={openEvent} setDrop={setDrop} />)}</div> : <WeeklyView days={weekDays} selectedDate={selectedDate} selectDate={date => { setSelectedDate(date); setAnchor(new Date(`${date}T00:00:00`)); }} events={events} enabled={enabled} members={members} birthdays={birthdays} openDay={openDay} openEvent={openEvent} setDrop={setDrop} />}</section>
-      {drawer ? drawerCollapsed ? <DrawerRail expand={() => setDrawerCollapsed(false)} close={closeDrawer} /> : <div className="min-w-0">{drawer}</div> : null}
+
+  function toggleLunar() {
+    const next = !showLunar;
+    setShowLunar(next);
+    localStorage.setItem("calendar-show-lunar", String(next));
+  }
+
+  const days = useMemo(() => monthCells(anchor), [anchor]);
+  const weekDays = useMemo(() => weekCells(selectedDate), [selectedDate]);
+  
+  const fixedEvents = useMemo(() => {
+    const y = anchor.getFullYear();
+    return [
+      ...generateFixedEvents(y - 1, members),
+      ...generateFixedEvents(y, members),
+      ...generateFixedEvents(y + 1, members)
+    ];
+  }, [anchor, members]);
+
+  const allEvents = useMemo(() => [...events, ...fixedEvents], [events, fixedEvents]);
+
+  const visibleEvents = useMemo(() => allEvents.filter(item => {
+    if (item.calendarId !== "fixed-birthday" && item.calendarId !== "fixed-holiday") {
+      if (enabled.length && !enabled.includes(item.calendarId)) return false;
+    }
+    if (enabledTypes.length && !enabledTypes.includes(item.type)) return false;
+    return true;
+  }), [enabled, enabledTypes, allEvents]);
+  
+  const selectedEvents = useMemo(() => visibleEvents.filter(item => item.startDate === selectedDate).sort(sortEvents), [selectedDate, visibleEvents]);
+  const agendaEvents = useMemo(() => visibleEvents.filter(item => item.startDate >= iso(new Date(anchor.getFullYear(), anchor.getMonth(), 1)) && item.startDate <= iso(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0))).sort(sortEvents), [anchor, visibleEvents]);
+
+  const load = useCallback(async () => {
+    const [calendarResponse, eventResponse] = await Promise.all([
+      fetch("/api/calendars", { cache: "no-store" }),
+      fetch(`/api/events?month=${anchor.getMonth() + 1}&year=${anchor.getFullYear()}`, { cache: "no-store" })
+    ]);
+    const calendarResult = await readJson<{ ok: boolean; data?: Calendar[]; error?: string }>(calendarResponse);
+    const eventResult = await readJson<{ ok: boolean; data?: CalendarEvent[]; error?: string }>(eventResponse);
+    if (!calendarResponse.ok || !eventResponse.ok) {
+      setError(calendarResult?.error || eventResult?.error || "Không thể tải lịch.");
+      return;
+    }
+    const nextCalendars = calendarResult?.data || [];
+    setCalendars(nextCalendars);
+    setEvents(eventResult?.data || []);
+    setEnabled(current => current.length ? current.filter(id => nextCalendars.some(calendar => calendar.id === id)) : nextCalendars.map(calendar => calendar.id));
+    setError("");
+  }, [anchor]);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) setView("agenda");
+  }, []);
+
+  function pickDate(date: string, openForm = false) {
+    const parsed = localDate(date);
+    setSelectedDate(date);
+    if (parsed) setAnchor(new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()));
+    if (openForm) openNewEvent(date);
+  }
+  function openDaySheet(date: string) {
+    const parsed = localDate(date);
+    setSelectedDate(date);
+    if (parsed) setAnchor(new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()));
+    setDetail(null);
+    setDraft(null);
+    setDaySheetDate(date);
+  }
+  function openNewEvent(date = selectedDate) {
+    const calendarId = enabled[0] || calendars[0]?.id;
+    if (!calendarId) {
+      setError("Chưa có lịch để thêm sự kiện.");
+      return;
+    }
+    setDetail(null);
+    setDaySheetDate(null);
+    setDraft(draftFor(date, calendarId, user));
+  }
+  function openEditEvent(item: CalendarEvent) {
+    setDetail(null);
+    setDaySheetDate(null);
+    setDraft({ ...item });
+  }
+  function openEventDetail(item: CalendarEvent) {
+    setDaySheetDate(null);
+    setDraft(null);
+    setDetail(item);
+  }
+  function goToday() {
+    const now = new Date();
+    setAnchor(now);
+    setSelectedDate(iso(now));
+  }
+  function goMonth(delta: number) {
+    setAnchor(current => new Date(current.getFullYear(), current.getMonth() + delta, 1));
+  }
+  async function saveEvent(event: React.FormEvent) {
+    event.preventDefault();
+    if (!draft) return;
+    const id = draft.id || crypto.randomUUID();
+    const response = await fetch("/api/events", {
+      method: draft.id ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...draft, id })
+    });
+    const result = await readJson<{ ok: boolean; data?: { id: string }; error?: string }>(response);
+    if (!response.ok || !result?.ok) {
+      setError(result?.error || "Không thể lưu sự kiện.");
+      return;
+    }
+    setDraft(null);
+    await load();
+    setSelectedDate(draft.startDate);
+  }
+  async function deleteEvent(item: CalendarEvent) {
+    const response = await fetch(`/api/events?id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    const result = await readJson<{ ok: boolean; error?: string }>(response);
+    if (!response.ok || !result?.ok) {
+      setError(result?.error || "Không thể xóa sự kiện.");
+      return;
+    }
+    setDetail(null);
+    setDraft(null);
+    await load();
+  }
+  async function markDone(item: CalendarEvent) {
+    const response = await fetch("/api/events", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...item, status: item.status === "done" ? "open" : "done" })
+    });
+    const result = await readJson<{ ok: boolean; error?: string }>(response);
+    if (!response.ok || !result?.ok) {
+      setError(result?.error || "Không thể cập nhật trạng thái.");
+      return;
+    }
+    setDetail(null);
+    await load();
+  }
+
+  return (
+    <section className="relative mx-auto max-w-[1500px] pb-20 md:pb-0">
+      <CalendarToolbar
+        anchor={anchor}
+        view={view}
+        setView={setView}
+        today={goToday}
+        prev={() => goMonth(-1)}
+        next={() => goMonth(1)}
+        add={() => openNewEvent(selectedDate)}
+        quickPickerOpen={quickPickerOpen}
+        setQuickPickerOpen={setQuickPickerOpen}
+        setAnchor={setAnchor}
+        setSelectedDate={setSelectedDate}
+        showLunar={showLunar}
+        toggleLunar={toggleLunar}
+        filterOpenMobile={filterOpenMobile}
+        setFilterOpenMobile={setFilterOpenMobile}
+      />
+      {error && <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-600">{error}</p>}
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="hidden h-fit rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 shadow-sm xl:block">
+          <FilterContent calendars={calendars} enabled={enabled} setEnabled={setEnabled} enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes} />
+        </aside>
+
+        {filterOpenMobile && (
+          <div className="fixed inset-0 z-50 flex items-end bg-black/45 xl:hidden" onMouseDown={() => setFilterOpenMobile(false)}>
+            <div onMouseDown={e => e.stopPropagation()} className="max-h-[80vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl">
+               <div className="mb-4 flex items-center justify-between">
+                 <h3 className="text-lg font-bold">Lịch hiển thị</h3>
+                 <button type="button" onClick={() => setFilterOpenMobile(false)} className="flex size-8 items-center justify-center rounded-full bg-slate-100 font-bold text-slate-500">×</button>
+               </div>
+               <FilterContent calendars={calendars} enabled={enabled} setEnabled={setEnabled} enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes} />
+            </div>
+          </div>
+        )}
+
+        <div className="min-w-0">
+          {view === "monthly" && (
+            <div className="overflow-hidden rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] shadow-sm">
+              <div className="grid grid-cols-7 border-b border-[var(--app-border)] bg-slate-50/70 dark:bg-white/5">
+                {weekdays.map(day => <b key={day} className="py-3 text-center text-xs text-slate-500">{day}</b>)}
+              </div>
+              <div className="grid grid-cols-7">
+                {days.map(date => {
+                  const dateIso = iso(date);
+                  return (
+                    <DayCell
+                      key={dateIso}
+                      date={date}
+                      anchor={anchor}
+                      selected={selectedDate === dateIso}
+                      events={visibleEvents.filter(item => item.startDate === dateIso).sort(sortEvents)}
+                      select={() => pickDate(dateIso)}
+                      add={() => openDaySheet(dateIso)}
+                      open={openEventDetail}
+                      showLunar={showLunar}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {view === "weekly" && (
+            <WeeklyView
+              days={weekDays}
+              events={visibleEvents}
+              selectedDate={selectedDate}
+              selectDate={date => pickDate(date)}
+              add={date => pickDate(date, true)}
+              open={openEventDetail}
+            />
+          )}
+
+          {view === "agenda" && (
+            <AgendaView
+              events={agendaEvents}
+              members={members}
+              open={openEventDetail}
+              edit={openEditEvent}
+              remove={deleteEvent}
+              openMenuId={openMenuId}
+              setOpenMenuId={setOpenMenuId}
+            />
+          )}
+
+          {view !== "agenda" && (
+            <div className="mt-4">
+              <AgendaView
+                title={`Sự kiện ${dayGroupTitle(selectedDate)}`}
+                events={selectedEvents}
+                members={members}
+                open={openEventDetail}
+                edit={openEditEvent}
+                remove={deleteEvent}
+                openMenuId={openMenuId}
+                setOpenMenuId={setOpenMenuId}
+                emptyText="Chưa có sự kiện trong ngày này."
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-5 right-5 z-40 grid size-14 place-items-center rounded-full bg-indigo-600 text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 md:hidden" aria-label="Thêm sự kiện">+</button>
+
+      {daySheetDate && <DayEventsSheet date={daySheetDate} events={visibleEvents.filter(item => item.startDate === daySheetDate).sort(sortEvents)} members={members} close={() => setDaySheetDate(null)} add={() => openNewEvent(daySheetDate)} open={openEventDetail} edit={openEditEvent} remove={deleteEvent} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} />}
+      {draft && <EventEditor draft={draft} calendars={calendars} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
+      {detail && <EventDetail item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />}
+    </section>
+  );
+}
+
+function CalendarToolbar({ anchor, view, setView, today, prev, next, add, quickPickerOpen, setQuickPickerOpen, setAnchor, setSelectedDate, showLunar, toggleLunar, filterOpenMobile, setFilterOpenMobile }: {
+  anchor: Date;
+  view: CalendarView;
+  setView: (view: CalendarView) => void;
+  today: () => void;
+  prev: () => void;
+  next: () => void;
+  add: () => void;
+  quickPickerOpen: boolean;
+  setQuickPickerOpen: (open: boolean) => void;
+  setAnchor: (date: Date) => void;
+  setSelectedDate: (date: string) => void;
+  showLunar: boolean;
+  toggleLunar: () => void;
+  filterOpenMobile: boolean;
+  setFilterOpenMobile: (open: boolean) => void;
+}) {
+  const [month, setMonth] = useState(anchor.getMonth() + 1);
+  const [year, setYear] = useState(anchor.getFullYear());
+  useEffect(() => { setMonth(anchor.getMonth() + 1); setYear(anchor.getFullYear()); }, [anchor]);
+  function applyQuickPick() {
+    const date = new Date(year, month - 1, 1);
+    setAnchor(date);
+    setSelectedDate(iso(date));
+    setQuickPickerOpen(false);
+  }
+  return (
+    <div className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-3 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={today} className="h-11 rounded-xl border border-[var(--app-border)] px-4 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5">Hôm nay</button>
+          <button type="button" onClick={prev} className="grid size-11 place-items-center rounded-xl border border-[var(--app-border)] text-xl hover:bg-slate-50 dark:hover:bg-white/5" aria-label="Tháng trước">‹</button>
+          <button type="button" onClick={next} className="grid size-11 place-items-center rounded-xl border border-[var(--app-border)] text-xl hover:bg-slate-50 dark:hover:bg-white/5" aria-label="Tháng sau">›</button>
+          <h2 className="min-w-[160px] text-lg font-bold md:text-2xl">{monthLabel(anchor)}</h2>
+          <div className="relative">
+            <button type="button" onClick={() => setQuickPickerOpen(!quickPickerOpen)} className="h-11 rounded-xl border border-[var(--app-border)] px-4 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5">Chọn tháng/năm</button>
+            {quickPickerOpen && (
+              <div className="absolute left-0 top-full z-30 mt-2 w-72 rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 shadow-xl">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Tháng"><select className={input} value={month} onChange={event => setMonth(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={index + 1}>Tháng {index + 1}</option>)}</select></Field>
+                  <Field label="Năm"><input className={input} type="number" value={year} onChange={event => setYear(Number(event.target.value))} /></Field>
+                </div>
+                <button type="button" onClick={applyQuickPick} className="mt-3 h-11 w-full rounded-xl bg-indigo-600 text-sm font-bold text-white">Áp dụng</button>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="mr-2 flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+             <input type="checkbox" checked={showLunar} onChange={toggleLunar} className="size-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+             Âm lịch
+          </label>
+          <button type="button" onClick={() => setFilterOpenMobile(!filterOpenMobile)} className="h-11 rounded-xl border border-[var(--app-border)] px-4 text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/5 xl:hidden">Lịch hiển thị</button>
+          <div className="grid grid-cols-3 rounded-xl border border-[var(--app-border)] p-1">
+            {[
+              ["monthly", "Tháng"],
+              ["weekly", "Tuần"],
+              ["agenda", "Danh sách"]
+            ].map(([value, label]) => (
+              <button key={value} type="button" onClick={() => setView(value as CalendarView)} className={`h-9 rounded-lg px-3 text-sm font-bold ${view === value ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5"}`}>{label}</button>
+            ))}
+          </div>
+          <button type="button" onClick={add} className="h-11 rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white shadow-sm hover:bg-indigo-700">+ Thêm sự kiện</button>
+        </div>
+      </div>
     </div>
-    {drawer && !drawerCollapsed && <div className="fixed inset-0 z-50 flex items-end bg-black/45 p-0 md:hidden" onMouseDown={closeDrawer}><div className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-4 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl" onMouseDown={event => event.stopPropagation()}><div className="mx-auto mb-3 h-1 w-12 rounded-full bg-slate-300" />{drawer}</div></div>}
-    {drop && <DropMenu drop={drop} cancel={() => setDrop(null)} apply={applyDrop} />}
-  </>;
+  );
 }
 
-function CalendarList({ collapsed, collapse, calendars, enabled, birthdays, showLunar, toggle, setBirthdays, setShowLunar, add, settings }: { collapsed: boolean; collapse: () => void; calendars: Calendar[]; enabled: string[]; birthdays: boolean; showLunar: boolean; toggle: (id: string) => void; setBirthdays: (value: boolean) => void; setShowLunar: (value: boolean) => void; add: () => void; settings: (calendar: Calendar) => void }) {
-  if (collapsed) return <aside className="h-fit rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-2 shadow-sm"><button type="button" onClick={collapse} className="grid size-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Mở Calendar List">›</button><div className="mt-2 space-y-1 border-t border-[var(--app-border)] pt-2"><button type="button" title="Sinh nhật" aria-label={`${birthdays ? "Ẩn" : "Hiện"} Sinh nhật`} aria-pressed={birthdays} onClick={() => setBirthdays(!birthdays)} className={`grid size-8 place-items-center rounded-lg text-sm transition ${birthdays ? "bg-pink-50 opacity-100" : "bg-slate-50 opacity-35 hover:opacity-60"}`}>🎂</button><button type="button" title="Âm lịch" aria-label={`${showLunar ? "Ẩn" : "Hiện"} Âm lịch`} aria-pressed={showLunar} onClick={() => setShowLunar(!showLunar)} className={`grid size-8 place-items-center rounded-lg text-sm text-sky-600 transition ${showLunar ? "bg-sky-50 opacity-100" : "bg-slate-50 opacity-35 hover:opacity-60"}`}>☾</button>{calendars.map(calendar => <button type="button" key={calendar.id} title={calendar.name} aria-label={`${enabled.includes(calendar.id) ? "Ẩn" : "Hiện"} ${calendar.name}`} aria-pressed={enabled.includes(calendar.id)} onClick={() => toggle(calendar.id)} className={`grid size-8 place-items-center rounded-lg transition ${enabled.includes(calendar.id) ? "bg-slate-100 opacity-100" : "bg-slate-50 opacity-35 hover:opacity-60"}`}><span className="grid size-5 place-items-center rounded-md text-[10px] text-white" style={{ background: calendar.color }}>{typeIcon(calendar.type)}</span></button>)}</div><button type="button" onClick={add} className="mt-2 grid size-8 place-items-center rounded-lg text-lg font-bold text-indigo-600 hover:bg-indigo-50" aria-label="Add Calendar">+</button></aside>;
-  return <aside className="h-fit rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-3 shadow-sm"><div className="flex items-center justify-between px-1"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-indigo-500">TimeTree</p><h2 className="mt-0.5 text-base font-bold">Calendar List</h2></div><div className="flex items-center gap-2"><button className="text-xs font-semibold text-slate-400">Arrange</button><button type="button" onClick={collapse} className="grid size-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100" aria-label="Thu gọn Calendar List">›</button></div></div><div className="mt-3 space-y-1.5"><button type="button" aria-pressed={birthdays} onClick={() => setBirthdays(!birthdays)} className={`flex min-h-14 w-full items-center gap-2 rounded-lg border border-[var(--app-border)] px-2 py-1.5 text-left text-xs font-semibold transition ${birthdays ? "opacity-100" : "opacity-35 hover:opacity-60"}`}><span className="grid size-8 place-items-center rounded-lg bg-pink-100">🎂</span>Sinh nhật</button><button type="button" aria-pressed={showLunar} onClick={() => setShowLunar(!showLunar)} className={`flex min-h-14 w-full items-center gap-2 rounded-lg border border-[var(--app-border)] px-2 py-1.5 text-left text-xs font-semibold transition ${showLunar ? "opacity-100" : "opacity-35 hover:opacity-60"}`}><span className="grid size-8 place-items-center rounded-lg bg-sky-100 text-sky-600">☾</span>Âm lịch</button>{calendars.map(calendar => <div key={calendar.id} className="flex min-h-14 items-center gap-2 rounded-lg border border-[var(--app-border)] px-2 py-1.5"><button type="button" title={`${enabled.includes(calendar.id) ? "Ẩn" : "Hiện"} ${calendar.name}`} aria-pressed={enabled.includes(calendar.id)} onClick={() => toggle(calendar.id)} className={`grid size-8 shrink-0 place-items-center rounded-lg text-sm text-white transition ${enabled.includes(calendar.id) ? "opacity-100" : "opacity-35 hover:opacity-60"}`} style={{ background: calendar.color }}>{typeIcon(calendar.type)}</button><div className="min-w-0 flex-1"><b className="block truncate text-xs">{calendar.name}</b><p className="mt-0.5 text-[10px] text-slate-400">{calendarTypes.find(item => item.id === calendar.type)?.label || "Calendar"}</p></div><button onClick={() => settings(calendar)} className="px-1 text-slate-400">›</button></div>)}</div><button onClick={add} className="mt-3 flex items-center gap-2 px-1 py-2 text-sm font-bold text-indigo-600 hover:text-indigo-700">＋ <span>Add Calendar</span></button></aside>;
-}
-function CalendarHeader({ view, setView, anchor, selectedDate, weekDays, setAnchor, setSelectedDate, add }: { view: CalendarView; setView: (view: CalendarView) => void; anchor: Date; selectedDate: string; weekDays: Date[]; setAnchor: (date: Date) => void; setSelectedDate: (date: string) => void; add: () => void }) {
-  const today = iso(new Date()), shift = (amount: number) => { if (view === "monthly") { const next = new Date(anchor.getFullYear(), anchor.getMonth() + amount, 1); setAnchor(next); setSelectedDate(iso(next)); } else { const current = new Date(`${selectedDate}T00:00:00`); current.setDate(current.getDate() + amount * 7); setAnchor(current); setSelectedDate(iso(current)); } }, jumpToday = () => { const next = new Date(); setAnchor(next); setSelectedDate(today); }, range = `${weekDays[0].toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })} - ${weekDays[6].toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" })}`, tab = (value: CalendarView) => `rounded-lg px-3 py-1.5 text-sm font-semibold ${view === value ? "bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100" : "text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"}`;
-  return <header className="flex flex-wrap items-center gap-2 border-b border-[var(--app-border)] p-3"><button className="rounded-lg border border-[var(--app-border)] px-3 py-1.5 text-sm" onClick={jumpToday}>Hôm nay</button><button className="rounded-lg border border-[var(--app-border)] px-3 py-1.5" onClick={() => shift(-1)}>›</button><button className="rounded-lg border border-[var(--app-border)] px-3 py-1.5" onClick={() => shift(1)}>›</button><h2 className="min-w-48 flex-1 text-lg font-bold">{view === "monthly" ? `Tháng ${anchor.getMonth() + 1}/${anchor.getFullYear()}` : range}</h2><button type="button" onClick={() => setView("monthly")} className={tab("monthly")}>Monthly</button><button type="button" onClick={() => setView("weekly")} className={tab("weekly")}>Weekly</button><button onClick={add} className="grid size-8 place-items-center rounded-lg bg-indigo-600 text-lg font-semibold text-white" aria-label="Thêm sự kiện">+</button></header>;
-}
-function DayCell({ date, anchor, events, enabled, members, birthdays, showLunar, selectedDate, selectedId, openDay, openEvent, setDrop }: { date: Date; anchor: Date; events: Item[]; enabled: string[]; members: Member[]; birthdays: boolean; showLunar: boolean; selectedDate: string; selectedId?: string; openDay: (date: string) => void; openEvent: (item: Item) => void; setDrop: (drop: Drop) => void }) { const dateKey = iso(date), today = iso(new Date()), items = events.filter(item => enabled.includes(item.calendarId) && item.startDate === dateKey).sort(sortItems), birthdayItems = birthdays ? members.filter(member => hasBirthday(member, date)) : [], visible = [...birthdayItems.map(member => ({ kind: "birthday" as const, member })), ...items.map(item => ({ kind: "event" as const, item }))].slice(0, 4); return <button onClick={() => openDay(dateKey)} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const item = events.find(value => value.id === event.dataTransfer.getData("text/plain")); if (item && item.startDate !== dateKey) setDrop({ item, date: dateKey, x: event.clientX, y: event.clientY }); }} className={`calendar-day-cell h-[calc((100vh-158px)/6)] min-h-32 ${date.getMonth() !== anchor.getMonth() ? "opacity-45" : ""} ${dateKey === selectedDate ? "selected-day bg-indigo-50/60 ring-2 ring-inset ring-indigo-200" : ""}`}><div className={`day-header ${dateKey === today ? "text-indigo-600" : ""}`}><b>{date.getDate()}</b>{showLunar && <small className="lunar-date">{lunar(date)}</small>}</div><div className="event-list">{visible.map(value => value.kind === "birthday" ? <p key={`birthday:${value.member.id}`} className="truncate px-1 text-[12px] text-pink-600">🎂 Sinh nhật {value.member.nickname || value.member.name}</p> : <span key={value.item.id} draggable onDragStart={event => event.dataTransfer.setData("text/plain", value.item.id)} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); setDrop({ item: value.item, date: value.item.startDate, x: event.clientX, y: event.clientY }); }} onClick={event => { event.stopPropagation(); openEvent(value.item); }} className={`calendar-event-row ${value.item.allDay ? "calendar-event-all-day" : ""} ${selectedId === value.item.id ? "is-selected" : ""}`} style={{ "--event-color": value.item.color } as React.CSSProperties}><i style={{ background: value.item.color }} /><b>{value.item.title}</b>{!value.item.allDay && <small>{value.item.startTime}</small>}</span>)}{items.length + birthdayItems.length > 4 && <small className="px-1 text-slate-400">+{items.length + birthdayItems.length - 4} thêm</small>}</div></button>; }
+function DayCell({ date, anchor, selected, events, select, add, open, showLunar }: { date: Date; anchor: Date; selected: boolean; events: CalendarEvent[]; select: () => void; add: () => void; open: (event: CalendarEvent) => void; showLunar?: boolean }) {
+  const dateIso = iso(date);
+  const isToday = dateIso === todayIso();
+  const inMonth = date.getMonth() === anchor.getMonth();
+  const visible = events.slice(0, 3);
+  
+  let lunarText = "";
+  let isLunarImportant = false;
+  if (showLunar) {
+    const solar = Solar.fromYmd(date.getFullYear(), date.getMonth() + 1, date.getDate());
+    const lunar = solar.getLunar();
+    const lDay = lunar.getDay();
+    const lMonth = lunar.getMonth();
+    isLunarImportant = lDay === 1 || lDay === 15;
+    if (lDay === 1) {
+      lunarText = `${lDay}/${lMonth}`;
+    } else {
+      lunarText = `${lDay}`;
+    }
+  }
 
-function WeeklyView({ days, selectedDate, selectDate, events, enabled, members, birthdays, openDay, openEvent, setDrop }: { days: Date[]; selectedDate: string; selectDate: (date: string) => void; events: Item[]; enabled: string[]; members: Member[]; birthdays: boolean; openDay: (date: string, startTime?: string) => void; openEvent: (item: Item) => void; setDrop: (drop: Drop) => void }) {
-  const today = iso(new Date()), hourHeight = 56, hours = Array.from({ length: 24 }, (_, index) => index), now = new Date(), nowKey = iso(now), weekHasToday = days.some(day => iso(day) === nowKey), nowTop = (now.getHours() * 60 + now.getMinutes()) / 60 * hourHeight;
-  const timed = (dateKey: string) => events.filter(item => enabled.includes(item.calendarId) && item.startDate === dateKey && !item.allDay && item.startTime).sort(sortItems);
-  const allDay = (date: Date) => { const dateKey = iso(date), eventItems = events.filter(item => enabled.includes(item.calendarId) && item.startDate === dateKey && (item.allDay || !item.startTime)), birthdayItems = birthdays ? members.filter(member => hasBirthday(member, date)) : []; return [...birthdayItems.map(member => ({ kind: "birthday" as const, member })), ...eventItems.map(item => ({ kind: "event" as const, item }))]; };
-  return <div className="grid max-h-[calc(100vh-158px)] min-h-[640px] grid-rows-[auto_36px_minmax(0,1fr)] overflow-hidden"><div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] border-b border-[var(--app-border)]"><div className="border-r border-[var(--app-border)]" />{days.map((day, index) => { const dateKey = iso(day), isToday = dateKey === today, selected = dateKey === selectedDate; return <button key={dateKey} onClick={() => selectDate(dateKey)} className={`min-w-0 border-r border-[var(--app-border)] px-2 py-2 text-center text-xs last:border-r-0 ${index === 6 ? "text-rose-500" : "text-slate-500"} ${selected ? "selected-day bg-indigo-50 ring-2 ring-inset ring-indigo-200" : ""}`}><b className={`block text-sm ${isToday ? "text-indigo-600" : ""}`}>{weekdays[index]} {day.getDate()}</b><span className="mt-0.5 block truncate lunar-date">{lunar(day)}</span></button>; })}</div><div className="grid h-[36px] max-h-[36px] grid-cols-[56px_repeat(7,minmax(0,1fr))] overflow-hidden border-b border-[var(--app-border)]"><div className="h-[36px] border-r border-[var(--app-border)] px-1 text-[10px] font-semibold leading-[36px] text-slate-400">All-day</div>{days.map(day => { const values = allDay(day), visible = values.slice(0, 2), more = values.length - visible.length; return <div key={iso(day)} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const item = events.find(value => value.id === event.dataTransfer.getData("text/plain")); if (item) setDrop({ item, date: iso(day), x: event.clientX, y: event.clientY }); }} className="h-[36px] max-h-[36px] overflow-hidden border-r border-[var(--app-border)] px-1 last:border-r-0">{visible.map(value => value.kind === "birthday" ? <p key={`birthday:${value.member.id}`} className="h-[18px] truncate rounded bg-pink-50 px-1 text-[10px] font-semibold leading-[18px] text-pink-600">🎂 {value.member.nickname || value.member.name}</p> : <button type="button" key={value.item.id} draggable onDragStart={event => event.dataTransfer.setData("text/plain", value.item.id)} onClick={() => openEvent(value.item)} className="block h-[18px] w-full truncate rounded px-1 text-left text-[10px] font-semibold leading-[18px] text-white" style={{ background: value.item.color }}>{value.item.title}</button>)}{more > 0 && <p className="h-[18px] truncate px-1 text-[10px] font-semibold leading-[18px] text-slate-400">+{more} more</p>}</div>; })}</div><div className="relative min-h-0 overflow-y-auto"><div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))]" style={{ height: hourHeight * 24 }}>{hours.map(hour => <div key={`label:${hour}`} className="border-r border-[var(--app-border)] pr-1 pt-1 text-right text-[10px] text-slate-400" style={{ gridColumn: 1, gridRow: hour + 1 }}>{hourLabel(hour)}</div>)}{days.map((day, dayIndex) => { const dateKey = iso(day); return <div key={dateKey} onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); const item = events.find(value => value.id === event.dataTransfer.getData("text/plain")); if (item) setDrop({ item, date: dateKey, x: event.clientX, y: event.clientY }); }} className="relative border-r border-[var(--app-border)] last:border-r-0" style={{ gridColumn: dayIndex + 2, gridRow: "1 / span 24" }}>{hours.map(hour => <button type="button" key={hour} onClick={() => openDay(dateKey, timeFromMinutes(hour * 60))} className="block w-full border-b border-[var(--app-border)]/80 hover:bg-indigo-50/50" style={{ height: hourHeight }} aria-label={`Tạo sự kiện ${dateKey} ${hourLabel(hour)}`} />)}{timed(dateKey).map((item, index) => { const start = timeMinutes(item.startTime), end = item.endTime ? timeMinutes(item.endTime) : start + 60, top = start / 60 * hourHeight, height = Math.max(28, (Math.max(end, start + 15) - start) / 60 * hourHeight); return <button type="button" key={item.id} draggable onDragStart={event => event.dataTransfer.setData("text/plain", item.id)} onClick={() => openEvent(item)} className="absolute left-1 right-1 overflow-hidden rounded-md border-l-4 px-2 py-1 text-left text-[11px] shadow-sm ring-1 ring-black/5 hover:ring-indigo-200" style={{ top: top + index * 2, height, borderLeftColor: item.color, backgroundColor: `${item.color}18` }}><b className="block truncate text-slate-800 dark:text-slate-100">{item.title}</b><small className="mt-0.5 block truncate text-slate-500">{item.startTime}{item.endTime ? ` - ${item.endTime}` : ""}</small></button>; })}</div>; })}{weekHasToday && <div className="pointer-events-none absolute left-14 right-0 z-10 h-px bg-rose-500" style={{ top: nowTop }}><span className="absolute -left-1 -top-1 size-2 rounded-full bg-rose-500" /></div>}</div></div></div>;
+  return (
+    <button type="button" onClick={add} onFocus={select} className={`calendar-day-cell min-h-[112px] p-1.5 text-left transition md:min-h-[132px] md:p-2.5 ${inMonth ? "bg-white/60 dark:bg-white/[0.02]" : "bg-slate-50/70 text-slate-400 dark:bg-white/[0.01]"} ${selected ? "selected-day ring-2 ring-inset ring-indigo-300" : ""} ${isToday ? "bg-indigo-50/70 dark:bg-indigo-400/10" : ""}`}>
+      <div className="mb-1 flex items-start justify-between">
+        <div className="flex flex-col items-center">
+          <span className={`grid size-8 place-items-center rounded-full text-base font-bold md:text-lg ${isToday ? "bg-indigo-600 text-white" : ""}`}>{date.getDate()}</span>
+          {showLunar && (
+             <span className={`mt-0.5 text-[10px] ${isLunarImportant ? "font-bold text-rose-500" : "font-medium text-slate-400"} ${isToday && !isLunarImportant ? "text-indigo-300" : ""}`}>{lunarText}</span>
+          )}
+        </div>
+        {events.length > 0 && <span className="mt-1.5 text-[11px] font-semibold text-slate-400">{events.length}</span>}
+      </div>
+      <div className="space-y-1">
+        {visible.map(item => (
+          <span
+            key={item.id}
+            onClick={(event) => { event.preventDefault(); event.stopPropagation(); open(item); }}
+            className="block h-6 truncate rounded-md px-1.5 py-1 text-left text-[11px] font-bold leading-4 shadow-sm md:text-xs"
+            style={{ background: `${eventColor(item)}1f`, color: eventColor(item), borderLeft: `3px solid ${eventColor(item)}` }}
+          >
+            {!item.allDay && <span className="mr-1 tabular-nums">{eventTimeLabel(item)}</span>}
+            <span>{item.title}</span>
+          </span>
+        ))}
+        {events.length > visible.length && <span className="block rounded-md px-1.5 py-1 text-left text-[11px] font-bold text-indigo-600">+ {events.length - visible.length} sự kiện</span>}
+      </div>
+    </button>
+  );
 }
 
-function MobileCalendarView({ anchor, setAnchor, selectedDate, selectDate, events, enabled, members, days, openEvent, add }: { anchor: Date; setAnchor: (date: Date) => void; selectedDate: string; selectDate: (date: string) => void; events: Item[]; enabled: string[]; members: Member[]; days: Date[]; openEvent: (item: Item) => void; add: () => void }) {
-  const selectedEvents = events.filter(item => enabled.includes(item.calendarId) && item.startDate === selectedDate).sort(sortItems);
-  const eventDays = new Map<string, Item[]>();
-  events.filter(item => enabled.includes(item.calendarId)).forEach(item => eventDays.set(item.startDate, [...(eventDays.get(item.startDate) || []), item]));
-  function moveSelected(offset: number) { const date = new Date(`${selectedDate}T00:00:00`); date.setDate(date.getDate() + offset); const next = iso(date); selectDate(next); setAnchor(new Date(date.getFullYear(), date.getMonth(), 1)); }
-  function moveMonth(offset: number) { const next = new Date(anchor.getFullYear(), anchor.getMonth() + offset, 1); setAnchor(next); selectDate(iso(next)); }
-  return <section className="space-y-3 overflow-x-hidden md:hidden">
-    <header className="flex items-center gap-2"><button type="button" onClick={() => { const today = new Date(); setAnchor(today); selectDate(iso(today)); }} className="min-h-11 rounded-xl border border-[var(--app-border)] px-3 text-sm font-semibold">Today</button><button type="button" onClick={() => moveMonth(-1)} className="grid size-11 place-items-center rounded-xl border border-[var(--app-border)]">›</button><h2 className="min-w-0 flex-1 text-center text-base font-bold">Tháng {anchor.getMonth() + 1}/{anchor.getFullYear()}</h2><button type="button" onClick={() => moveMonth(1)} className="grid size-11 place-items-center rounded-xl border border-[var(--app-border)]">›</button><button type="button" onClick={add} className="grid size-11 place-items-center rounded-xl bg-indigo-600 text-xl font-semibold text-white" aria-label="Thêm sự kiện">+</button></header>
-    <div className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-3 shadow-sm"><div className="grid grid-cols-7 pb-2 text-center text-xs font-bold text-slate-400">{weekdays.map(day => <span key={day} className={day === "CN" ? "text-rose-500" : ""}>{day}</span>)}</div><div className="grid grid-cols-7 gap-1">{days.map(date => { const dateKey = iso(date), active = dateKey === selectedDate, hasEvents = eventDays.has(dateKey), isSunday = date.getDay() === 0; return <button type="button" key={dateKey} onClick={() => selectDate(dateKey)} className={`grid min-h-12 place-items-center rounded-xl border text-sm font-semibold transition ${active ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-transparent hover:bg-indigo-50"} ${date.getMonth() !== anchor.getMonth() ? "opacity-40" : ""} ${isSunday && !active ? "text-rose-500" : ""}`}><span>{date.getDate()}</span><span className="mt-0.5 flex h-1.5 gap-0.5">{hasEvents && eventDays.get(dateKey)!.slice(0, 3).map(item => <i key={item.id} className="size-1.5 rounded-full" style={{ background: item.color }} />)}</span></button>; })}</div></div>
-    <div className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-3 pb-[max(16px,env(safe-area-inset-bottom))] shadow-sm"><div className="mb-3 flex items-center gap-2"><button type="button" onClick={() => moveSelected(-1)} className="grid size-11 place-items-center rounded-xl border border-[var(--app-border)]">›</button><div className="min-w-0 flex-1 text-center"><h3 className="font-bold">{dayTitle(selectedDate)}</h3><p className="text-xs text-slate-400">{selectedEvents.length ? `${selectedEvents.length} sự kiện` : "Không có sự kiện"}</p></div><button type="button" onClick={() => moveSelected(1)} className="grid size-11 place-items-center rounded-xl border border-[var(--app-border)]">›</button><button type="button" onClick={add} className="grid size-11 place-items-center rounded-xl bg-indigo-50 text-xl font-bold text-indigo-600" aria-label="Thêm sự kiện ngày chọn">+</button></div><div className="space-y-2">{selectedEvents.length ? selectedEvents.map(item => { const member = members.find(value => item.memberIds.includes(value.id)); return <button type="button" key={item.id} onClick={() => openEvent(item)} className="flex min-h-16 w-full items-center gap-3 rounded-xl border border-[var(--app-border)] bg-white/70 p-3 text-left shadow-sm dark:bg-white/5"><i className="h-10 w-1.5 shrink-0 rounded-full" style={{ background: item.color }} /><div className="w-14 shrink-0 text-xs font-bold text-slate-500">{eventLabel(item)}</div><div className="min-w-0 flex-1"><b className="block truncate text-sm">{item.title}</b><p className="mt-1 truncate text-xs text-slate-400">{item.note || "Event"}</p></div>{member && <span className="grid size-9 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberInitial(member)}</span>}</button>; }) : <div className="rounded-xl border border-dashed border-[var(--app-border)] px-3 py-8 text-center text-sm text-slate-400">Chưa có sự kiện trong ngày này.</div>}</div></div>
-  </section>;
+function WeeklyView({ days, events, selectedDate, selectDate, add, open }: { days: Date[]; events: CalendarEvent[]; selectedDate: string; selectDate: (date: string) => void; add: (date: string) => void; open: (event: CalendarEvent) => void }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] shadow-sm">
+      <div className="grid grid-cols-7 border-b border-[var(--app-border)]">
+        {days.map(date => {
+          const dateIso = iso(date);
+          return (
+            <button key={dateIso} type="button" onClick={() => selectDate(dateIso)} className={`p-3 text-center ${selectedDate === dateIso ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-400/10 dark:text-indigo-200" : ""}`}>
+              <b className="block text-xs text-slate-400">{weekdays[(date.getDay() + 6) % 7]}</b>
+              <span className="mt-1 block text-lg font-bold">{date.getDate()}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid min-h-[420px] grid-cols-7">
+        {days.map(date => {
+          const dateIso = iso(date);
+          const dayEvents = events.filter(item => item.startDate === dateIso).sort(sortEvents);
+          return (
+            <div key={dateIso} className="border-r border-[var(--app-border)] p-2 last:border-r-0">
+              <button type="button" onClick={() => add(dateIso)} className="mb-2 h-9 w-full rounded-lg border border-dashed border-[var(--app-border)] text-xs font-bold text-slate-400 hover:border-indigo-300 hover:text-indigo-600">+ Thêm</button>
+              <div className="space-y-2">
+                {dayEvents.map(item => (
+                  <button key={item.id} type="button" onClick={() => open(item)} className="w-full rounded-xl border border-[var(--app-border)] p-2 text-left text-xs hover:bg-slate-50 dark:hover:bg-white/5">
+                    <span className="font-bold" style={{ color: eventColor(item) }}>{eventTimeLabel(item)}</span>
+                    <b className="mt-1 block truncate">{item.title}</b>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
-function DrawerRail({ expand, close }: { expand: () => void; close: () => void }) { return <aside className="flex h-fit flex-col items-center gap-2 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-2 shadow-sm"><button type="button" onClick={expand} className="grid size-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Mở panel phải">›</button><span className="h-px w-full bg-[var(--app-border)]" /><span className="grid size-8 place-items-center rounded-lg bg-indigo-50 text-indigo-600">✎</span><button type="button" onClick={close} className="grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Đóng panel phải">×</button></aside>; }
-function EventEditor({ draft, calendars, members, actor, setDraft, save, remove }: { draft: EventDraft; calendars: Calendar[]; members: Member[]; actor?: Actor; setDraft: (value: EventDraft | null) => void; save: (event: React.FormEvent) => void; remove: () => void }) { const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) => setDraft({ ...draft, [key]: value }), calendarColor = calendars.find(calendar => calendar.id === draft.calendarId)?.color || "#6366f1", selectable = actor?.role === "self_only" ? members.filter(member => member.id === actor.memberId) : members; return <aside className="h-fit rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-5 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Event</p><b>{draft.id ? "Edit event" : "New event"}</b></div><button onClick={() => setDraft(null)}>✕</button></div><form onSubmit={save} className="mt-5 space-y-3.5"><Field label="Title"><input required autoFocus className={input} value={draft.title} onChange={event => set("title", event.target.value)} /></Field><Field label="Starts"><div className="grid grid-cols-2 gap-2"><DateInput required value={draft.startDate} onChange={value => set("startDate", value)} /><input type="time" disabled={draft.allDay} className={input} value={draft.startTime} onChange={event => set("startTime", event.target.value)} /></div></Field><Field label="Ends"><div className="grid grid-cols-2 gap-2"><DateInput required value={draft.endDate} onChange={value => set("endDate", value)} /><input type="time" disabled={draft.allDay} className={input} value={draft.endTime} onChange={event => set("endTime", event.target.value)} /></div></Field><div className="flex flex-wrap gap-4"><label className="flex gap-2 text-sm"><input type="checkbox" checked={draft.allDay} onChange={event => set("allDay", event.target.checked)} />All-day</label><label className="flex gap-2 text-sm text-slate-400"><input disabled type="checkbox" />Save as memo</label></div><Field label="Members / people liên quan"><div className="space-y-1">{selectable.map(member => <label key={member.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50"><span className="grid size-7 place-items-center rounded-full bg-slate-200 text-xs font-bold">{(member.nickname || member.name)[0]}</span><span className="flex-1 truncate">{member.nickname || member.name}</span><input type="checkbox" checked={draft.memberIds.includes(member.id)} onChange={() => set("memberIds", draft.memberIds.includes(member.id) ? draft.memberIds.filter(id => id !== member.id) : [...draft.memberIds, member.id])} /></label>)}</div></Field><Field label="Calendar"><select className={input} value={draft.calendarId} onChange={event => set("calendarId", event.target.value)}>{calendars.map(calendar => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></Field><Field label="Label / color"><EventColorPicker value={draft.labelColor || calendarColor} inherited={!draft.labelColor} clear={() => set("labelColor", "")} choose={value => set("labelColor", value)} /></Field><Field label="Note"><textarea rows={4} className={input} value={draft.note} onChange={event => set("note", event.target.value)} /></Field><div className="flex gap-2 pt-1">{draft.id && <button type="button" onClick={remove} className="rounded-lg border border-rose-200 px-3 py-1.5 text-sm text-rose-500 hover:bg-rose-50">Delete</button>}<button type="button" onClick={() => setDraft(null)} className="ml-auto rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100">Cancel</button><button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Save</button></div></form></aside>; }
-function EventDetail({ item, calendars, members, actor, collapse, close, edit, copy, remove }: { item: Item; calendars: Calendar[]; members: Member[]; actor?: Actor; collapse: () => void; close: () => void; edit: () => void; copy: () => void; remove: () => void }) { const [menu, setMenu] = useState(false), [confirmRemove, setConfirmRemove] = useState(false), calendar = calendars.find(value => value.id === item.calendarId), related = members.filter(member => item.memberIds.includes(member.id)), activities = loadVisibleCalendarNotifications(actor).filter(activity => activity.eventId === item.id || activity.targetId === item.id); return <aside className="h-fit w-full rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-5 shadow-sm md:min-w-[380px]"><div className="flex items-center justify-between border-b border-[var(--app-border)] pb-3"><p className="text-xs font-semibold text-slate-400">Event Details</p><div className="relative flex items-center"><button onClick={() => setMenu(!menu)} className="grid size-9 place-items-center rounded-lg text-lg text-slate-500 hover:bg-slate-100" aria-label="Mở menu sự kiện">⋮</button><button onClick={collapse} className="hidden size-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 md:grid" aria-label="Thu gọn panel">›</button><button onClick={close} className="grid size-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Đóng panel">×</button>{menu && <div className="absolute right-0 top-10 z-10 w-36 overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] py-1 shadow-lg"><button onClick={edit} className="h-10 w-full px-4 text-left text-sm hover:bg-slate-100">Edit</button><button onClick={copy} className="h-10 w-full px-4 text-left text-sm hover:bg-slate-100">Copy</button><button onClick={() => { setMenu(false); setConfirmRemove(true); }} className="h-10 w-full px-4 text-left text-sm text-rose-500 hover:bg-rose-50">Delete</button></div>}</div></div><h3 className="mt-5 text-2xl font-bold">{item.title}</h3>{related.length > 0 && <div className="mt-4 flex -space-x-2">{related.map(member => <span key={member.id} title={member.nickname || member.name} className="grid size-9 place-items-center rounded-full border-2 border-white bg-slate-200 text-xs font-bold">{(member.nickname || member.name)[0]}</span>)}</div>}<div className="mt-6 space-y-4 text-sm"><div className="rounded-xl bg-slate-50 p-4 dark:bg-white/5"><div><b className="block">{eventDate(item.startDate)}</b><span className="mt-1 block text-sm text-slate-500">{item.allDay ? "All-day" : eventTime(item.startTime)}</span></div><div className="my-2 text-lg text-slate-300">↓</div><div><b className="block">{eventDate(item.endDate)}</b><span className="mt-1 block text-sm text-slate-500">{item.allDay ? "All-day" : item.endTime ? eventTime(item.endTime) : "Chưa đặt giờ kết thúc"}</span></div></div><InfoCard icon="📅" label="Calendar" value={calendar?.name || "Calendar"} color={item.color} /><InfoCard icon="🏷" label="Label" value={item.labelColor ? "Màu riêng của event" : "Theo màu calendar"} color={item.color} /><Detail label="Note" value={item.note || "Chưa có ghi chú."} />{confirmRemove && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700"><b>Xóa sự kiện này?</b><div className="mt-3 flex justify-end gap-2"><button onClick={() => setConfirmRemove(false)} className="rounded-lg px-3 py-1.5 text-xs font-semibold">Hủy</button><button onClick={remove} className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white">Xóa</button></div></div>}<div><p className="text-xs font-semibold text-slate-400">Activity Log</p><div className="relative mt-3 space-y-3 border-l border-slate-200 pl-4">{activities.length ? activities.map(activity => <div key={activity.id} className="relative text-xs"><i className="absolute -left-[21px] top-1 size-2 rounded-full bg-indigo-400" /><b className="block">{activity.message}</b><small className="mt-1 block text-slate-400">{new Date(activity.createdAt).toLocaleString("vi-VN")}</small></div>) : <p className="text-xs text-slate-400">Chưa có lịch sử hoạt động.</p>}</div></div></div></aside>; }
-function TypePicker({ choose, close }: { choose: (type: string) => void; close: () => void }) { return <aside className="h-fit rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-5 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Add Calendar</p><b>Choose calendar type</b></div><button onClick={close}>✕</button></div><div className="mt-5 grid grid-cols-2 gap-2">{calendarTypes.map(type => <button key={type.id} onClick={() => choose(type.id)} className="rounded-xl border border-[var(--app-border)] p-3 text-left hover:border-indigo-300 hover:bg-indigo-50 dark:hover:bg-white/5"><span className="text-xl">{type.icon}</span><b className="mt-2 block text-sm">{type.label}</b></button>)}</div></aside>; }
-function CalendarSettings({ draft, members, fullAccess, canRemove, setDraft, save, remove }: { draft: CalendarDraft; members: Member[]; fullAccess: boolean; canRemove: boolean; setDraft: (value: CalendarDraft | null) => void; save: (event: React.FormEvent) => void; remove: (id: string) => Promise<void> }) { const [confirmRemove, setConfirmRemove] = useState(false), selectable = members.filter(member => member.user?.id); return <aside className="h-fit rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-5 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Calendar Settings</p><b>{draft.id ? "Edit calendar" : "New calendar"}</b></div><button onClick={() => setDraft(null)}>✕</button></div><form onSubmit={save} className="mt-5 space-y-4"><div className="grid size-16 place-items-center rounded-2xl text-2xl text-white" style={{ background: draft.color }}>{typeIcon(draft.type)}</div><Field label="Tên lịch"><input required autoFocus className={input} value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></Field><Field label="Loại lịch"><select className={input} value={draft.type} onChange={event => setDraft({ ...draft, type: event.target.value })}>{calendarTypes.map(type => <option key={type.id} value={type.id}>{type.label}</option>)}</select></Field><Field label="Màu lịch"><Palette value={draft.color} choose={color => setDraft({ ...draft, color })} /></Field><div><div className="flex items-center justify-between"><b className="text-sm">Thành viên được xem</b>{fullAccess && <button type="button" onClick={() => setDraft({ ...draft, viewerUserIds: selectable.flatMap(member => member.user?.id ? [member.user.id] : []) })} className="text-xs font-semibold text-indigo-600">Chọn tất cả</button>}</div><div className="mt-2 space-y-1">{selectable.map(member => <label key={member.id} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-slate-50"><span className="grid size-7 place-items-center rounded-full bg-slate-200 text-xs font-bold">{(member.nickname || member.name)[0]}</span><span className="flex-1 truncate">{member.nickname || member.name}</span><input disabled={!fullAccess} type="checkbox" checked={draft.viewerUserIds.includes(member.user!.id)} onChange={() => setDraft({ ...draft, viewerUserIds: draft.viewerUserIds.includes(member.user!.id) ? draft.viewerUserIds.filter(id => id !== member.user!.id) : [...draft.viewerUserIds, member.user!.id] })} /></label>)}</div></div>{confirmRemove && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"><b>Xóa lịch này?</b><p className="mt-1 text-xs">Tất cả sự kiện trong lịch này cũng sẽ bị xóa.</p><div className="mt-3 flex justify-end gap-2"><button type="button" onClick={() => setConfirmRemove(false)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-white">Hủy</button><button type="button" onClick={() => draft.id && void remove(draft.id)} className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700">Xóa</button></div></div>}<div className="flex gap-2">{draft.id && canRemove && !confirmRemove && <button type="button" onClick={() => setConfirmRemove(true)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50">Xóa lịch</button>}<button type="button" onClick={() => setDraft(null)} className="ml-auto rounded-lg border border-[var(--app-border)] px-3 py-1.5 text-sm">Hủy</button><button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white">Lưu</button></div></form></aside>; }
-function DropMenu({ drop, cancel, apply }: { drop: Drop; cancel: () => void; apply: (copy: boolean) => Promise<void> }) { return <><button aria-label="Đóng menu Move Copy" onClick={cancel} className="fixed inset-0 z-40 cursor-default bg-transparent" /><div className="fixed z-50 w-[150px] overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] py-1 shadow-lg" style={{ left: Math.min(drop.x, window.innerWidth - 166), top: Math.min(drop.y, window.innerHeight - 100) }}><button onClick={() => void apply(false)} className="flex h-11 w-full items-center px-4 text-left text-sm font-medium hover:bg-slate-100 dark:hover:bg-white/5">Move</button><button onClick={() => void apply(true)} className="flex h-11 w-full items-center px-4 text-left text-sm font-medium hover:bg-slate-100 dark:hover:bg-white/5">Copy</button></div></>; }
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block text-sm font-semibold">{label}<div className="mt-1">{children}</div></label>; }
-function DateInput({ value, onChange, required = false }: { value: string; onChange: (value: string) => void; required?: boolean }) { return <input key={value} required={required} inputMode="numeric" placeholder="DD/MM/YYYY" className={input} defaultValue={formatDateVN(value)} onChange={event => { const isoValue = isoDateFromVN(event.target.value); if (isoValue) onChange(isoValue); if (!event.target.value.trim()) onChange(""); }} onBlur={event => { event.currentTarget.value = formatDateVN(value); }} />; }
-function Palette({ value, choose, clear, inherited = false }: { value: string; choose: (value: string) => void; clear?: () => void; inherited?: boolean }) { return <details className="rounded-xl border border-[var(--app-border)] p-2"><summary className="flex cursor-pointer list-none items-center gap-2 text-sm"><i className="size-4 rounded-full" style={{ background: value }} /><span>{inherited ? "Theo calendar" : palette.find(color => color.value === value)?.name || "Custom color"}</span></summary><div className="mt-2 space-y-1">{clear && <button type="button" onClick={clear} className="w-full rounded-lg px-2 py-2 text-left text-xs hover:bg-slate-100">Theo màu calendar</button>}{palette.map(color => <button type="button" key={color.value} onClick={() => choose(color.value)} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs ${value === color.value ? "bg-indigo-50" : "hover:bg-slate-100"}`}><i className="size-3 rounded-full" style={{ background: color.value }} />{color.name}<span className="ml-auto">{value === color.value ? "●" : "○"}</span></button>)}</div></details>; }
-function EventColorPicker({ value, inherited, clear, choose }: { value: string; inherited: boolean; clear: () => void; choose: (value: string) => void }) { const [open, setOpen] = useState(false); return <div className="relative"><button type="button" onClick={() => setOpen(value => !value)} className="flex w-full items-center gap-2 rounded-xl border border-[var(--app-border)] px-3 py-2 text-left text-sm"><i className="size-4 rounded-full" style={{ background: value }} /><span>{inherited ? "Theo calendar" : palette.find(color => color.value === value)?.name || "Custom color"}</span><span className="ml-auto text-slate-400">⌄</span></button>{open && <div className="absolute left-0 right-0 top-full z-20 mt-1 space-y-1 rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] p-2 shadow-lg"><button type="button" onClick={() => { clear(); setOpen(false); }} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs ${inherited ? "bg-indigo-50" : "hover:bg-slate-100"}`}><i className="size-3 rounded-full" style={{ background: value }} />Theo màu calendar</button>{palette.map(color => <button type="button" key={color.value} onClick={() => { choose(color.value); setOpen(false); }} className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs ${!inherited && value === color.value ? "bg-indigo-50" : "hover:bg-slate-100"}`}><i className="size-3 rounded-full" style={{ background: color.value }} />{color.name}</button>)}</div>}</div>; }
-function InfoCard({ icon, label, value, color }: { icon: string; label: string; value: string; color?: string }) { return <div className="flex items-center gap-3 rounded-xl border border-[var(--app-border)] p-3"><span className="text-lg">{icon}</span><div className="min-w-0 flex-1"><p className="text-xs text-slate-400">{label}</p><p className="mt-1 flex items-center gap-2 truncate font-semibold">{color && <i className="size-3 shrink-0 rounded-full" style={{ background: color }} />}{value}</p></div></div>; }
-function Detail({ label, value, color }: { label: string; value: string; color?: string }) { return <div><p className="text-xs text-slate-400">{label}</p><p className="mt-1 flex items-center gap-2">{color && <i className="size-3 rounded-full" style={{ background: color }} />}{value}</p></div>; }
+
+function AgendaView({ events, members, open, edit, remove, openMenuId, setOpenMenuId, title = "Danh sách sự kiện", emptyText = "Chưa có sự kiện trong tháng này." }: { events: CalendarEvent[]; members: Member[]; open: (event: CalendarEvent) => void; edit: (event: CalendarEvent) => void; remove: (event: CalendarEvent) => void; openMenuId: string | null; setOpenMenuId: (id: string | null) => void; title?: string; emptyText?: string }) {
+  const groups = events.reduce<Record<string, CalendarEvent[]>>((acc, item) => {
+    acc[item.startDate] = [...(acc[item.startDate] || []), item];
+    return acc;
+  }, {});
+  return (
+    <section className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-4 shadow-sm">
+      <h3 className="text-sm font-bold">{title}</h3>
+      <div className="mt-3 space-y-4">
+        {Object.keys(groups).length ? Object.entries(groups).sort(([left], [right]) => left.localeCompare(right)).map(([date, items]) => (
+          <div key={date}>
+            <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">{dayGroupTitle(date)}</h4>
+            <div className="space-y-2">
+              {items.sort(sortEvents).map(item => <AgendaItem key={item.id} item={item} members={members} open={open} edit={edit} remove={remove} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} />)}
+            </div>
+          </div>
+        )) : <p className="rounded-xl border border-dashed border-[var(--app-border)] px-4 py-8 text-center text-sm text-slate-400">{emptyText}</p>}
+      </div>
+    </section>
+  );
+}
+
+function AgendaItem({ item, members, open, edit, remove, openMenuId, setOpenMenuId }: { item: CalendarEvent; members: Member[]; open: (event: CalendarEvent) => void; edit: (event: CalendarEvent) => void; remove: (event: CalendarEvent) => void; openMenuId: string | null; setOpenMenuId: (id: string | null) => void }) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const related = members.filter(member => item.memberIds.includes(member.id)).map(memberName).join(", ");
+  const meta = eventTypeMeta(item.type);
+  useEffect(() => {
+    if (openMenuId !== item.id) return;
+    const close = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setOpenMenuId(null);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [item.id, openMenuId, setOpenMenuId]);
+  return (
+    <div className="relative flex min-h-16 items-center gap-3 rounded-xl border border-[var(--app-border)] bg-white/70 p-3 dark:bg-white/5">
+      <button type="button" onClick={() => open(item)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <span className="w-14 shrink-0 text-sm font-bold text-slate-500">{eventTimeLabel(item)}</span>
+        <i className="h-10 w-1.5 shrink-0 rounded-full" style={{ background: eventColor(item) }} />
+        <span className="min-w-0 flex-1">
+          <b className={`block truncate text-sm ${item.status === "done" ? "text-slate-400 line-through" : ""}`}>{item.title}</b>
+          <small className="mt-1 block truncate text-xs text-slate-400">{meta.label}{related ? ` · ${related}` : ""}{item.location ? ` · ${item.location}` : ""}</small>
+        </span>
+      </button>
+      <div ref={menuRef} className="relative shrink-0">
+        <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpenMenuId(openMenuId === item.id ? null : item.id); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100/60 hover:text-slate-800">⋮</button>
+        {openMenuId === item.id && (
+          <div className="pointer-events-auto absolute right-0 top-full z-50 mt-2 w-36 rounded-xl border border-slate-100 bg-white p-2 shadow-lg dark:border-white/10 dark:bg-slate-900">
+            <button type="button" onClick={() => { setOpenMenuId(null); open(item); }} className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50 dark:hover:bg-white/5">Xem</button>
+            {item.calendarId !== "fixed-birthday" && item.calendarId !== "fixed-holiday" && (
+              <>
+                <button type="button" onClick={() => { setOpenMenuId(null); edit(item); }} className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50 dark:hover:bg-white/5">Sửa</button>
+                <button type="button" onClick={() => { setOpenMenuId(null); void remove(item); }} className="block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-400/10">Xóa</button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DayEventsSheet({ date, events, members, close, add, open, edit, remove, openMenuId, setOpenMenuId }: { date: string; events: CalendarEvent[]; members: Member[]; close: () => void; add: () => void; open: (event: CalendarEvent) => void; edit: (event: CalendarEvent) => void; remove: (event: CalendarEvent) => void; openMenuId: string | null; setOpenMenuId: (id: string | null) => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-black/45 md:items-center md:justify-center md:p-6" onMouseDown={close}>
+      <div onMouseDown={event => event.stopPropagation()} className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-2xl md:rounded-3xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Sự kiện ngày này</p>
+            <h3 className="mt-1 text-xl font-bold">{dayGroupTitle(date)} · {formatDateVN(date)}</h3>
+          </div>
+          <button type="button" onClick={close} className="grid size-10 place-items-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/5">×</button>
+        </div>
+        <button type="button" onClick={add} className="mt-4 h-11 w-full rounded-xl bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-700">+ Thêm sự kiện ngày này</button>
+        <div className="mt-4">
+          <AgendaView
+            title="Danh sách trong ngày"
+            events={events}
+            members={members}
+            open={open}
+            edit={edit}
+            remove={remove}
+            openMenuId={openMenuId}
+            setOpenMenuId={setOpenMenuId}
+            emptyText="Chưa có sự kiện trong ngày này."
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventEditor({ draft, calendars, members, user, setDraft, save, remove }: { draft: EventDraft; calendars: Calendar[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; remove?: () => void }) {
+  const selectable = user?.role === "self_only" ? members.filter(member => member.id === user.memberId) : members;
+  const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) => setDraft({ ...draft, [key]: value });
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-black/45 md:items-center md:justify-center md:p-6" onMouseDown={() => setDraft(null)}>
+      <form onSubmit={save} onMouseDown={event => event.stopPropagation()} className="max-h-[96vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-3xl md:rounded-3xl">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">{draft.id ? "Sửa sự kiện" : "Thêm sự kiện"}</p>
+            <h3 className="mt-1 text-xl font-bold">{draft.title || "Sự kiện mới"}</h3>
+          </div>
+          <button type="button" onClick={() => setDraft(null)} className="grid size-10 place-items-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/5">×</button>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Field label="Tiêu đề"><input required autoFocus className={input} value={draft.title} onChange={event => set("title", event.target.value)} /></Field>
+          <Field label="Loại"><select className={input} value={draft.type} onChange={event => set("type", event.target.value as EventType)}>{eventTypes.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></Field>
+          <Field label="Ngày bắt đầu"><input required type="date" className={input} value={draft.startDate} onChange={event => { setDraft({ ...draft, startDate: event.target.value, endDate: draft.endDate || event.target.value }); }} /></Field>
+          <Field label="Giờ bắt đầu"><input type="time" disabled={draft.allDay} className={input} value={draft.startTime} onChange={event => set("startTime", event.target.value)} /></Field>
+          <Field label="Ngày kết thúc"><input type="date" className={input} value={draft.endDate} onChange={event => set("endDate", event.target.value)} /></Field>
+          <Field label="Giờ kết thúc"><input type="time" disabled={draft.allDay} className={input} value={draft.endTime} onChange={event => set("endTime", event.target.value)} /></Field>
+          <label className="flex min-h-11 items-center gap-2 rounded-xl border border-[var(--app-border)] px-3 text-sm font-semibold"><input type="checkbox" checked={draft.allDay} onChange={event => setDraft({ ...draft, allDay: event.target.checked, startTime: event.target.checked ? "" : draft.startTime || "08:00", endTime: event.target.checked ? "" : draft.endTime })} />Cả ngày / Không có giờ</label>
+          <Field label="Lịch"><select className={input} value={draft.calendarId} onChange={event => set("calendarId", event.target.value)}>{calendars.map(calendar => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}</select></Field>
+          <Field label="Địa điểm"><input className={input} value={draft.location} onChange={event => set("location", event.target.value)} /></Field>
+          <Field label="Nhắc trước"><select className={input} value={draft.reminderMinutes} onChange={event => set("reminderMinutes", Number(event.target.value))}>{reminderOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+          <Field label="Lặp lại"><select className={input} value={draft.repeatRule} onChange={event => set("repeatRule", event.target.value)}>{repeatOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+          <Field label="Trạng thái"><select className={input} value={draft.status} onChange={event => set("status", event.target.value as EventStatus)}><option value="open">Đang mở</option><option value="done">Hoàn thành</option></select></Field>
+        </div>
+
+        <Field label="Người liên quan">
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {selectable.map(member => (
+              <label key={member.id} className="flex items-center gap-2 rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5">
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(member)[0]}</span>
+                <span className="min-w-0 flex-1 truncate">{memberName(member)}</span>
+                <input type="checkbox" checked={draft.memberIds.includes(member.id)} onChange={() => set("memberIds", draft.memberIds.includes(member.id) ? draft.memberIds.filter(id => id !== member.id) : [...draft.memberIds, member.id])} />
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        <Field label="Ghi chú"><textarea rows={4} className={textarea} value={draft.note} onChange={event => set("note", event.target.value)} /></Field>
+
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          {remove && <button type="button" onClick={remove} className="mr-auto rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-bold text-rose-500 hover:bg-rose-50">Xóa</button>}
+          <button type="button" onClick={() => setDraft(null)} className="rounded-xl border border-[var(--app-border)] px-4 py-2.5 text-sm font-bold">Hủy</button>
+          <button className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-indigo-700">Lưu nhanh</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function EventDetail({ item, calendars, members, close, edit, remove, markDone }: { item: CalendarEvent; calendars: Calendar[]; members: Member[]; close: () => void; edit: () => void; remove: () => void; markDone: () => void }) {
+  const calendar = calendars.find(calendar => calendar.id === item.calendarId);
+  const related = members.filter(member => item.memberIds.includes(member.id)).map(memberName).join(", ");
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-black/45 md:items-center md:justify-center md:p-6" onMouseDown={close}>
+      <div onMouseDown={event => event.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-lg md:rounded-3xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <span className="rounded-full px-2 py-1 text-xs font-bold text-white" style={{ background: eventColor(item) }}>{eventTypeMeta(item.type).label}</span>
+            <h3 className={`mt-3 text-2xl font-bold ${item.status === "done" ? "text-slate-400 line-through" : ""}`}>{item.title}</h3>
+          </div>
+          <button type="button" onClick={close} className="grid size-10 place-items-center rounded-xl hover:bg-slate-100 dark:hover:bg-white/5">×</button>
+        </div>
+        <div className="mt-5 space-y-3 text-sm">
+          <Info label="Thời gian" value={`${formatDateVN(item.startDate)} ${item.allDay ? "· Cả ngày" : `· ${item.startTime || "08:00"}${item.endTime ? ` - ${item.endTime}` : ""}`}`} />
+          {item.endDate && item.endDate !== item.startDate && <Info label="Kết thúc" value={`${formatDateVN(item.endDate)} ${item.endTime || ""}`} />}
+          <Info label="Lịch" value={calendar?.name || "Lịch"} />
+          {related && <Info label="Người liên quan" value={related} />}
+          {item.location && <Info label="Địa điểm" value={item.location} />}
+          <Info label="Nhắc trước" value={reminderOptions.find(option => option.value === item.reminderMinutes)?.label || "Không"} />
+          <Info label="Lặp lại" value={repeatOptions.find(option => option.value === item.repeatRule)?.label || "Không"} />
+          <Info label="Ghi chú" value={item.note || "Không có ghi chú."} />
+        </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {item.calendarId !== "fixed-birthday" && item.calendarId !== "fixed-holiday" && (
+            <>
+              <button type="button" onClick={markDone} className="rounded-xl border border-emerald-200 px-4 py-2.5 text-sm font-bold text-emerald-600 hover:bg-emerald-50">{item.status === "done" ? "Mở lại" : "Đánh dấu hoàn thành"}</button>
+              <button type="button" onClick={edit} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white">Sửa</button>
+              <button type="button" onClick={remove} className="rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-bold text-rose-500 hover:bg-rose-50">Xóa</button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="block text-sm font-semibold">{label}<div className="mt-1">{children}</div></label>;
+}
+function Info({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl border border-[var(--app-border)] p-3"><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-semibold">{value}</p></div>;
+}
+
+function FilterContent({ calendars, enabled, setEnabled, enabledTypes, setEnabledTypes }: { calendars: Calendar[]; enabled: string[]; setEnabled: React.Dispatch<React.SetStateAction<string[]>>; enabledTypes: EventType[]; setEnabledTypes: React.Dispatch<React.SetStateAction<EventType[]>> }) {
+  return (
+    <>
+      <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-slate-500">Nhóm sự kiện</h3>
+      <div className="mb-6 space-y-2">
+        {filterGroups.map(group => (
+          <label key={group.value} className="flex items-center gap-2 rounded-xl px-2 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5">
+            <input type="checkbox" checked={enabledTypes.includes(group.value)} onChange={() => setEnabledTypes(current => current.includes(group.value) ? current.filter(id => id !== group.value) : [...current, group.value])} />
+            <i className="size-3 rounded-full" style={{ background: eventTypeMeta(group.value).color }} />
+            <span className="truncate">{group.label}</span>
+          </label>
+        ))}
+      </div>
+      
+      {calendars.length > 0 && (
+        <>
+          <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-slate-500">Lịch người dùng</h3>
+          <div className="space-y-2">
+            {calendars.map(calendar => (
+              <label key={calendar.id} className="flex items-center gap-2 rounded-xl px-2 py-2 text-sm hover:bg-slate-50 dark:hover:bg-white/5">
+                <input type="checkbox" checked={enabled.includes(calendar.id)} onChange={() => setEnabled(current => current.includes(calendar.id) ? current.filter(id => id !== calendar.id) : [...current, calendar.id])} />
+                <i className="size-3 rounded-full" style={{ background: calendar.color }} />
+                <span className="truncate">{calendar.name}</span>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
