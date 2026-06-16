@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 export type UserRole = "full_access" | "self_only";
 export interface SessionUser { id: string; username: string; displayName: string; avatar: string; role: UserRole; mustChangePassword: boolean; memberId: string; }
@@ -43,6 +43,13 @@ export function readSessionToken(token?: string): SessionUser | null {
   return value && { id: value.id, username: value.username, displayName: value.displayName, avatar: value.avatar, role: normalizeUserRole(String(value.role)), mustChangePassword: value.mustChangePassword, memberId: value.memberId || "" };
 }
 export async function getSessionUser() {
+  const reqHeaders = await headers();
+  const authHeader = reqHeaders.get("Authorization");
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    const user = readSessionToken(token);
+    if (user) return user;
+  }
   return readSessionToken((await cookies()).get(COOKIE_NAME)?.value);
 }
 export async function requireSession() {

@@ -324,25 +324,23 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     screen === "notifications" ? <NotificationsView user={user} notifications={notifications} setNotifications={setNotifications} /> :
     <Settings user={user} onLogout={logout} openProfile={() => setProfilePageOpen(true)} openChangePassword={() => setChangePasswordOpen(true)} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} updateData={setData} t={t} />;
 
-  return <main className={`min-h-screen bg-[var(--app-background)] pb-[90px] text-[var(--app-foreground)] transition-[padding-left] duration-300 md:pb-0 ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
+  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${sidebarCollapsed ? "pl-[64px]" : "pl-[220px]"}`}>
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
     <header className="sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-4 py-3 backdrop-blur md:px-6">
-      <div className={`mx-auto flex items-center gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-7xl"}`}>
-        <label className="relative hidden w-full max-w-md md:block"><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-11 w-full rounded-lg border border-[var(--app-border)] bg-transparent pl-10 pr-3 text-sm outline-none focus:border-indigo-400" /></label>
-        <div className="min-w-0 flex-1 md:hidden"><p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Family Hub</p><h1 className="truncate text-lg font-bold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1></div>
+      <div className={`mx-auto flex items-center gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
+        <label className="relative w-full max-w-md block"><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-11 w-full rounded-lg border border-[var(--app-border)] bg-transparent pl-10 pr-3 text-sm outline-none focus:border-indigo-400" /></label>
         <div className="relative ml-auto flex items-center gap-2">
           <button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="grid size-11 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5"><ThemeIcon dark={theme === "dark"} /></button>
           <button aria-label="Thông báo" onClick={() => go("notifications")} className="relative grid size-11 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5"><BellIcon />{notifications.some(item => isCalendarNotificationUnread(item, user)) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => isCalendarNotificationUnread(item, user)).length}</span>}</button>
           <button aria-label="Mở menu tài khoản" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(open => !open)} className="flex items-center gap-2 rounded-lg p-1 text-left hover:bg-slate-50 dark:hover:bg-white/5">
-            <span className="grid size-10 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm"><AccountAvatar user={headerUser} /></span><span className="hidden max-w-32 truncate text-sm font-semibold sm:block">{headerUser.displayName}</span><ChevronDownIcon />
+            <span className="grid size-10 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm"><AccountAvatar user={headerUser} /></span><span className="max-w-32 truncate text-sm font-semibold block">{headerUser.displayName}</span><ChevronDownIcon />
           </button>
           {accountMenuOpen && <AccountMenu user={headerUser} openProfile={() => { setAccountMenuOpen(false); setProfilePageOpen(true); }} openSettings={() => { setAccountMenuOpen(false); setProfilePageOpen(false); setScreen("settings"); }} logout={logout} />}
         </div>
       </div>
     </header>
     <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
-    <section className={`mx-auto px-5 py-5 md:pb-8 ${screen === "calendar" ? "max-w-none md:px-4" : "max-w-7xl md:px-8"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className="mb-5 hidden md:block"><h1 className="text-2xl font-bold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
-    <Nav screen={screen} go={go} t={t} />
+    <section className={`mx-auto px-5 py-5 md:pb-8 ${screen === "calendar" ? "max-w-none md:px-4" : "max-w-[1600px] md:px-8"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className="mb-5 block"><h1 className="text-2xl font-bold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
     {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
@@ -946,7 +944,7 @@ function Nav({ screen, go, t }: { screen: Screen; go: (s: Screen) => void; t: Re
 
 function Sidebar({ screen, go, t, collapsed, toggle }: { screen: Screen; go: (s: Screen) => void; t: ReturnType<typeof translator>; collapsed: boolean; toggle: () => void }) {
   const items: Screen[] = ["dashboard", "members", "calendar", "finance", "chat", "notes", "notifications", "settings"];
-  return <aside className={`fixed inset-y-0 left-0 hidden border-r border-[var(--app-border)] bg-[var(--app-sidebar)] py-5 transition-[width] duration-300 md:flex md:flex-col ${collapsed ? "w-[64px] px-2" : "w-[220px] px-4"}`}>
+  return <aside className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--app-border)] bg-[var(--app-card)] py-4 transition-[width] duration-300 shadow-sm ${collapsed ? "w-[64px] px-2" : "w-[220px] px-4"}`}>
     <div className={`flex min-h-12 items-center ${collapsed ? "justify-center" : "justify-between gap-3 px-2"}`}>
       {!collapsed && <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[.2em] text-indigo-500">Family Hub</p><p className="truncate pt-1 text-xl font-bold">My Family</p></div>}
       <button type="button" onClick={toggle} aria-label={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"} className="grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--app-border)] text-slate-600 transition hover:bg-[#EEF2FF] hover:text-[#4F46E5] dark:text-slate-200 dark:hover:bg-indigo-400/15 dark:hover:text-indigo-200"><MenuIcon /></button>
@@ -1036,55 +1034,41 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
 
   const unreadCount = notifications.filter(item => isCalendarNotificationUnread(item, user)).length;
 
-  return <div className="grid grid-cols-12 gap-4 md:gap-6">
-    <div className="col-span-12 md:hidden">
-      <Card className="p-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-bold text-slate-800 dark:text-white">Thông báo</span>
-          {unreadCount > 0 && (
-            <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-bold text-white">
-              {unreadCount} tin chưa đọc
-            </span>
-          )}
-        </div>
-        <button onClick={() => go("notifications")} className="text-xs font-semibold text-indigo-600">
-          Xem tất cả
-        </button>
-      </Card>
+  return <div className="grid grid-cols-12 gap-6">
+    <div className="col-span-12 grid gap-6 grid-cols-3 lg:grid-cols-6">{metrics.map(([label, value, color, hint]) => <MetricCard key={label} label={label} value={value} color={color} hint={hint} />)}</div>
+    
+    <div className="col-span-12 lg:col-span-8 flex flex-col gap-6">
+      <MonthlyChart data={monthly} />
+      <CategoryChart data={categoryTotals} />
     </div>
 
-    <div className="col-span-12 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{metrics.map(([label, value, color, hint]) => <MetricCard key={label} label={label} value={value} color={color} hint={hint} />)}</div>
-    <div className="col-span-12 xl:col-span-8"><MonthlyChart data={monthly} /></div>
-    <div className="col-span-12 xl:col-span-4 flex flex-col gap-4">
+    <div className="col-span-12 lg:col-span-4 flex flex-col gap-6">
       <CompletionChart value={completion} done={doneCount} total={data.tasks.length} />
-      <div className="hidden md:block">
-        <Card className="p-5 flex-1">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-sm">Thông báo</h2>
-            <button onClick={() => go("notifications")} className="text-xs font-semibold text-indigo-600">Xem tất cả</button>
-          </div>
-          <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
-            {notifications.length ? (
-              notifications.slice(0, 3).map(item => {
-                const unread = isCalendarNotificationUnread(item, user);
-                return (
-                  <div key={item.id} className={`p-2.5 rounded-xl border border-[var(--app-border)] text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${unread ? "bg-orange-50/40 dark:bg-orange-400/5 font-semibold" : ""}`} onClick={() => go("notifications")}>
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="text-[10px] text-slate-400">{item.actorName || "Family Hub"}</span>
-                      <span className="text-[9px] text-slate-400">{formatDateVN(item.createdAt)}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 line-clamp-1">{item.message}</p>
+      <Card className="p-5 flex-1">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-semibold text-sm">Thông báo</h2>
+          <button onClick={() => go("notifications")} className="text-xs font-semibold text-indigo-600">Xem tất cả</button>
+        </div>
+        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+          {notifications.length ? (
+            notifications.slice(0, 5).map(item => {
+              const unread = isCalendarNotificationUnread(item, user);
+              return (
+                <div key={item.id} className={`p-2.5 rounded-xl border border-[var(--app-border)] text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${unread ? "bg-orange-50/40 dark:bg-orange-400/5 font-semibold" : ""}`} onClick={() => go("notifications")}>
+                  <div className="flex justify-between items-start gap-2">
+                    <span className="text-[10px] text-slate-400">{item.actorName || "Family Hub"}</span>
+                    <span className="text-[9px] text-slate-400">{formatDateVN(item.createdAt)}</span>
                   </div>
-                );
-              })
-            ) : (
-              <div className="text-center py-4 text-xs text-slate-400">Chưa có thông báo</div>
-            )}
-          </div>
-        </Card>
-      </div>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 line-clamp-1">{item.message}</p>
+                </div>
+              );
+            })
+          ) : (
+            <div className="text-center py-4 text-xs text-slate-400">Chưa có thông báo</div>
+          )}
+        </div>
+      </Card>
     </div>
-    <div className="col-span-12 xl:col-span-5"><CategoryChart data={categoryTotals} /></div>
   </div>;
 }
 function MetricCard({ label, value, color, hint }: { label: string; value: string; color: string; hint: string }) { return <Card className="p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p><p className={`mt-3 text-2xl font-bold ${color}`}>{value}</p></div><span className="grid size-10 place-items-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-400/10">●</span></div><p className="mt-4 text-xs text-slate-400">{hint}</p></Card>; }
