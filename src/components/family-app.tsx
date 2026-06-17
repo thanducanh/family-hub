@@ -329,7 +329,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 pb-[100px] md:pb-0 ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
     <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} t={t} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
-    <header className="sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3">
+    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" ? "hidden md:block" : "block"}`}>
       <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
         <label className="relative w-full max-w-md block"><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
         <div className="relative ml-auto flex items-center gap-1 md:gap-2">
@@ -471,70 +471,77 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
     }
   }
 
-  return <div className="mx-auto max-w-md pb-8">
-    {/* Profile Card (Header) */}
-    <div className="flex flex-col items-center bg-white px-4 py-8 dark:bg-slate-900 md:rounded-b-3xl shadow-sm mb-3 md:mb-6">
-      <div className="relative mb-4">
-        <span className="grid size-28 overflow-hidden rounded-full bg-indigo-50 text-4xl font-bold text-indigo-500 shadow-md ring-4 ring-slate-50 dark:bg-indigo-500/20 dark:text-indigo-400 dark:ring-slate-800">
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  return <div className="mx-auto max-w-md pb-8 w-full md:rounded-3xl overflow-hidden bg-slate-50 dark:bg-slate-950">
+    <div className="h-32 md:h-40 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 relative">
+      <div className="absolute inset-0 bg-black/10" />
+    </div>
+    
+    <div className="flex flex-col items-center bg-white px-4 pb-6 pt-0 dark:bg-[var(--app-card)] md:rounded-b-3xl shadow-sm mb-4 relative z-10">
+      <div className="relative -mt-14 mb-3">
+        <span className="grid size-28 overflow-hidden rounded-full bg-white text-4xl font-bold text-indigo-500 shadow-md ring-4 ring-white dark:bg-slate-800 dark:ring-slate-900">
           <AccountAvatar user={profileUser} size="size-full object-cover object-center" />
         </span>
-        <label className="absolute bottom-0 right-0 grid size-8 cursor-pointer place-items-center rounded-full bg-slate-100 text-slate-700 shadow-sm ring-2 ring-white hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-900">
+        <label className="absolute bottom-0 right-0 grid size-8 cursor-pointer place-items-center rounded-full bg-slate-100 text-slate-700 shadow-sm ring-2 ring-white hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-800">
           <svg viewBox="0 0 24 24" className="size-4 fill-none stroke-current stroke-2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
           <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
         </label>
-        {displayAvatar && <button onClick={handleAvatarDelete} className="absolute -left-1 top-0 grid size-7 cursor-pointer place-items-center rounded-full bg-slate-100 text-rose-500 shadow-sm ring-2 ring-white hover:bg-rose-50 dark:bg-slate-800 dark:ring-slate-900"><svg viewBox="0 0 24 24" className="size-4 fill-none stroke-current stroke-2"><path d="M18 6L6 18M6 6l12 12" /></svg></button>}
+        {displayAvatar && <button onClick={handleAvatarDelete} className="absolute -left-1 top-0 grid size-7 cursor-pointer place-items-center rounded-full bg-slate-100 text-rose-500 shadow-sm ring-2 ring-white hover:bg-rose-50 dark:bg-slate-700 dark:ring-slate-800"><svg viewBox="0 0 24 24" className="size-4 fill-none stroke-current stroke-2"><path d="M18 6L6 18M6 6l12 12" /></svg></button>}
       </div>
       <h2 className="text-xl font-bold text-slate-900 dark:text-white">{displayName}</h2>
       <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">{accessLabel(user.role)}</p>
     </div>
 
-    {/* Zalo-style Settings List */}
-    <div className="space-y-4 px-4">
-      {/* Group 1 */}
+    <div className="space-y-4 px-4 md:px-0">
       <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[var(--app-card)]">
-        <button onClick={() => setProfileEditorOpen(true)} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
-          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500"><UserIcon /></span>Thông tin cá nhân</span>
+        <button onClick={() => setProfileEditorOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg"><UserIcon /></span>Thông tin cá nhân</span>
           <span className="text-slate-400">›</span>
         </button>
-        <button onClick={() => setActivityOpen(true)} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
-          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500"><NotesIcon /></span>Lịch sử hoạt động</span>
+        <button onClick={() => setActivityOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg"><NotesIcon /></span>Lịch sử hoạt động</span>
           <span className="text-slate-400">›</span>
         </button>
-        <button onClick={openChangePassword} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-slate-50 dark:active:bg-white/5">
-          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500"><LockIcon /></span>Đổi mật khẩu</span>
+        <button onClick={openChangePassword} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg"><LockIcon /></span>Đổi mật khẩu</span>
+          <span className="text-slate-400">›</span>
+        </button>
+        <button onClick={() => setSettingsOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5">
+          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg"><SettingsIcon /></span>Cài đặt (Ngôn ngữ, Giao diện)</span>
           <span className="text-slate-400">›</span>
         </button>
       </div>
 
-      {/* Group 2 */}
-      <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[var(--app-card)]">
-        {language && setLanguage && t && (
-          <button onClick={() => setLanguageSheetOpen(true)} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
-            <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500">🌐</span>Ngôn ngữ</span>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-500">{language === "vi" ? "Tiếng Việt" : language === "en" ? "English" : "日本語"}</span>
-              <span className="text-slate-400">›</span>
-            </div>
-          </button>
-        )}
-        {theme && setTheme && t && (
-          <button onClick={() => setThemeSheetOpen(true)} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-slate-50 dark:active:bg-white/5">
-            <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500"><ThemeIcon dark={theme==="dark"} /></span>Giao diện</span>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-500">{theme === "light" ? "Sáng" : theme === "dark" ? "Tối" : "Theo hệ thống"}</span>
-              <span className="text-slate-400">›</span>
-            </div>
-          </button>
-        )}
-      </div>
-
-      {/* Group 3: Logout */}
-      <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[var(--app-card)]">
-        <button onClick={() => setLogoutConfirmOpen(true)} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-rose-50 dark:active:bg-rose-500/10">
-          <span className="flex items-center gap-3 text-sm font-medium text-rose-500"><span className="text-rose-500"><LogoutIcon /></span>Đăng xuất</span>
+      <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[var(--app-card)] mb-6">
+        <button onClick={() => setLogoutConfirmOpen(true)} className="flex w-full items-center justify-center px-4 py-4 text-center active:bg-rose-50 dark:active:bg-rose-500/10">
+          <span className="text-sm font-bold text-rose-500">Đăng xuất</span>
         </button>
       </div>
     </div>
+
+    {settingsOpen && <Sheet close={() => setSettingsOpen(false)}>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold">Cài đặt</h2>
+        <button onClick={() => setSettingsOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
+      </div>
+      <div className="space-y-4">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
+          {language && setLanguage && t && (
+            <button onClick={() => setLanguageSheetOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+              <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500">🌐</span>Ngôn ngữ</span>
+              <div className="flex items-center gap-2"><span className="text-sm text-slate-500">{language === "vi" ? "Tiếng Việt" : language === "en" ? "English" : "日本語"}</span><span className="text-slate-400">›</span></div>
+            </button>
+          )}
+          {theme && setTheme && t && (
+            <button onClick={() => setThemeSheetOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5">
+              <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500"><ThemeIcon dark={theme==="dark"} /></span>Giao diện</span>
+              <div className="flex items-center gap-2"><span className="text-sm text-slate-500">{theme === "light" ? "Sáng" : theme === "dark" ? "Tối" : "Theo hệ thống"}</span><span className="text-slate-400">›</span></div>
+            </button>
+          )}
+        </div>
+      </div>
+    </Sheet>}
 
     {profileEditorOpen && <ProfileSheet user={profileUser} close={() => setProfileEditorOpen(false)} saved={syncProfile} refreshCurrentUser={refreshCurrentUser} profileSaved={(profile, nextMember) => syncProfile(profile, nextMember)} />}
     
@@ -1199,51 +1206,36 @@ function LoadingSkeleton() {
 }
 
 function MobileNav({ screen, profileOpen, go, openProfile, t }: { screen: Screen; profileOpen: boolean; go: (s: Screen) => void; openProfile: () => void; t: ReturnType<typeof translator> }) {
-  const navItemClass = "flex flex-1 flex-col items-center justify-center pt-2 pb-1 transition-colors";
+  const navItemClass = "flex flex-1 flex-col items-center justify-center pt-2 pb-1 transition-all";
   const inactiveColor = "text-slate-400 dark:text-slate-500";
   const activeColor = "text-[#4f46e5] dark:text-indigo-400";
   
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-16 w-full items-center border-t border-[var(--app-border)] bg-[var(--app-nav)] pb-[max(8px,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.05)] backdrop-blur-lg md:hidden">
-      {/* Thành viên */}
+    <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-16 w-full items-center justify-between border-t border-[var(--app-border)] bg-[var(--app-nav)] pb-[max(8px,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.05)] backdrop-blur-lg md:hidden px-2">
       <button onClick={() => go("members")} className={`${navItemClass} ${screen === "members" && !profileOpen ? activeColor : inactiveColor}`}>
         <span className="mb-1 text-xl">{icons.members}</span>
-        <span className="text-[10px] font-medium leading-none">Thành viên</span>
+        {screen === "members" && !profileOpen && <span className="text-[10px] font-medium leading-none">Thành viên</span>}
       </button>
 
-      {/* Lịch */}
       <button onClick={() => go("calendar")} className={`${navItemClass} ${screen === "calendar" && !profileOpen ? activeColor : inactiveColor}`}>
         <span className="mb-1 text-xl">{icons.calendar}</span>
-        <span className="text-[10px] font-medium leading-none">Lịch</span>
+        {screen === "calendar" && !profileOpen && <span className="text-[10px] font-medium leading-none">Lịch</span>}
       </button>
 
-      {/* Spacer for center button */}
-      <div className="flex-[0.8]" />
+      <button onClick={() => go("dashboard")} className={`${navItemClass} ${screen === "dashboard" && !profileOpen ? activeColor : inactiveColor}`}>
+        <span className="mb-1 text-xl"><HomeIcon /></span>
+        {screen === "dashboard" && !profileOpen && <span className="text-[10px] font-medium leading-none">Tổng quan</span>}
+      </button>
 
-      {/* Thu chi */}
       <button onClick={() => go("finance")} className={`${navItemClass} ${screen === "finance" && !profileOpen ? activeColor : inactiveColor}`}>
         <span className="mb-1 text-xl">{icons.finance}</span>
-        <span className="text-[10px] font-medium leading-none">Thu chi</span>
+        {screen === "finance" && !profileOpen && <span className="text-[10px] font-medium leading-none">Thu chi</span>}
       </button>
 
-      {/* Cá nhân */}
       <button onClick={openProfile} className={`${navItemClass} ${profileOpen ? activeColor : inactiveColor}`}>
         <span className="mb-1 text-xl"><UserIcon /></span>
-        <span className="text-[10px] font-medium leading-none">Cá nhân</span>
+        {profileOpen && <span className="text-[10px] font-medium leading-none">Cá nhân</span>}
       </button>
-
-      {/* Center Floating Button (Tổng quan) */}
-      <div className="pointer-events-none absolute left-1/2 top-0 flex flex-col items-center -translate-x-1/2 -translate-y-[35%]">
-        <button 
-          onClick={() => go("dashboard")}
-          className="pointer-events-auto flex size-[56px] items-center justify-center rounded-full bg-[#4f46e5] shadow-lg shadow-indigo-500/30 ring-4 ring-[var(--app-nav)] transition-transform active:scale-95"
-        >
-          <span className="text-white text-2xl"><HomeIcon /></span>
-        </button>
-        <span className={`mt-1 block text-center text-[10px] font-medium ${screen === "dashboard" && !profileOpen ? activeColor : inactiveColor}`}>
-          Tổng quan
-        </span>
-      </div>
     </nav>
   );
 }

@@ -7,6 +7,7 @@ import { Solar } from "lunar-javascript";
 
 type Actor = { id: string; role: "full_access" | "self_only"; displayName?: string; avatar?: string; memberId?: string };
 type Calendar = { id: string; name: string; color: string; visible: boolean; type: string; ownerUserId: string; viewerUserIds: string[] };
+type CustomList = { id: string; name: string; color: string; };
 type CalendarView = "monthly" | "weekly" | "agenda";
 type EventType = "family" | "personal" | "work" | "study" | "payment" | "reminder" | "birthday" | "holiday" | "other";
 type EventStatus = "open" | "done";
@@ -280,6 +281,8 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [view, setView] = useState<CalendarView>("monthly");
   const [calendars, setCalendars] = useState<Calendar[]>([]);
+  const [customLists, setCustomLists] = useState<CustomList[]>([]);
+  const [hiddenLists, setHiddenLists] = useState<string[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [enabled, setEnabled] = useState<string[]>([]);
   const [enabledTypes, setEnabledTypes] = useState<EventType[]>(["family", "personal", "birthday", "holiday", "work", "study", "reminder", "payment", "other"]);
@@ -309,6 +312,11 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
 
     const densityVal = localStorage.getItem("calendar_density");
     if (densityVal === "compact" || densityVal === "comfortable") setDensity(densityVal);
+
+    const storedCustomLists = localStorage.getItem("familyhub_calendar_lists");
+    if (storedCustomLists) { try { setCustomLists(JSON.parse(storedCustomLists)); } catch(e){} }
+    const storedHidden = localStorage.getItem("familyhub_calendar_visibility");
+    if (storedHidden) { try { setHiddenLists(JSON.parse(storedHidden)); } catch(e){} }
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -352,6 +360,19 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
     localStorage.setItem("calendar_density", next);
   }
 
+  function toggleListVisibility(id: string) {
+    setHiddenLists(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      localStorage.setItem("familyhub_calendar_visibility", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function saveCustomLists(next: CustomList[]) {
+    setCustomLists(next);
+    localStorage.setItem("familyhub_calendar_lists", JSON.stringify(next));
+  }
+
   const days = useMemo(() => monthCells(anchor), [anchor]);
   const weekDays = useMemo(() => weekCells(selectedDate), [selectedDate]);
   
@@ -364,15 +385,33 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
     ];
   }, [anchor, members]);
 
-  const allEvents = useMemo(() => [...events, ...fixedEvents], [events, fixedEvents]);
+  const allEvents = useMemo(() => {
+    const projectedEvents = events.flatMap(ev => {
+      if (ev.repeatRule === "yearly") {
+        const y = anchor.getFullYear();
+        const m = ev.startDate.substring(5);
+        const em = ev.endDate ? ev.endDate.substring(5) : m;
+        return [
+          { ...ev, startDate: `${y-1}-${m}`, endDate: `${y-1}-${em}`, id: `${ev.id}-${y-1}` },
+          { ...ev, startDate: `${y}-${m}`, endDate: `${y}-${em}`, id: `${ev.id}-${y}` },
+          { ...ev, startDate: `${y+1}-${m}`, endDate: `${y+1}-${em}`, id: `${ev.id}-${y+1}` }
+        ];
+      }
+      return ev;
+    });
+    return [...projectedEvents, ...fixedEvents];
+  }, [events, fixedEvents, anchor]);
 
   const visibleEvents = useMemo(() => allEvents.filter(item => {
-    if (item.calendarId !== "fixed-birthday" && item.calendarId !== "fixed-holiday") {
-      if (enabled.length && !enabled.includes(item.calendarId)) return false;
+    if (item.calendarId === "fixed-birthday" || item.calendarId === "fixed-holiday") return true;
+    const isCustom = customLists.some(c => c.id === item.calendarId);
+    if (isCustom) {
+      if (hiddenLists.includes(item.calendarId)) return false;
+    } else {
+      if (hiddenLists.includes(item.type)) return false;
     }
-    if (enabledTypes.length && !enabledTypes.includes(item.type)) return false;
     return true;
-  }), [enabled, enabledTypes, allEvents]);
+  }), [hiddenLists, allEvents, customLists]);
   
   const selectedEvents = useMemo(() => visibleEvents.filter(item => item.startDate === selectedDate).sort(sortEvents), [selectedDate, visibleEvents]);
   const agendaEvents = useMemo(() => visibleEvents.filter(item => item.startDate >= iso(new Date(anchor.getFullYear(), anchor.getMonth(), 1)) && item.startDate <= iso(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0))).sort(sortEvents), [anchor, visibleEvents]);
@@ -414,7 +453,7 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
     setDraft(null);
     setDaySheetDate(date);
   }
-  function openNewEvent(date = selectedDate) {
+  function openNewEvent(date = selectedDate, initList?: any) {
     const calendarId = enabled[0] || calendars[0]?.id;
     if (!calendarId) {
       setError("Chưa có lịch để thêm sự kiện.");
@@ -422,7 +461,24 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
     }
     setDetail(null);
     setDaySheetDate(null);
-    setDraft(draftFor(date, calendarId, user));
+    const d = draftFor(date, calendarId, user);
+    if (initList) {
+      if (initList.id === "birthday") {
+        d.calendarId = "birthday";
+        d.type = "birthday";
+        d.repeatRule = "yearly";
+      } else if (initList.id === "holiday") {
+        d.calendarId = "holiday";
+        d.type = "holiday";
+      } else {
+        d.calendarId = initList.id;
+        d.type = "other";
+      }
+    } else {
+      d.calendarId = "uncategorized";
+      d.type = "other";
+    }
+    setDraft(d);
   }
   function openEditEvent(item: CalendarEvent) {
     setDetail(null);
@@ -599,7 +655,7 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
           ) : detail ? (
              <EventDetailInline item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />
           ) : draft ? (
-             <EventEditorInline draft={draft} calendars={calendars} members={members} user={user} setDraft={setDraft} close={() => setDraft(null)} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />
+             <EventEditorInline draft={draft} calendars={calendars} customLists={customLists} members={members} user={user} setDraft={setDraft} close={() => setDraft(null)} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />
           ) : (
             <div className="relative flex flex-1 flex-col overflow-y-auto bg-white dark:bg-slate-900">
               <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/90 p-3 backdrop-blur dark:border-white/10 dark:bg-slate-900/90">
@@ -614,11 +670,11 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
         </aside>
       </div>
 
-      <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-5 right-5 z-40 grid size-14 place-items-center rounded-full bg-indigo-600 text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 xl:hidden" aria-label="Thêm sự kiện">+</button>
+      {mobileTab !== "list" && <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-5 right-5 z-40 grid size-14 place-items-center rounded-full bg-indigo-600 text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 xl:hidden" aria-label="Thêm sự kiện">+</button>}
 
       <div className="xl:hidden">
         {daySheetDate && <DayEventsSheet date={daySheetDate} events={visibleEvents.filter(item => item.startDate === daySheetDate).sort(sortEvents)} members={members} close={() => setDaySheetDate(null)} add={() => openNewEvent(daySheetDate)} open={openEventDetail} edit={openEditEvent} remove={deleteEvent} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} />}
-        {draft && <EventEditorSheet draft={draft} calendars={calendars} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
+        {draft && <EventEditorSheet draft={draft} calendars={calendars} customLists={customLists} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
         {detail && <EventDetailSheet item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />}
       </div>
     </div>
@@ -631,11 +687,14 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
         events={allEvents} visibleEvents={visibleEvents} selectedEvents={selectedEvents} agendaEvents={agendaEvents}
         calendars={calendars} members={members}
         enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes}
-        openEventDetail={openEventDetail} openNewEvent={() => openNewEvent(selectedDate)}
+        openEventDetail={openEventDetail} openNewEvent={(initList?: any) => openNewEvent(selectedDate, initList)}
         showLunar={showLunar} user={user}
+        customLists={customLists} saveCustomLists={saveCustomLists}
+        hiddenLists={hiddenLists} toggleListVisibility={toggleListVisibility}
+        setEvents={setEvents} goToday={goToday}
       />
-      <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-[84px] right-5 z-[45] grid size-14 place-items-center rounded-full bg-[#4f46e5] text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 active:scale-95" aria-label="Thêm sự kiện">+</button>
-      {draft && <EventEditorSheet draft={draft} calendars={calendars} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
+      {mobileTab !== "list" && <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-[84px] right-5 z-[45] grid size-12 place-items-center rounded-full bg-[#4f46e5] text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 active:scale-95" aria-label="Thêm sự kiện">+</button>}
+      {draft && <EventEditorSheet draft={draft} calendars={calendars} customLists={customLists} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
       {detail && <EventDetailSheet item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />}
     </div>
     </>
@@ -925,7 +984,7 @@ function FilterContent({ calendars, events, enabled, setEnabled, enabledTypes, s
   );
 }
 
-function EventEditorInline({ draft, calendars, members, user, setDraft, save, close, remove }: { draft: EventDraft; calendars: Calendar[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; close: () => void; remove?: () => void }) {
+function EventEditorInline({ draft, calendars, customLists = [], members, user, setDraft, save, close, remove }: { draft: EventDraft; calendars: Calendar[]; customLists?: CustomList[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; close: () => void; remove?: () => void }) {
   const [activePopup, setActivePopup] = useState<string | null>(null);
   const selectable = user?.role === "self_only" ? members.filter(member => member.id === user.memberId) : members;
   const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) => setDraft({ ...draft, [key]: value });
@@ -952,8 +1011,11 @@ function EventEditorInline({ draft, calendars, members, user, setDraft, save, cl
            </div>
 
            <div className="bg-white dark:bg-slate-900 mb-2 shadow-sm border-y border-slate-200 dark:border-white/5">
-              <Row label="Calendar" value={calendars.find(c => c.id === draft.calendarId)?.name || ""} onClick={() => setActivePopup("Calendar")} />
-              <Row label="Label" value={eventTypes.find(t => t.value === draft.type)?.label || ""} onClick={() => setActivePopup("Label")} />
+              <Row label="Danh sách" value={
+                draft.calendarId === "birthday" ? "Sinh nhật" : 
+                draft.calendarId === "holiday" ? "Ngày lễ" : 
+                customLists?.find(c => c.id === draft.calendarId)?.name || "Không phân loại"
+              } onClick={() => setActivePopup("Label")} />
            </div>
 
            <div className="bg-white dark:bg-slate-900 mb-2 shadow-sm border-y border-slate-200 dark:border-white/5">
@@ -1008,11 +1070,29 @@ function EventEditorInline({ draft, calendars, members, user, setDraft, save, cl
 
            {activePopup === "Label" && (
              <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
-               {eventTypes.map(c => (
-                  <div key={c.value} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { set("type", c.value as EventType); setActivePopup(null); }}>
+               <div className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setDraft({ ...draft, type: "other", calendarId: "uncategorized" }); setActivePopup(null); }}>
+                 <div className="size-4 rounded-full bg-slate-300" />
+                 <span className="font-medium text-sm flex-1">Không phân loại</span>
+                 {draft.calendarId === "uncategorized" && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+               </div>
+
+               <div className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setDraft({ ...draft, type: "birthday", calendarId: "birthday", repeatRule: "yearly" }); setActivePopup(null); }}>
+                 <div className="size-4 rounded-full" style={{ backgroundColor: "#f43f5e" }} />
+                 <span className="font-medium text-sm flex-1">Sinh nhật</span>
+                 {draft.calendarId === "birthday" && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+               </div>
+
+               <div className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setDraft({ ...draft, type: "holiday", calendarId: "holiday" }); setActivePopup(null); }}>
+                 <div className="size-4 rounded-full" style={{ backgroundColor: "#22c55e" }} />
+                 <span className="font-medium text-sm flex-1">Ngày lễ</span>
+                 {draft.calendarId === "holiday" && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+               </div>
+               
+               {customLists && customLists.length > 0 && customLists.map(c => (
+                  <div key={c.id} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setDraft({ ...draft, calendarId: c.id, type: "other" as EventType }); setActivePopup(null); }}>
                     <div className="size-4 rounded-full" style={{ backgroundColor: c.color }} />
-                    <span className="font-medium text-sm flex-1">{c.label}</span>
-                    {draft.type === c.value && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
+                    <span className="font-medium text-sm flex-1">{c.name}</span>
+                    {draft.calendarId === c.id && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
                   </div>
                ))}
              </div>
@@ -1176,10 +1256,10 @@ function EventDetailInline({ item, calendars, members, edit, remove, markDone, c
   );
 }
 
-function EventEditorSheet({ draft, calendars, members, user, setDraft, save, remove }: { draft: EventDraft; calendars: Calendar[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; remove?: () => void }) {
+function EventEditorSheet({ draft, calendars, customLists, members, user, setDraft, save, remove }: { draft: EventDraft; calendars: Calendar[]; customLists?: CustomList[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; remove?: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 dark:bg-slate-950">
-      <EventEditorInline draft={draft} calendars={calendars} members={members} user={user} setDraft={setDraft} save={saveEvent => { save(saveEvent); setDraft(null); }} close={() => setDraft(null)} remove={remove ? () => { remove(); setDraft(null); } : undefined} />
+      <EventEditorInline draft={draft} calendars={calendars} customLists={customLists} members={members} user={user} setDraft={setDraft} save={saveEvent => { save(saveEvent); setDraft(null); }} close={() => setDraft(null)} remove={remove ? () => { remove(); setDraft(null); } : undefined} />
     </div>
   );
 }
@@ -1227,100 +1307,123 @@ function Row({ label, value, onClick, right }: { label: string; value?: string; 
   );
 }
 function MobileCalendarView({
-  mobileTab, setMobileTab, anchor, setAnchor, selectedDate, pickDate, events, visibleEvents, selectedEvents, agendaEvents, calendars, members, enabledTypes, setEnabledTypes, openEventDetail, openNewEvent, showLunar, user
+  mobileTab, setMobileTab, anchor, setAnchor, selectedDate, pickDate, events, visibleEvents, selectedEvents, agendaEvents, calendars, members, enabledTypes, setEnabledTypes, openEventDetail, openNewEvent, showLunar, user,
+  customLists, saveCustomLists, hiddenLists, toggleListVisibility, setEvents, goToday
 }: any) {
+  const [editingList, setEditingList] = useState<any>(null);
+  const [isAddingList, setIsAddingList] = useState(false);
+  const [detailList, setDetailList] = useState<any>(null);
+
+  const getLunarSafe = (dIso: string) => {
+    try {
+      if (typeof getLunarText !== "undefined") return getLunarText(dIso);
+    } catch(e) {}
+    return { text: "", important: false };
+  };
   const tabs = [
-    { id: "calendar", label: "Lịch" },
-    { id: "list", label: "Danh sách" },
-    { id: "share", label: "Chia sẻ" },
-    { id: "agenda", label: "Hành động" }
+    { id: "calendar", label: "Lịch", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg> },
+    { id: "list", label: "Danh sách", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg> },
+    { id: "share", label: "Chia sẻ", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
+    { id: "agenda", label: "Hành động", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> }
   ];
 
-  const types = [
-    { id: "all", label: "Tất cả" },
-    { id: "work", label: "Công việc" },
-    { id: "study", label: "Học tập" },
-    { id: "family", label: "Gia đình" },
-    { id: "personal", label: "Cá nhân" },
-    { id: "birthday", label: "Sinh nhật" },
-    { id: "holiday", label: "Ngày lễ" },
-    { id: "reminder", label: "Nhắc nhở" },
-    { id: "other", label: "Khác" }
+  const defaultLists = [
+    { id: "work", label: "Công việc", color: "#22c55e" },
+    { id: "study", label: "Học tập", color: "#f97316" },
+    { id: "family", label: "Gia đình", color: "#3b82f6" },
+    { id: "personal", label: "Cá nhân", color: "#a855f7" },
+    { id: "birthday", label: "Sinh nhật", color: "#eab308" },
+    { id: "holiday", label: "Ngày lễ", color: "#ef4444" },
+    { id: "reminder", label: "Nhắc nhở", color: "#ec4899" },
+    { id: "other", label: "Khác", color: "#94a3b8" }
   ];
 
-  const toggleType = (id: string) => {
-    if (id === "all") {
-      setEnabledTypes(["family", "personal", "birthday", "holiday", "work", "study", "reminder", "payment", "other"]);
-      return;
-    }
-    setEnabledTypes([id as any]);
+  const toggleVisibility = (id: string) => {
+    setEnabledTypes((prev: string[]) => {
+      if (prev.includes(id)) return prev.filter(t => t !== id);
+      return [...prev, id];
+    });
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#f8fafc] dark:bg-slate-950 pb-20">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-950 pb-20">
       {/* Top Tabs */}
-      <div className="flex items-center justify-around bg-white px-2 py-3 shadow-sm rounded-b-2xl sticky top-0 z-10 dark:bg-slate-900">
-        {tabs.map(tab => (
-          <button 
-            key={tab.id}
-            onClick={() => setMobileTab(tab.id)}
-            className={`px-3 py-2 text-sm font-bold rounded-xl transition-colors ${mobileTab === tab.id ? "bg-indigo-50 text-[#4f46e5] dark:bg-indigo-500/20 dark:text-indigo-400" : "text-slate-500 dark:text-slate-400"}`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="flex items-center justify-between bg-white border-b border-slate-100 dark:border-white/5 sticky top-0 z-10 dark:bg-slate-950">
+        {tabs.map(tab => {
+          const isActive = mobileTab === tab.id;
+          return (
+            <button 
+              key={tab.id}
+              onClick={() => setMobileTab(tab.id)}
+              className={`flex-1 flex flex-col items-center justify-center pt-2 pb-1 transition-all relative ${isActive ? "text-[#4f46e5] dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}
+            >
+              <div className={`flex flex-col items-center justify-center h-[34px] ${isActive ? "mt-0" : "mt-1"}`}>
+                <div className="flex items-center justify-center h-[20px]">{tab.icon}</div>
+                {isActive && <span className="text-[10px] font-medium mt-0.5">{tab.label}</span>}
+              </div>
+              {isActive && <div className="absolute bottom-0 left-1/4 right-1/4 h-0.5 bg-[#4f46e5] dark:bg-indigo-400 rounded-t" />}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto">
         {mobileTab === "calendar" && (
-          <div className="space-y-2">
-            {/* Filter Chips */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
-              {types.map(type => {
-                const isActive = type.id === "all" ? enabledTypes.length > 3 : enabledTypes.includes(type.id as any) && enabledTypes.length < 3;
-                return (
-                  <button 
-                    key={type.id}
-                    onClick={() => toggleType(type.id)}
-                    className={`shrink-0 px-3 py-1 text-xs font-medium rounded-full border transition-colors ${isActive ? "border-[#4f46e5] bg-[#4f46e5] text-white" : "border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-slate-800 dark:text-slate-300"}`}
-                  >
-                    {type.label}
-                  </button>
-                );
-              })}
-            </div>
+          <div className="flex flex-col">
 
             {/* Calendar Grid */}
-            <div className="py-2">
-              <div className="flex items-center justify-between mb-4 px-1">
-                <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))} className="p-1 text-slate-400 active:scale-95 text-xl font-bold">‹</button>
-                <h2 className="text-base font-bold text-slate-800 dark:text-white">Tháng {anchor.getMonth() + 1}, {anchor.getFullYear()}</h2>
-                <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1))} className="p-1 text-slate-400 active:scale-95 text-xl font-bold">›</button>
+            <div className="w-full bg-white dark:bg-slate-950 pb-2">
+              <div className="flex items-center px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-white/5">
+                <h2 className="text-lg font-bold text-slate-800 dark:text-white flex-1 flex items-center gap-2">
+                  Tháng {anchor.getMonth() + 1} {anchor.getFullYear()}
+                  <button onClick={goToday} className="flex size-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 active:scale-95" title="Hôm nay">
+                    <svg viewBox="0 0 24 24" className="size-3.5 stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><circle cx="12" cy="15" r="1" /></svg>
+                  </button>
+                </h2>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                    <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" /></svg>
+                  </button>
+                  <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1))} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                    <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" /></svg>
+                  </button>
+                </div>
               </div>
-              <div className="grid grid-cols-7 gap-x-1 gap-y-2">
-                {["CN", "T2", "T3", "T4", "T5", "T6", "T7"].map(day => (
-                  <div key={day} className="text-center text-[10px] font-bold text-slate-400 mb-2">{day}</div>
+              <div className="grid grid-cols-7 border-b border-slate-100 dark:border-white/5">
+                {["CN", "T2", "T3", "T4", "T5", "T6", "T7"].map((day, i) => (
+                  <div key={day} className={`text-center text-[10px] py-1.5 font-bold uppercase tracking-wider ${i === 0 ? "text-red-500" : "text-slate-400"}`}>{day}</div>
                 ))}
-                {monthCells(anchor).map(date => {
+              </div>
+              <div className="grid grid-cols-7">
+                {monthCells(anchor).map((date, index) => {
                   const dateIso = iso(date);
                   const isSelected = selectedDate === dateIso;
-                  const dayEvents = visibleEvents.filter((e: any) => e.startDate === dateIso);
+                  const dayEvents = visibleEvents.filter((e: any) => e.startDate === dateIso).sort((a: any, b: any) => a.title.localeCompare(b.title));
                   const isCurrentMonth = date.getMonth() === anchor.getMonth();
-                  const lunarInfo = showLunar ? getLunarText(dateIso) : { text: "", important: false };
+                  const isSunday = date.getDay() === 0;
+                  const isLastCol = index % 7 === 6;
+                  const lunarInfo = getLunarSafe(dateIso);
                   return (
                     <div 
                       key={dateIso} 
                       onClick={() => pickDate(dateIso)}
-                      className={`flex flex-col items-center justify-start py-1 rounded-xl cursor-pointer ${!isCurrentMonth ? "opacity-30" : ""} ${isSelected ? "bg-indigo-50 border border-indigo-100 dark:bg-indigo-500/20 dark:border-indigo-500/30" : ""}`}
+                      className={`flex flex-col border-b border-slate-100 dark:border-white/5 h-20 overflow-hidden cursor-pointer ${!isLastCol ? "border-r" : ""} ${!isCurrentMonth ? "bg-slate-50/50 dark:bg-white/[0.01]" : ""} ${isSelected ? "bg-indigo-50/20 dark:bg-indigo-500/10" : ""}`}
                     >
-                      <span className={`text-[13px] font-semibold flex items-center justify-center size-7 rounded-full ${isSelected ? "bg-[#4f46e5] text-white" : "text-slate-700 dark:text-slate-200"}`}>
-                        {date.getDate()}
-                      </span>
-                      {showLunar && <span className={`text-[9px] -mt-1 ${lunarInfo.important ? "text-rose-500 font-bold" : "text-slate-400"}`}>{lunarInfo.text}</span>}
-                      <div className="flex flex-wrap justify-center gap-[2px] mt-1 max-w-[24px]">
-                        {dayEvents.slice(0, 4).map((e: any, i: number) => (
-                          <div key={i} className="size-[3px] rounded-full" style={{ backgroundColor: e.color || "#4f46e5" }} />
+                      <div className="flex items-center justify-between px-1 pt-1">
+                        <span className={`text-[12px] font-semibold flex items-center justify-center size-[22px] rounded-full ${isSelected ? "bg-[#4f46e5] text-white" : isSunday ? "text-red-500" : "text-slate-700 dark:text-slate-300"}`}>
+                          {date.getDate()}
+                        </span>
+                        {lunarInfo.text && (
+                          <span className={`text-[9px] -mt-0.5 leading-none ${lunarInfo.important ? "text-rose-500 font-bold" : "text-slate-400 dark:text-slate-500 hidden min-[360px]:block"}`}>{lunarInfo.text}</span>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-[1px] mt-0.5 px-[2px] w-full">
+                        {dayEvents.slice(0, 3).map((e: any, i: number) => (
+                          <div key={i} className="h-3.5 px-1 rounded-[3px] text-[9px] font-bold truncate leading-snug flex items-center" style={{ backgroundColor: e.color ? e.color + "33" : "#4f46e533", color: e.color || "#4f46e5" }}>
+                            {e.title}
+                          </div>
                         ))}
+                        {dayEvents.length > 3 && <span className="text-[9px] text-slate-400 font-medium px-1 text-left">+{dayEvents.length - 3}</span>}
                       </div>
                     </div>
                   );
@@ -1329,24 +1432,23 @@ function MobileCalendarView({
             </div>
 
             {/* Selected Date Events */}
-            <div className="mt-6">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-3 px-1">Ngày {selectedDate.split("-").reverse().join("/")}</h3>
+            <div className="px-4 py-4 bg-slate-50 dark:bg-slate-950 flex-1">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">{formatDateVN(selectedDate)}</h3>
               {selectedEvents.length > 0 ? (
                 <div className="space-y-3">
                   {selectedEvents.map((event: any) => (
-                    <div key={event.id} onClick={() => openEventDetail(event)} className="bg-white dark:bg-slate-900 p-3 rounded-2xl shadow-sm flex items-start gap-3 relative overflow-hidden active:scale-[0.98] transition-transform">
+                    <div key={event.id} onClick={() => openEventDetail(event)} className="bg-white dark:bg-slate-900 p-3 rounded-2xl shadow-sm flex items-center gap-3 relative overflow-hidden active:scale-[0.98] transition-transform border border-slate-100 dark:border-white/5">
                       <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: event.color || "#4f46e5" }} />
-                      <div className="flex-1 pl-1">
+                      <div className="flex-1 pl-2">
                         <p className="text-sm font-bold text-slate-900 dark:text-white">{event.title}</p>
-                        <p className="text-xs text-slate-500 mt-1">{event.time || "Cả ngày"} • {event.location || event.type}</p>
+                        <p className="text-xs text-slate-500 mt-1">{event.time || "Cả ngày"} • {event.location || eventTypeMeta(event.type).label}</p>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="py-8 flex flex-col items-center justify-center text-slate-400">
-                  <div className="text-3xl mb-2 opacity-50">📅</div>
-                  <p className="text-xs">Không có sự kiện nào</p>
+                <div className="py-6 flex flex-col items-center justify-center text-slate-400">
+                  <p className="text-sm font-medium">Không có sự kiện nào</p>
                 </div>
               )}
             </div>
@@ -1354,33 +1456,68 @@ function MobileCalendarView({
         )}
 
         {mobileTab === "list" && (
-          <div className="space-y-3">
-            {calendars.map((cal: any) => (
-              <div key={cal.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm flex items-center gap-4">
-                <div className="size-10 rounded-xl" style={{ backgroundColor: cal.color || "#4f46e5" }} />
-                <div className="flex-1">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">{cal.name}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{events.filter((e: any) => e.calendarId === cal.id).length} sự kiện</p>
+          <div className="space-y-3 px-4 pt-4">
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Danh sách hệ thống</h3>
+            {[{ id: "birthday", label: "Sinh nhật", color: "#f43f5e" }, { id: "holiday", label: "Ngày lễ", color: "#22c55e" }].map((cal: any) => (
+              <div key={cal.id} onClick={() => setDetailList(cal)} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3 active:scale-[0.98] transition-transform cursor-pointer">
+                <div className="size-4 rounded-full shrink-0" style={{ backgroundColor: cal.color }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{cal.label}</p>
+                  <p className="text-xs text-slate-500">{events.filter((e: any) => e.type === cal.id || e.calendarId === cal.id).length} sự kiện</p>
                 </div>
-                <span className="text-slate-300">›</span>
+                <button onClick={(e) => { e.stopPropagation(); toggleListVisibility(cal.id); }} className={`p-2 rounded-full shrink-0 ${!hiddenLists.includes(cal.id) ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/20" : "text-slate-400 bg-slate-50 dark:bg-white/5"}`}>
+                  {!hiddenLists.includes(cal.id) ? (
+                    <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                  )}
+                </button>
               </div>
             ))}
-            <button className="w-full mt-4 bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 p-4 rounded-2xl text-sm font-bold text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-2">
-              <span className="text-xl">+</span> Thêm danh sách
+            
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6">Danh sách của tôi</h3>
+            {customLists.length > 0 ? (
+              customLists.map((cal: any) => (
+                <div key={cal.id} onClick={() => setDetailList(cal)} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3 active:scale-[0.98] transition-transform cursor-pointer">
+                  <div className="size-4 rounded-full shrink-0" style={{ backgroundColor: cal.color || "#4f46e5" }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{cal.name}</p>
+                    <p className="text-xs text-slate-500">{events.filter((e: any) => e.calendarId === cal.id).length} sự kiện</p>
+                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); setEditingList(cal); }} className="p-2 rounded-full shrink-0 text-slate-400 bg-slate-50 hover:bg-slate-100 dark:bg-white/5 dark:hover:bg-white/10">
+                    <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); toggleListVisibility(cal.id); }} className={`p-2 rounded-full shrink-0 ${!hiddenLists.includes(cal.id) ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/20" : "text-slate-400 bg-slate-50 dark:bg-white/5"}`}>
+                    {!hiddenLists.includes(cal.id) ? (
+                      <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
+                    )}
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="py-10 flex flex-col items-center justify-center text-slate-400">
+                <svg viewBox="0 0 24 24" className="size-12 stroke-current stroke-[1.5] fill-none mb-4 opacity-30"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+                <p className="text-sm font-medium">Chưa có danh sách nào.</p>
+              </div>
+            )}
+            <button onClick={() => setIsAddingList(true)} className="w-full mt-4 bg-transparent border border-dashed border-slate-300 dark:border-slate-700 p-4 rounded-xl text-sm font-bold text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+              Thêm danh sách
             </button>
           </div>
         )}
 
         {mobileTab === "share" && (
-          <div className="space-y-3">
+          <div className="space-y-3 px-4 pt-4">
             {members.map((member: any) => (
-              <div key={member.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm flex items-center gap-4">
+              <div key={member.id} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3">
                 <div className="size-10 rounded-full bg-slate-100 flex items-center justify-center text-lg shadow-inner overflow-hidden">
                   {member.avatar ? <img src={member.avatar} alt={member.name} className="size-full object-cover" /> : member.name.charAt(0)}
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-bold text-slate-900 dark:text-white">{member.name || member.nickname}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{member.role === "admin" ? "Quản trị viên" : "Thành viên"}</p>
+                  <p className="text-xs text-slate-500">{member.role === "admin" ? "Quản trị viên" : "Thành viên"}</p>
                 </div>
               </div>
             ))}
@@ -1388,22 +1525,175 @@ function MobileCalendarView({
         )}
 
         {mobileTab === "agenda" && (
-          <div className="space-y-3">
+          <div className="space-y-3 px-4 pt-4">
             {agendaEvents.filter((e: any) => e.startDate >= iso(new Date())).length > 0 ? (
               agendaEvents.filter((e: any) => e.startDate >= iso(new Date())).map((event: any) => (
-                <div key={event.id} onClick={() => openEventDetail(event)} className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm flex items-start gap-3 relative overflow-hidden active:scale-[0.98] transition-transform">
+                <div key={event.id} onClick={() => openEventDetail(event)} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3 relative overflow-hidden active:scale-[0.98] transition-transform">
                   <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: event.color || "#4f46e5" }} />
-                  <div className="flex-1 pl-1">
+                  <div className="flex-1 pl-2">
                     <p className="text-sm font-bold text-slate-900 dark:text-white">{event.title}</p>
                     <p className="text-xs text-slate-500 mt-1">{event.startDate.split("-").reverse().join("/")} {event.time ? `• ${event.time}` : ""}</p>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 flex flex-col items-center justify-center text-slate-400">
-                <p className="text-sm">Chưa có sự kiện sắp tới.</p>
+              <div className="py-10 flex flex-col items-center justify-center text-slate-400">
+                <svg viewBox="0 0 24 24" className="size-10 stroke-current stroke-[1.5] fill-none mb-3 opacity-30"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                <p className="text-sm font-medium">Chưa có sự kiện sắp tới.</p>
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {(isAddingList || editingList) && (
+        <AddEditListSheet 
+          list={editingList} 
+          close={() => { setIsAddingList(false); setEditingList(null); }} 
+          customLists={customLists} 
+          saveCustomLists={saveCustomLists} 
+          events={events}
+          setEvents={setEvents}
+        />
+      )}
+      
+      {detailList && (
+        <ListDetailSheet 
+          list={detailList} 
+          close={() => setDetailList(null)} 
+          events={events} 
+          openEventDetail={openEventDetail}
+          openNewEvent={() => { setDetailList(null); openNewEvent(detailList); }}
+          isCustom={customLists.some((c: any) => c.id === detailList.id)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddEditListSheet({ list, close, customLists, saveCustomLists, events, setEvents }: any) {
+  const [name, setName] = useState(list ? list.name : "");
+  const [color, setColor] = useState(list ? list.color : "#4f46e5");
+  const [error, setError] = useState("");
+
+  const save = () => {
+    if (!name.trim()) { setError("Tên không được để trống"); return; }
+    if (customLists.some((c: any) => c.name === name.trim() && c.id !== list?.id)) { setError("Tên đã tồn tại"); return; }
+    
+    let next;
+    if (list) {
+      next = customLists.map((c: any) => c.id === list.id ? { ...c, name: name.trim(), color } : c);
+    } else {
+      next = [...customLists, { id: "custom-" + Date.now(), name: name.trim(), color }];
+    }
+    saveCustomLists(next);
+    close();
+  };
+
+  const remove = () => {
+    if (window.confirm("Bạn có chắc muốn xóa danh sách này?")) {
+      saveCustomLists(customLists.filter((c: any) => c.id !== list.id));
+      const nextEvents = events.map((ev: any) => {
+        if (ev.calendarId === list.id) {
+          return { ...ev, calendarId: "uncategorized", type: "other" };
+        }
+        return ev;
+      });
+      setEvents(nextEvents);
+      close();
+    }
+  };
+
+  const colors = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e", "#14b8a6", "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#d946ef", "#f43f5e", "#64748b"];
+
+  return (
+    <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/45" onMouseDown={close}>
+      <div onMouseDown={e => e.stopPropagation()} className="w-full bg-white dark:bg-slate-900 rounded-t-2xl p-5 pb-8 animate-in slide-in-from-bottom-full duration-300">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold">{list ? "Sửa danh sách" : "Thêm danh sách"}</h3>
+          <button onClick={close} className="grid size-8 place-items-center rounded-full bg-slate-100 font-bold text-slate-500 hover:bg-slate-200">×</button>
+        </div>
+        
+        {error && <p className="text-sm text-red-500 mb-4">{error}</p>}
+        
+        <div className="space-y-5">
+          <div>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Tên danh sách</label>
+            <input autoFocus value={name} onChange={e => {setName(e.target.value); setError("");}} placeholder="Ví dụ: Lịch tập gym" className="w-full h-12 rounded-xl border border-slate-200 dark:border-slate-700 px-4 bg-transparent outline-none focus:border-indigo-500" />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Màu sắc</label>
+            <div className="flex flex-wrap gap-3">
+              {colors.map(c => (
+                <button key={c} onClick={() => setColor(c)} className={`size-8 rounded-full flex items-center justify-center transition-transform ${color === c ? "scale-125 ring-2 ring-offset-2 ring-indigo-500" : ""}`} style={{ backgroundColor: c }}>
+                  {color === c && <svg viewBox="0 0 24 24" className="size-4 stroke-white stroke-2 fill-none"><polyline points="20 6 9 17 4 12" /></svg>}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div className="pt-4 flex gap-3">
+            {list && (
+              <button onClick={remove} className="flex-1 h-12 rounded-xl bg-red-50 text-red-600 font-bold text-sm hover:bg-red-100">
+                Xóa
+              </button>
+            )}
+            <button onClick={save} className="flex-[2] h-12 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700">
+              Lưu
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ListDetailSheet({ list, close, events, openEventDetail, openNewEvent, isCustom }: any) {
+  const listEvents = events.filter((e: any) => e.calendarId === list.id || e.type === list.id);
+  
+  return (
+    <div className="fixed inset-0 z-[55] flex flex-col bg-slate-50 dark:bg-slate-950 animate-in slide-in-from-right-full duration-300">
+      <div className="flex items-center px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 shrink-0">
+        <button onClick={close} className="p-2 -ml-2 text-slate-500 hover:text-slate-800">
+          <svg viewBox="0 0 24 24" className="size-6 stroke-current stroke-2 fill-none"><polyline points="15 18 9 12 15 6" /></svg>
+        </button>
+        <div className="flex-1 flex items-center gap-2 px-2">
+          <div className="size-3 rounded-full" style={{ backgroundColor: list.color || "#4f46e5" }} />
+          <h2 className="text-lg font-bold text-slate-800 dark:text-white truncate">{list.name || list.label}</h2>
+        </div>
+        <button onClick={openNewEvent} className="p-2 -mr-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-white/5 rounded-full">
+          <svg viewBox="0 0 24 24" className="size-6 stroke-current stroke-2 fill-none"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+        </button>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {listEvents.length > 0 ? (
+          listEvents.sort((a: any, b: any) => a.startDate.localeCompare(b.startDate)).map((event: any) => {
+            const dateObj = new Date(event.startDate);
+            return (
+              <div key={event.id} onClick={() => openEventDetail(event)} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex gap-3 active:scale-[0.98] transition-transform cursor-pointer">
+                <div className="flex flex-col items-center justify-center w-12 shrink-0 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                  <span className="text-[10px] font-bold text-red-500 uppercase">T{dateObj.getMonth() + 1}</span>
+                  <span className="text-lg font-black text-slate-800 dark:text-white leading-none">{dateObj.getDate()}</span>
+                </div>
+                <div className="flex-1 min-w-0 py-0.5">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{event.title}</p>
+                  <p className="text-[11px] text-slate-500 mt-1 truncate">
+                    {event.allDay ? "Cả ngày" : `${event.startTime} - ${event.endTime}`}
+                    {event.repeatRule === "yearly" && " • Lặp hằng năm"}
+                  </p>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="py-20 flex flex-col items-center justify-center text-slate-400">
+            <svg viewBox="0 0 24 24" className="size-12 stroke-current stroke-[1.5] fill-none mb-4 opacity-30"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+            <p className="text-sm font-medium mb-4">Danh sách này chưa có sự kiện nào</p>
+            <button onClick={openNewEvent} className="px-4 py-2 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 font-bold text-sm rounded-full active:scale-95 transition-transform">
+              {list.id === "birthday" ? "+ Thêm sinh nhật" : list.id === "holiday" ? "+ Thêm ngày lễ" : "+ Thêm sự kiện"}
+            </button>
           </div>
         )}
       </div>
