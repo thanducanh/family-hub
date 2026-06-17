@@ -152,3 +152,39 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Không thể cập nhật thông báo." }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const actor = await getSessionUser();
+    if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+    const id = request.nextUrl.searchParams.get("id");
+
+    if (id) {
+      if (actor.role === "full_access") {
+        await pool.query("DELETE FROM notifications WHERE id = $1", [id]);
+      } else {
+        await pool.query(
+          `DELETE FROM notifications 
+           WHERE id = $1 AND (user_id = $2 OR visible_user_ids::jsonb ? $2)`,
+          [id, actor.id]
+        );
+      }
+    } else {
+      if (actor.role === "full_access") {
+        await pool.query("DELETE FROM notifications");
+      } else {
+        await pool.query(
+          `DELETE FROM notifications 
+           WHERE user_id = $1 OR visible_user_ids::jsonb ? $1`,
+          [actor.id]
+        );
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("[DELETE /api/notifications]", error);
+    return NextResponse.json({ ok: false, error: "Không thể xóa thông báo." }, { status: 500 });
+  }
+}

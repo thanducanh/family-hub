@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Member } from "@/types";
-
+import { ListIcon, ChevronRightIcon, ChevronDownIcon, ClockIcon, TypeIcon, RefreshCwIcon, PaletteIcon, Trash2Icon, MoonIcon, AlertTriangleIcon, CheckCircle2Icon, SearchIcon, FilterIcon, TagIcon, PlusIcon, BellIcon, LinkIcon, CopyIcon, LayoutGridIcon, MenuIcon } from "lucide-react";
+import { getNotificationSettings, addLocalNotification, triggerSystemNotification } from "@/lib/notifications";
 import { Solar } from "lunar-javascript";
 
 type Actor = { id: string; role: "full_access" | "self_only"; displayName?: string; avatar?: string; memberId?: string };
@@ -276,7 +277,7 @@ function generateFixedEvents(year: number, members: Member[]): CalendarEvent[] {
   return fixed;
 }
 
-export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: Actor }) {
+export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user?: Actor; t?: any }) {
   const [anchor, setAnchor] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [view, setView] = useState<CalendarView>("monthly");
@@ -294,7 +295,7 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
   const [quickPickerOpen, setQuickPickerOpen] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [mobileTab, setMobileTab] = useState<"calendar" | "list" | "share" | "agenda">("calendar");
+  const [mobileTab, setMobileTab] = useState<"month" | "week" | "day" | "list">("month");
 
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -512,9 +513,18 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
       setError(result?.error || "Không thể lưu sự kiện.");
       return;
     }
+    const isNew = !draft.id;
     setDraft(null);
     await load();
     setSelectedDate(draft.startDate);
+    
+    // Notification
+    const settings = getNotificationSettings();
+    if (settings.calendar) {
+      const msg = `${user?.displayName || "Ai đó"} đã ${isNew ? "tạo" : "cập nhật"} sự kiện lịch "${draft.title}"`;
+      addLocalNotification({ title: "Lịch", message: msg, createdByName: user?.displayName || "Ai đó", sourceType: "calendar_events", sourceId: id });
+      triggerSystemNotification("Cập nhật lịch", { body: msg });
+    }
   }
   async function deleteEvent(item: CalendarEvent) {
     const response = await fetch(`/api/events?id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
@@ -526,6 +536,14 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
     setDetail(null);
     setDraft(null);
     await load();
+    
+    // Notification
+    const settings = getNotificationSettings();
+    if (settings.calendar) {
+      const msg = `${user?.displayName || "Ai đó"} đã xóa sự kiện lịch "${item.title}"`;
+      addLocalNotification({ title: "Lịch", message: msg, createdByName: user?.displayName || "Ai đó", sourceType: "calendar_events", sourceId: item.id });
+      triggerSystemNotification("Xóa sự kiện lịch", { body: msg });
+    }
   }
   async function markDone(item: CalendarEvent) {
     const response = await fetch("/api/events", {
@@ -670,7 +688,7 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
         </aside>
       </div>
 
-      {mobileTab !== "list" && <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-5 right-5 z-40 grid size-14 place-items-center rounded-full bg-indigo-600 text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 xl:hidden" aria-label="Thêm sự kiện">+</button>}
+      {mobileTab !== "list" && <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-5 right-5 z-40 grid size-14 place-items-center rounded-full bg-indigo-600 text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 xl:hidden" aria-label={t ? t("addEvent") : "Thêm sự kiện"}>+</button>}
 
       <div className="xl:hidden">
         {daySheetDate && <DayEventsSheet date={daySheetDate} events={visibleEvents.filter(item => item.startDate === daySheetDate).sort(sortEvents)} members={members} close={() => setDaySheetDate(null)} add={() => openNewEvent(daySheetDate)} open={openEventDetail} edit={openEditEvent} remove={deleteEvent} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} />}
@@ -692,8 +710,9 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
         customLists={customLists} saveCustomLists={saveCustomLists}
         hiddenLists={hiddenLists} toggleListVisibility={toggleListVisibility}
         setEvents={setEvents} goToday={goToday}
+        openMenuId={openMenuId} setOpenMenuId={setOpenMenuId}
       />
-      {mobileTab !== "list" && <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-[84px] right-5 z-[45] grid size-12 place-items-center rounded-full bg-[#4f46e5] text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 active:scale-95" aria-label="Thêm sự kiện">+</button>}
+      {mobileTab !== "list" && <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-[72px] right-4 z-[45] grid size-12 place-items-center rounded-full bg-[#4f46e5] text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 active:scale-95" aria-label={t ? t("addEvent") : "Thêm sự kiện"}>+</button>}
       {draft && <EventEditorSheet draft={draft} calendars={calendars} customLists={customLists} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
       {detail && <EventDetailSheet item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />}
     </div>
@@ -1308,7 +1327,7 @@ function Row({ label, value, onClick, right }: { label: string; value?: string; 
 }
 function MobileCalendarView({
   mobileTab, setMobileTab, anchor, setAnchor, selectedDate, pickDate, events, visibleEvents, selectedEvents, agendaEvents, calendars, members, enabledTypes, setEnabledTypes, openEventDetail, openNewEvent, showLunar, user,
-  customLists, saveCustomLists, hiddenLists, toggleListVisibility, setEvents, goToday
+  customLists, saveCustomLists, hiddenLists, toggleListVisibility, setEvents, goToday, openMenuId, setOpenMenuId, setDaySheetDate, setDetail, setDraft, t
 }: any) {
   const [editingList, setEditingList] = useState<any>(null);
   const [isAddingList, setIsAddingList] = useState(false);
@@ -1321,21 +1340,21 @@ function MobileCalendarView({
     return { text: "", important: false };
   };
   const tabs = [
-    { id: "calendar", label: "Lịch", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg> },
-    { id: "list", label: "Danh sách", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg> },
-    { id: "share", label: "Chia sẻ", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
-    { id: "agenda", label: "Hành động", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> }
+    { id: "month", label: t ? t("month") : "Tháng", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg> },
+    { id: "week", label: t ? t("week") : "Tuần", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><path d="M8 14h.01M12 14h.01M16 14h.01"/></svg> },
+    { id: "day", label: t ? t("day") : "Ngày", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><rect x="8" y="14" width="8" height="4" rx="1"/></svg> },
+    { id: "list", label: t ? t("list") : "Danh sách", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg> }
   ];
 
   const defaultLists = [
-    { id: "work", label: "Công việc", color: "#22c55e" },
-    { id: "study", label: "Học tập", color: "#f97316" },
-    { id: "family", label: "Gia đình", color: "#3b82f6" },
-    { id: "personal", label: "Cá nhân", color: "#a855f7" },
-    { id: "birthday", label: "Sinh nhật", color: "#eab308" },
-    { id: "holiday", label: "Ngày lễ", color: "#ef4444" },
-    { id: "reminder", label: "Nhắc nhở", color: "#ec4899" },
-    { id: "other", label: "Khác", color: "#94a3b8" }
+    { id: "work", label: t ? t("work") ?? "Công việc" : "Công việc", color: "#22c55e" },
+    { id: "study", label: t ? t("study") ?? "Học tập" : "Học tập", color: "#f97316" },
+    { id: "family", label: t ? t("family") ?? "Gia đình" : "Gia đình", color: "#3b82f6" },
+    { id: "personal", label: t ? t("personal") ?? "Cá nhân" : "Cá nhân", color: "#a855f7" },
+    { id: "birthday", label: t ? t("birthday") : "Sinh nhật", color: "#eab308" },
+    { id: "holiday", label: t ? t("holiday") : "Ngày lễ", color: "#ef4444" },
+    { id: "reminder", label: t ? t("reminder") ?? "Nhắc nhở" : "Nhắc nhở", color: "#ec4899" },
+    { id: "other", label: t ? t("other") ?? "Khác" : "Khác", color: "#94a3b8" }
   ];
 
   const toggleVisibility = (id: string) => {
@@ -1346,7 +1365,7 @@ function MobileCalendarView({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-950 pb-20">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-950 pb-[72px]">
       {/* Top Tabs */}
       <div className="flex items-center justify-between bg-white border-b border-slate-100 dark:border-white/5 sticky top-0 z-10 dark:bg-slate-950">
         {tabs.map(tab => {
@@ -1368,30 +1387,30 @@ function MobileCalendarView({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {mobileTab === "calendar" && (
+        {mobileTab === "month" && (
           <div className="flex flex-col">
 
             {/* Calendar Grid */}
-            <div className="w-full bg-white dark:bg-slate-950 pb-2">
-              <div className="flex items-center px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-white/5">
-                <h2 className="text-lg font-bold text-slate-800 dark:text-white flex-1 flex items-center gap-2">
-                  Tháng {anchor.getMonth() + 1} {anchor.getFullYear()}
-                  <button onClick={goToday} className="flex size-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 active:scale-95" title="Hôm nay">
-                    <svg viewBox="0 0 24 24" className="size-3.5 stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><circle cx="12" cy="15" r="1" /></svg>
+            <div className="w-full bg-white dark:bg-slate-950">
+              <div className="flex items-center px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-10">
+                <h2 className="text-sm font-bold text-slate-800 dark:text-white flex-1 flex items-center gap-2">
+                  {t ? t("month") : "Tháng"} {anchor.getMonth() + 1} {anchor.getFullYear()}
+                  <button onClick={goToday} className="flex size-5 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 active:scale-95" title={t ? t("today") : "Hôm nay"}>
+                    <svg viewBox="0 0 24 24" className="size-3 stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><circle cx="12" cy="15" r="1" /></svg>
                   </button>
                 </h2>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
-                    <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" /></svg>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))} className="p-1.5 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                    <svg viewBox="0 0 24 24" className="size-3.5 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" /></svg>
                   </button>
-                  <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1))} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
-                    <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" /></svg>
+                  <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1))} className="p-1.5 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                    <svg viewBox="0 0 24 24" className="size-3.5 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" /></svg>
                   </button>
                 </div>
               </div>
               <div className="grid grid-cols-7 border-b border-slate-100 dark:border-white/5">
                 {["CN", "T2", "T3", "T4", "T5", "T6", "T7"].map((day, i) => (
-                  <div key={day} className={`text-center text-[10px] py-1.5 font-bold uppercase tracking-wider ${i === 0 ? "text-red-500" : "text-slate-400"}`}>{day}</div>
+                  <div key={day} className={`text-center text-[9px] py-1 font-bold uppercase tracking-wider ${i === 0 ? "text-red-500" : "text-slate-400"}`}>{day}</div>
                 ))}
               </div>
               <div className="grid grid-cols-7">
@@ -1406,24 +1425,24 @@ function MobileCalendarView({
                   return (
                     <div 
                       key={dateIso} 
-                      onClick={() => pickDate(dateIso)}
-                      className={`flex flex-col border-b border-slate-100 dark:border-white/5 h-20 overflow-hidden cursor-pointer ${!isLastCol ? "border-r" : ""} ${!isCurrentMonth ? "bg-slate-50/50 dark:bg-white/[0.01]" : ""} ${isSelected ? "bg-indigo-50/20 dark:bg-indigo-500/10" : ""}`}
+                      onClick={() => { pickDate(dateIso); setMobileTab("day"); }}
+                      className={`flex flex-col border-b border-slate-100 dark:border-white/5 h-[12vh] max-h-[80px] min-h-[50px] overflow-hidden cursor-pointer ${!isLastCol ? "border-r" : ""} ${!isCurrentMonth ? "bg-slate-50/50 dark:bg-white/[0.01]" : ""} ${isSelected ? "bg-indigo-50/20 dark:bg-indigo-500/10" : ""}`}
                     >
-                      <div className="flex items-center justify-between px-1 pt-1">
-                        <span className={`text-[12px] font-semibold flex items-center justify-center size-[22px] rounded-full ${isSelected ? "bg-[#4f46e5] text-white" : isSunday ? "text-red-500" : "text-slate-700 dark:text-slate-300"}`}>
+                      <div className="flex items-center justify-between px-0.5 pt-0.5">
+                        <span className={`text-[11px] font-semibold flex items-center justify-center size-[18px] rounded-full ${isSelected ? "bg-[#4f46e5] text-white" : isSunday ? "text-red-500" : "text-slate-700 dark:text-slate-300"}`}>
                           {date.getDate()}
                         </span>
                         {lunarInfo.text && (
-                          <span className={`text-[9px] -mt-0.5 leading-none ${lunarInfo.important ? "text-rose-500 font-bold" : "text-slate-400 dark:text-slate-500 hidden min-[360px]:block"}`}>{lunarInfo.text}</span>
+                          <span className={`text-[8px] -mt-0.5 leading-none ${lunarInfo.important ? "text-rose-500 font-bold" : "text-slate-400 dark:text-slate-500 hidden min-[360px]:block"}`}>{lunarInfo.text}</span>
                         )}
                       </div>
-                      <div className="flex flex-col gap-[1px] mt-0.5 px-[2px] w-full">
+                      <div className="flex flex-col gap-[1px] mt-[1px] px-[1px] w-full">
                         {dayEvents.slice(0, 3).map((e: any, i: number) => (
-                          <div key={i} className="h-3.5 px-1 rounded-[3px] text-[9px] font-bold truncate leading-snug flex items-center" style={{ backgroundColor: e.color ? e.color + "33" : "#4f46e533", color: e.color || "#4f46e5" }}>
+                          <div key={i} className="h-3 px-1 rounded-[2px] text-[8px] font-bold truncate leading-snug flex items-center" style={{ backgroundColor: e.color ? e.color + "33" : "#4f46e533", color: e.color || "#4f46e5" }}>
                             {e.title}
                           </div>
                         ))}
-                        {dayEvents.length > 3 && <span className="text-[9px] text-slate-400 font-medium px-1 text-left">+{dayEvents.length - 3}</span>}
+                        {dayEvents.length > 3 && <span className="text-[8px] text-slate-400 font-medium px-1 text-left">+{dayEvents.length - 3}</span>}
                       </div>
                     </div>
                   );
@@ -1431,26 +1450,97 @@ function MobileCalendarView({
               </div>
             </div>
 
-            {/* Selected Date Events */}
-            <div className="px-4 py-4 bg-slate-50 dark:bg-slate-950 flex-1">
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">{formatDateVN(selectedDate)}</h3>
-              {selectedEvents.length > 0 ? (
-                <div className="space-y-3">
-                  {selectedEvents.map((event: any) => (
-                    <div key={event.id} onClick={() => openEventDetail(event)} className="bg-white dark:bg-slate-900 p-3 rounded-2xl shadow-sm flex items-center gap-3 relative overflow-hidden active:scale-[0.98] transition-transform border border-slate-100 dark:border-white/5">
-                      <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: event.color || "#4f46e5" }} />
-                      <div className="flex-1 pl-2">
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">{event.title}</p>
-                        <p className="text-xs text-slate-500 mt-1">{event.time || "Cả ngày"} • {event.location || eventTypeMeta(event.type).label}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-6 flex flex-col items-center justify-center text-slate-400">
-                  <p className="text-sm font-medium">Không có sự kiện nào</p>
-                </div>
-              )}
+
+          </div>
+        )}
+
+        {mobileTab === "week" && (
+          <div className="flex flex-col flex-1 h-full bg-white dark:bg-slate-950">
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-[52px]">
+              <h2 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                Tháng {new Date(selectedDate).getMonth() + 1} {new Date(selectedDate).getFullYear()}
+                <button onClick={goToday} className="flex size-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 active:scale-95" title="Hôm nay">
+                  <svg viewBox="0 0 24 24" className="size-3.5 stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><circle cx="12" cy="15" r="1" /></svg>
+                </button>
+              </h2>
+              <div className="flex items-center gap-2">
+                <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 7); pickDate(iso(d)); }} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                  <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" /></svg>
+                </button>
+                <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() + 7); pickDate(iso(d)); }} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                  <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+               {Array.from({length: 7}).map((_, i) => {
+                 const sd = new Date(selectedDate);
+                 const diff = sd.getDay() === 0 ? 6 : sd.getDay() - 1;
+                 sd.setDate(sd.getDate() - diff + i);
+                 const dIso = iso(sd);
+                 const dayEvs = visibleEvents.filter((e: any) => e.startDate === dIso).sort((a: any, b: any) => a.title.localeCompare(b.title));
+                 const isToday = dIso === iso(new Date());
+                 return (
+                   <div key={dIso} className="flex gap-4">
+                     <div className="w-10 shrink-0 flex flex-col items-center">
+                       <span className={`text-[10px] font-bold uppercase ${isToday ? "text-indigo-600" : "text-slate-500"}`}>
+                         {["CN", "T2", "T3", "T4", "T5", "T6", "T7"][sd.getDay()]}
+                       </span>
+                       <span className={`size-8 flex items-center justify-center rounded-full text-sm font-semibold mt-1 ${isToday ? "bg-indigo-600 text-white" : "text-slate-900 dark:text-white"}`}>
+                         {sd.getDate()}
+                       </span>
+                     </div>
+                     <div className="flex-1 space-y-2 min-w-0 pt-1">
+                       {dayEvs.length > 0 ? dayEvs.map((e: any) => (
+                         <div key={e.id} onClick={() => openEventDetail(e)} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3 relative overflow-hidden active:scale-[0.98] transition-transform">
+                           <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: e.color || "#4f46e5" }} />
+                           <div className="flex-1 pl-2 min-w-0">
+                             <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate leading-tight">{e.title}</p>
+                             <p className="text-[10px] text-slate-500 mt-0.5 truncate">{e.time || "Cả ngày"} • {e.location || eventTypeMeta(e.type).label}</p>
+                           </div>
+                         </div>
+                       )) : <div className="h-8 flex items-center border-b border-dashed border-slate-200 dark:border-slate-800"></div>}
+                     </div>
+                   </div>
+                 )
+               })}
+            </div>
+          </div>
+        )}
+
+        {mobileTab === "day" && (
+          <div className="flex flex-col flex-1 h-full bg-white dark:bg-slate-950">
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-[52px]">
+              <h2 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                {formatDateVN(selectedDate)}
+                <button onClick={goToday} className="flex size-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 active:scale-95" title="Hôm nay">
+                  <svg viewBox="0 0 24 24" className="size-3.5 stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><circle cx="12" cy="15" r="1" /></svg>
+                </button>
+              </h2>
+              <div className="flex items-center gap-2">
+                <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); pickDate(iso(d)); }} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                  <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" /></svg>
+                </button>
+                <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() + 1); pickDate(iso(d)); }} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                  <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+               {selectedEvents.length > 0 ? selectedEvents.map((e: any) => (
+                 <div key={e.id} onClick={() => openEventDetail(e)} className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3 relative overflow-hidden active:scale-[0.98] transition-transform">
+                   <div className="absolute left-0 top-0 bottom-0 w-2" style={{ backgroundColor: e.color || "#4f46e5" }} />
+                   <div className="flex-1 pl-3 min-w-0">
+                     <p className="text-[15px] font-bold text-slate-900 dark:text-white truncate">{e.title}</p>
+                     <p className="text-xs text-slate-500 mt-1 truncate">{e.time || "Cả ngày"} • {e.location || eventTypeMeta(e.type).label}</p>
+                   </div>
+                 </div>
+               )) : (
+                 <div className="py-12 flex flex-col items-center justify-center text-slate-400">
+                    <svg viewBox="0 0 24 24" className="size-16 stroke-current stroke-[1.5] fill-none mb-4 opacity-20"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+                    <p className="text-sm font-medium">{t ? t("noEvents") : "Không có sự kiện nào"}</p>
+                 </div>
+               )}
             </div>
           </div>
         )}
@@ -1503,45 +1593,8 @@ function MobileCalendarView({
               </div>
             )}
             <button onClick={() => setIsAddingList(true)} className="w-full mt-4 bg-transparent border border-dashed border-slate-300 dark:border-slate-700 p-4 rounded-xl text-sm font-bold text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
-              Thêm danh sách
+              {t ? t("addList") : "Thêm danh sách"}
             </button>
-          </div>
-        )}
-
-        {mobileTab === "share" && (
-          <div className="space-y-3 px-4 pt-4">
-            {members.map((member: any) => (
-              <div key={member.id} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3">
-                <div className="size-10 rounded-full bg-slate-100 flex items-center justify-center text-lg shadow-inner overflow-hidden">
-                  {member.avatar ? <img src={member.avatar} alt={member.name} className="size-full object-cover" /> : member.name.charAt(0)}
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">{member.name || member.nickname}</p>
-                  <p className="text-xs text-slate-500">{member.role === "admin" ? "Quản trị viên" : "Thành viên"}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {mobileTab === "agenda" && (
-          <div className="space-y-3 px-4 pt-4">
-            {agendaEvents.filter((e: any) => e.startDate >= iso(new Date())).length > 0 ? (
-              agendaEvents.filter((e: any) => e.startDate >= iso(new Date())).map((event: any) => (
-                <div key={event.id} onClick={() => openEventDetail(event)} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3 relative overflow-hidden active:scale-[0.98] transition-transform">
-                  <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: event.color || "#4f46e5" }} />
-                  <div className="flex-1 pl-2">
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">{event.title}</p>
-                    <p className="text-xs text-slate-500 mt-1">{event.startDate.split("-").reverse().join("/")} {event.time ? `• ${event.time}` : ""}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="py-10 flex flex-col items-center justify-center text-slate-400">
-                <svg viewBox="0 0 24 24" className="size-10 stroke-current stroke-[1.5] fill-none mb-3 opacity-30"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                <p className="text-sm font-medium">Chưa có sự kiện sắp tới.</p>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -1554,6 +1607,7 @@ function MobileCalendarView({
           saveCustomLists={saveCustomLists} 
           events={events}
           setEvents={setEvents}
+          t={t}
         />
       )}
       
@@ -1565,13 +1619,14 @@ function MobileCalendarView({
           openEventDetail={openEventDetail}
           openNewEvent={() => { setDetailList(null); openNewEvent(detailList); }}
           isCustom={customLists.some((c: any) => c.id === detailList.id)}
+          t={t}
         />
       )}
     </div>
   );
 }
 
-function AddEditListSheet({ list, close, customLists, saveCustomLists, events, setEvents }: any) {
+function AddEditListSheet({ list, close, customLists, saveCustomLists, events, setEvents, t }: any) {
   const [name, setName] = useState(list ? list.name : "");
   const [color, setColor] = useState(list ? list.color : "#4f46e5");
   const [error, setError] = useState("");
@@ -1610,7 +1665,7 @@ function AddEditListSheet({ list, close, customLists, saveCustomLists, events, s
     <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/45" onMouseDown={close}>
       <div onMouseDown={e => e.stopPropagation()} className="w-full bg-white dark:bg-slate-900 rounded-t-2xl p-5 pb-8 animate-in slide-in-from-bottom-full duration-300">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-bold">{list ? "Sửa danh sách" : "Thêm danh sách"}</h3>
+          <h3 className="text-lg font-bold">{list ? "Sửa danh sách" : (t ? t("addList") : "Thêm danh sách")}</h3>
           <button onClick={close} className="grid size-8 place-items-center rounded-full bg-slate-100 font-bold text-slate-500 hover:bg-slate-200">×</button>
         </div>
         
@@ -1649,7 +1704,7 @@ function AddEditListSheet({ list, close, customLists, saveCustomLists, events, s
   );
 }
 
-function ListDetailSheet({ list, close, events, openEventDetail, openNewEvent, isCustom }: any) {
+function ListDetailSheet({ list, close, events, openEventDetail, openNewEvent, isCustom, t }: any) {
   const listEvents = events.filter((e: any) => e.calendarId === list.id || e.type === list.id);
   
   return (
@@ -1692,7 +1747,7 @@ function ListDetailSheet({ list, close, events, openEventDetail, openNewEvent, i
             <svg viewBox="0 0 24 24" className="size-12 stroke-current stroke-[1.5] fill-none mb-4 opacity-30"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
             <p className="text-sm font-medium mb-4">Danh sách này chưa có sự kiện nào</p>
             <button onClick={openNewEvent} className="px-4 py-2 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 font-bold text-sm rounded-full active:scale-95 transition-transform">
-              {list.id === "birthday" ? "+ Thêm sinh nhật" : list.id === "holiday" ? "+ Thêm ngày lễ" : "+ Thêm sự kiện"}
+              {list.id === "birthday" ? "+ " + (t ? t("birthday") : "Sinh nhật") : list.id === "holiday" ? "+ " + (t ? t("holiday") : "Ngày lễ") : "+ " + (t ? t("addEvent") : "Thêm sự kiện")}
             </button>
           </div>
         )}

@@ -9,6 +9,7 @@ import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { MemberSimsPanel } from "@/components/member-sims-panel";
 import { useUI } from "@/components/ui-context";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
+import { requestNotificationPermission } from "@/lib/notifications";
 import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
 import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, CardReward, CardRewardType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberJob, MemberJobStatus, MemberSim, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
@@ -508,40 +509,83 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
           <span className="text-slate-400">›</span>
         </button>
         <button onClick={() => setSettingsOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5">
-          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg"><SettingsIcon /></span>Cài đặt (Ngôn ngữ, Giao diện)</span>
+          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg"><SettingsIcon /></span>Cài đặt</span>
           <span className="text-slate-400">›</span>
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[var(--app-card)] mb-6">
-        <button onClick={() => setLogoutConfirmOpen(true)} className="flex w-full items-center justify-center px-4 py-4 text-center active:bg-rose-50 dark:active:bg-rose-500/10">
-          <span className="text-sm font-bold text-rose-500">Đăng xuất</span>
-        </button>
-      </div>
     </div>
 
-    {settingsOpen && <Sheet close={() => setSettingsOpen(false)}>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold">Cài đặt</h2>
-        <button onClick={() => setSettingsOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
-      </div>
-      <div className="space-y-4">
-        <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
-          {language && setLanguage && t && (
-            <button onClick={() => setLanguageSheetOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
-              <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500">🌐</span>Ngôn ngữ</span>
-              <div className="flex items-center gap-2"><span className="text-sm text-slate-500">{language === "vi" ? "Tiếng Việt" : language === "en" ? "English" : "日本語"}</span><span className="text-slate-400">›</span></div>
+    {settingsOpen && (
+      <div className="fixed inset-0 z-50 flex flex-col md:items-center md:justify-center bg-[#f8fafc] dark:bg-[var(--app-bg)] md:bg-black/45 md:p-4 animate-in fade-in duration-200">
+        <div className="w-full h-full md:h-auto md:max-w-md md:max-h-[85vh] flex flex-col md:overflow-hidden md:rounded-2xl bg-[#f8fafc] dark:bg-[var(--app-bg)] md:bg-white md:dark:bg-slate-900 md:shadow-2xl animate-in slide-in-from-bottom-8 md:slide-in-from-bottom-4 duration-300 relative">
+          <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-[var(--app-card)] border-b border-slate-200 dark:border-white/10 sticky top-0 z-20 shadow-sm">
+            <button onClick={() => setSettingsOpen(false)} className="text-slate-500">
+              <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             </button>
-          )}
-          {theme && setTheme && t && (
-            <button onClick={() => setThemeSheetOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5">
-              <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500"><ThemeIcon dark={theme==="dark"} /></span>Giao diện</span>
-              <div className="flex items-center gap-2"><span className="text-sm text-slate-500">{theme === "light" ? "Sáng" : theme === "dark" ? "Tối" : "Theo hệ thống"}</span><span className="text-slate-400">›</span></div>
-            </button>
-          )}
+            <h2 className="text-lg font-bold text-slate-800 dark:text-white">Cài đặt</h2>
+          </div>
+          <div className="hidden md:flex items-center justify-between p-5 pb-0">
+            <h2 className="text-lg font-bold text-slate-800 dark:text-white">Cài đặt</h2>
+            <button onClick={() => setSettingsOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-6">
+            <div>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 md:px-0">Ngôn ngữ</h3>
+              <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10">
+                {[{ id: 'vi', label: 'Tiếng Việt' }, { id: 'en', label: 'English' }, { id: 'ja', label: '日本語' }].map(item => (
+                  <button key={item.id} onClick={() => setLanguage && setLanguage(item.id as Language)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5 last:border-0">
+                    <span className={`text-sm font-medium ${language === item.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}`}>{item.label}</span>
+                    {language === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 md:px-0">Giao diện</h3>
+              <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10">
+                {[{ id: 'light', label: 'Sáng' }, { id: 'dark', label: 'Tối' }].map(item => (
+                  <button key={item.id} onClick={() => setTheme && setTheme(item.id as "light" | "dark")} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5 last:border-0">
+                    <span className={`text-sm font-medium ${theme === item.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}`}>{item.label}</span>
+                    {theme === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 md:px-0">Thông báo thiết bị</h3>
+              <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10 p-4">
+                <p className="text-xs text-slate-500 mb-3 leading-relaxed">Nhận thông báo push khi có sự kiện mới hoặc sắp tới. Yêu cầu trình duyệt hỗ trợ.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => {
+                    requestNotificationPermission().then(res => {
+                      if (res) {
+                        alert('Đã cấp quyền thông báo thành công!');
+                        window.location.reload();
+                      } else {
+                        alert('Không thể đăng ký thông báo hoặc bạn đã từ chối.');
+                      }
+                    });
+                  }} className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition">Bật thông báo</button>
+                  <button onClick={() => {
+                    fetch('/api/push/send-test', { method: 'POST' })
+                      .then(res => res.json())
+                      .then(data => alert(data.success ? 'Đã gửi thông báo thử nghiệm' : 'Lỗi: ' + data.error))
+                      .catch(() => alert('Lỗi khi gửi test'));
+                  }} className="px-3 py-2 bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-200 dark:hover:bg-white/20 transition">Gửi thử</button>
+                </div>
+              </div>
+            </div>
+            <div className="pt-2">
+              <button onClick={() => setLogoutConfirmOpen(true)} className="flex w-full items-center justify-center px-4 py-4 rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10 active:bg-rose-50 dark:active:bg-rose-500/10">
+                <span className="text-sm font-bold text-rose-500">Đăng xuất</span>
+              </button>
+            </div>
+            <div className="h-20 md:hidden" />
+          </div>
         </div>
       </div>
-    </Sheet>}
+    )}
 
     {profileEditorOpen && <ProfileSheet user={profileUser} close={() => setProfileEditorOpen(false)} saved={syncProfile} refreshCurrentUser={refreshCurrentUser} profileSaved={(profile, nextMember) => syncProfile(profile, nextMember)} />}
     
@@ -569,39 +613,7 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
       </div>
     )}
 
-    {languageSheetOpen && setLanguage && (
-      <Sheet close={() => setLanguageSheetOpen(false)}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold">Ngôn ngữ</h2>
-          <button onClick={() => setLanguageSheetOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
-        </div>
-        <div className="space-y-2">
-          {[{ id: "vi", label: "Tiếng Việt" }, { id: "en", label: "English" }, { id: "ja", label: "日本語" }].map(item => (
-            <button key={item.id} onClick={() => { setLanguage(item.id as Language); setLanguageSheetOpen(false); }} className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/5">
-              <span className={`text-sm font-medium ${language === item.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}>{item.label}</span>
-              {language === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
-            </button>
-          ))}
-        </div>
-      </Sheet>
-    )}
 
-    {themeSheetOpen && setTheme && (
-      <Sheet close={() => setThemeSheetOpen(false)}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold">Giao diện</h2>
-          <button onClick={() => setThemeSheetOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
-        </div>
-        <div className="space-y-2">
-          {[{ id: "system", label: "Theo hệ thống" }, { id: "light", label: "Sáng" }, { id: "dark", label: "Tối" }].map(item => (
-            <button key={item.id} onClick={() => { setTheme(item.id as "light" | "dark" | "system"); setThemeSheetOpen(false); }} className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/5">
-              <span className={`text-sm font-medium ${theme === item.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}>{item.label}</span>
-              {theme === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
-            </button>
-          ))}
-        </div>
-      </Sheet>
-    )}
   </div>;
 }
 

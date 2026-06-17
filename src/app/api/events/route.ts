@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { createSystemNotification } from "@/lib/server-notifications";
 
 const fields = `
   e.id,
@@ -252,98 +253,27 @@ async function save(request: NextRequest, update: boolean) {
     }
 
     if (!update) {
-       const calendarRow = await pool.query("SELECT name FROM calendars WHERE id=$1", [body.calendarId]);
-       const calendarName = calendarRow.rows[0]?.name || "Lịch";
-       let relatedMembers = "";
-       if (body.memberIds && body.memberIds.length > 0) {
-          const membersRow = await pool.query("SELECT name FROM members WHERE id = ANY($1)", [body.memberIds]);
-          relatedMembers = membersRow.rows.map(r => r.name).filter(Boolean).join(", ");
-       }
-       const creatorName = actor.displayName || "Family Hub";
-       
-       const title = `${creatorName} đã tạo sự kiện mới`;
-       const message = `Sự kiện: ${body.title.trim()}\nThời gian: ${body.startDate} ${startTime || ""}\nLịch: ${calendarName}\nNgười liên quan: ${relatedMembers}\nGhi chú: ${body.note || ""}`;
-       
-       const metadata = JSON.stringify({
-         eventId,
-         eventTitle: body.title.trim(),
-         eventDate: body.startDate,
-         startTime: startTime || "",
-         endTime: endTime || "",
-         calendarName,
-         eventType: type,
-         creatorName,
-         relatedMembers,
-         visibility
+       const title = `${actor.displayName || "Family Hub"} đã tạo sự kiện mới`;
+       const message = `Sự kiện: ${body.title.trim()}`;
+       await createSystemNotification({
+         title,
+         message,
+         createdByName: actor.displayName || "Family Hub",
+         userId: actor.id,
+         sourceType: "event",
+         sourceId: eventId
        });
-
-       const existing = await pool.query("SELECT id FROM notifications WHERE source_type='event' AND source_id=$1 AND title=$2", [eventId, title]);
-       
-       if (existing.rowCount === 0) {
-         let visibleUserIds: string[] = [];
-         
-         if (visibility === "private") {
-           visibleUserIds = [actor.id];
-         } else if (visibility === "custom" && body.allowedMemberIds && body.allowedMemberIds.length > 0) {
-           const usersRow = await pool.query("SELECT id FROM users WHERE member_id = ANY($1)", [body.allowedMemberIds]);
-           visibleUserIds = usersRow.rows.map(r => String(r.id));
-           if (!visibleUserIds.includes(actor.id)) visibleUserIds.push(actor.id);
-         } else {
-           const usersRow = await pool.query("SELECT id FROM users");
-           visibleUserIds = usersRow.rows.map(r => String(r.id));
-         }
-         
-         await pool.query(
-           `INSERT INTO notifications (title, message, created_by_name, source_type, source_id, metadata, visible_user_ids)
-            VALUES ($1, $2, $3, 'event', $4, $5, $6::jsonb)`,
-           [title, message, creatorName, eventId, metadata, JSON.stringify(visibleUserIds)]
-         );
-
-         // --- SEND WEB PUSH ---
-         try {
-           const { setupWebPush } = await import("@/lib/webpush");
-           const webpush = (await import("web-push")).default;
-           await setupWebPush();
-
-           // Get subscriptions for all visible users EXCEPT the actor who created it
-           const subscriptionsResult = await pool.query(
-             `SELECT endpoint, p256dh, auth FROM push_subscriptions 
-              WHERE user_id = ANY($1) AND user_id != $2`,
-             [visibleUserIds, actor.id]
-           );
-
-           if (subscriptionsResult.rowCount && subscriptionsResult.rowCount > 0) {
-             const payload = JSON.stringify({
-               title: title,
-               body: `${body.title.trim()} • ${body.startDate} ${startTime || ""}`,
-               data: {
-                 url: "/?screen=notifications",
-                 sourceType: "event",
-                 sourceId: eventId
-               }
-             });
-
-             const pushPromises = subscriptionsResult.rows.map(sub => 
-               webpush.sendNotification({
-                 endpoint: sub.endpoint,
-                 keys: { p256dh: sub.p256dh, auth: sub.auth }
-               }, payload).catch(err => {
-                 if (err.statusCode === 404 || err.statusCode === 410) {
-                   // Subscription has expired or is no longer valid, we should delete it
-                   return pool.query("DELETE FROM push_subscriptions WHERE endpoint = $1", [sub.endpoint]);
-                 }
-                 console.error("Failed to send push notification:", err);
-               })
-             );
-             
-             // Fire and forget, don't wait for all pushes to finish to avoid blocking the API
-             Promise.all(pushPromises).catch(e => console.error("Push Promise.all error:", e));
-           }
-         } catch (pushError) {
-           console.error("Web Push integration error:", pushError);
-           // Do not fail the event creation
-         }
-       }
+    } else {
+       const title = `${actor.displayName || "Family Hub"} đã cập nhật sự kiện`;
+       const message = `Sự kiện: ${body.title.trim()}`;
+       await createSystemNotification({
+         title,
+         message,
+         createdByName: actor.displayName || "Family Hub",
+         userId: actor.id,
+         sourceType: "event",
+         sourceId: eventId
+       });
     }
 
     return NextResponse.json({ ok: true, data: { id: String(eventId) } }, { status: update ? 200 : 201 });
@@ -362,7 +292,22 @@ export async function DELETE(request: NextRequest) {
     await ensureEventSchema();
     const id = request.nextUrl.searchParams.get("id") || "";
     if (!id || !await canEditEvent(actor.id, actor.role, id)) return NextResponse.json({ ok: false, error: "Không có quyền xóa sự kiện." }, { status: 403 });
+    
+    // fetch title for notification before delete
+    const eventRow = await pool.query("SELECT title FROM events WHERE id=$1", [id]);
+    const eventTitle = eventRow.rows[0]?.title || "Sự kiện";
+
     await pool.query("DELETE FROM events WHERE id=$1", [id]);
+
+    await createSystemNotification({
+      title: `${actor.displayName || "Family Hub"} đã xóa sự kiện`,
+      message: `Sự kiện: ${eventTitle}`,
+      createdByName: actor.displayName || "Family Hub",
+      userId: actor.id,
+      sourceType: "event",
+      sourceId: id
+    });
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[DELETE /api/events]", error);
