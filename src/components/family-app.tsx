@@ -373,7 +373,7 @@ function AccountMenu({ user, openProfile, openSettings, logout }: { user: AuthUs
     </div>;
 }
 
-function ProfilePage({ user, member, data, update, openChangePassword, logout, savedUser, refreshCurrentUser, language, setLanguage, theme, setTheme, t }: { user: AuthUser; member?: Member; data: AppData; update: (data: AppData) => void; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void; refreshCurrentUser: () => Promise<AuthUser | null>; language?: string; setLanguage?: (l: string) => void; theme?: "light" | "dark" | "system"; setTheme?: (t: "light" | "dark" | "system") => void; t?: any }) {
+function ProfilePage({ user, member, data, update, openChangePassword, logout, savedUser, refreshCurrentUser, language, setLanguage, theme, setTheme, t }: { user: AuthUser; member?: Member; data: AppData; update: (data: AppData) => void; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void; refreshCurrentUser: () => Promise<AuthUser | null>; language?: Language; setLanguage?: React.Dispatch<React.SetStateAction<Language>>; theme?: "light" | "dark" | "system"; setTheme?: React.Dispatch<React.SetStateAction<"light" | "dark" | "system">>; t?: any }) {
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
@@ -570,7 +570,7 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
         </div>
         <div className="space-y-2">
           {[{ id: "vi", label: "Tiếng Việt" }, { id: "en", label: "English" }, { id: "ja", label: "日本語" }].map(item => (
-            <button key={item.id} onClick={() => { setLanguage(item.id); setLanguageSheetOpen(false); }} className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/5">
+            <button key={item.id} onClick={() => { setLanguage(item.id as Language); setLanguageSheetOpen(false); }} className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/5">
               <span className={`text-sm font-medium ${language === item.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}>{item.label}</span>
               {language === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
             </button>
