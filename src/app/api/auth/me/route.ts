@@ -6,7 +6,7 @@ import { ensureMemberAvatarUrlColumn, memberProfileFields, toMemberProfile } fro
 export async function GET() {
   try {
     const user = await getSessionUser();
-    if (!user) return NextResponse.json({ ok: false, user: null }, { status: 401 });
+    if (!user) return NextResponse.json({ ok: false, error: "Unauthorized", user: null }, { status: 401 });
     const accountResult = await pool.query("SELECT email, display_name, avatar FROM users WHERE id = $1", [user.id]);
     const account = accountResult.rows[0];
     if (user.memberId) await ensureMemberAvatarUrlColumn();

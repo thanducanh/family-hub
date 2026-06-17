@@ -29,7 +29,7 @@ async function linkedMemberId(userId: string) {
 
 export async function GET(request: NextRequest) {
   const actor = await getSessionUser();
-  if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+  if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   await ensureMemberAvatarUrlColumn();
   
   const id = new URL(request.url).searchParams.get("id");
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const actor = await getSessionUser();
-    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+    if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     await ensureMemberAvatarUrlColumn();
     if (actor.role === "self_only") return NextResponse.json({ ok: false, error: "Không có quyền thêm thành viên." }, { status: 403 });
     const item = await request.json() as Record<string, unknown>;
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const actor = await getSessionUser();
-    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+    if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     await ensureMemberAvatarUrlColumn();
     const item = await request.json() as Record<string, unknown>;
     const normalized: Record<string, unknown> = { ...item, birthday: item.birthDate || item.birthday, notes: item.note || item.notes };
@@ -117,7 +117,7 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const actor = await getSessionUser();
-    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+    if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     if (actor.role === "self_only") return NextResponse.json({ ok: false, error: "Không có quyền xóa thành viên." }, { status: 403 });
     const id = new URL(request.url).searchParams.get("id");
     if (!id) return NextResponse.json({ ok: false, error: "Thiếu id." }, { status: 400 });

@@ -36,7 +36,10 @@ export default function DashboardScreen() {
       const [financeRes, eventsRes, notifRes] = await Promise.all([
         api.get(`/api/finance-overview?year=${year}`),
         api.get(`/api/events?month=${month}&year=${year}`),
-        api.get('/api/notifications')
+        api.get('/api/notifications').catch(err => {
+          console.warn('[notifications]', err?.message || String(err));
+          return { notifications: [] };
+        })
       ]);
 
       const fData = financeRes.data || {};
@@ -46,7 +49,8 @@ export default function DashboardScreen() {
       const balanceYear = totalIncomeYear - totalExpenseYear;
       
       const todayEventsCount = (eventsRes.data || []).filter((e: any) => e.startDate === todayStr).length;
-      const newNotifsCount = (notifRes.data || []).filter((n: any) => !n.isRead).length;
+      const notifsArray = notifRes.notifications || notifRes.data || [];
+      const newNotifsCount = notifsArray.filter((n: any) => !n.isRead).length;
 
       setData({
         totalIncomeYear,

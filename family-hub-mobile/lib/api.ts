@@ -1,9 +1,6 @@
 import { Platform } from 'react-native';
 
-const LAN_IP = '192.168.1.104'; // Default fallback
-export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL ||
-  (Platform.OS === 'web' ? 'http://localhost:3000' : `http://${LAN_IP}:3000`);
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 
 export async function getToken() {
   try {
@@ -53,16 +50,35 @@ export async function removeToken() {
 
 export class ApiError extends Error {
   status: number;
+
   constructor(message: string, status: number) {
     super(message);
     this.status = status;
   }
 }
 
+type UnauthorizedCallback = () => void;
+let onUnauthorized: UnauthorizedCallback | null = null;
+
+export function setUnauthorizedCallback(cb: UnauthorizedCallback) {
+  onUnauthorized = cb;
+}
+
+function joinApiUrl(endpoint: string) {
+  if (!API_BASE_URL) {
+    throw new ApiError('Missing EXPO_PUBLIC_API_BASE_URL', 500);
+  }
+  if (endpoint.startsWith('http')) return endpoint;
+
+  const base = API_BASE_URL.replace(/\/+$/, '');
+  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  return `${base}${path}`;
+}
+
 async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
   const token = await getToken();
   const headers = new Headers(options.headers || {});
-  
+
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -70,49 +86,40 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
-  
+  const url = joinApiUrl(endpoint);
+
   try {
     const response = await fetch(url, { ...options, headers });
-    
+    const text = await response.text();
+    const contentType = response.headers.get('content-type') || '';
+    const trimmedText = text.trim().toLowerCase();
+
+    if (trimmedText.startsWith('<!doctype html>') || trimmedText.startsWith('<html') || contentType.includes('text/html')) {
+      throw new ApiError(`API trả về HTML: ${url} status ${response.status}`, response.status);
+    }
+
     if (response.status === 401) {
       await removeToken();
-      throw new ApiError('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.', 401);
+      if (onUnauthorized) onUnauthorized();
     }
-    
+
     let data;
-    const text = await response.text();
     try {
       data = text ? JSON.parse(text) : {};
-    } catch (e) {
-      if (__DEV__) {
-        throw new ApiError(`Lỗi parse JSON: ${text.substring(0, 100)}`, response.status);
-      } else {
-        throw new ApiError('Lỗi định dạng dữ liệu từ máy chủ.', response.status);
-      }
+    } catch {
+      throw new ApiError(`API returned non-JSON: ${url} status ${response.status}`, response.status);
     }
 
     if (!response.ok || data.ok === false) {
-      throw new ApiError(data.error || data.message || `Lỗi máy chủ (${response.status})`, response.status);
+      throw new ApiError(data.error || data.message || `Server error (${response.status})`, response.status);
     }
-    
+
     return data;
   } catch (error: any) {
     if (error instanceof ApiError) throw error;
-    
-    // TypeError usually means network error, DNS, or CORS blocked it entirely before returning status
-    if (error instanceof TypeError && error.message.toLowerCase().includes('network')) {
-      throw new ApiError(
-        `Không kết nối được API hoặc bị CORS chặn:\n${options.method || 'GET'} ${url}\n\nHãy kiểm tra Web App (Next.js) đã chạy ở port 3000 chưa.`, 
-        500
-      );
-    }
-    
-    console.error(`[API Error] ${endpoint}:`, error);
-    throw new ApiError(
-      `Lỗi kết nối:\n${options.method || 'GET'} ${url}\nLỗi: ${error.message || error}`, 
-      500
-    );
+
+    const message = error?.message || String(error);
+    throw new ApiError(`API request failed: ${options.method || 'GET'} ${url}. ${message}`, 500);
   }
 }
 

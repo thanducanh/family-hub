@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getToken, removeToken, setToken as setApiToken, api } from '../lib/api';
+import { getToken, removeToken, setToken as setApiToken, api, setUnauthorizedCallback } from '../lib/api';
 
 interface AuthContextType {
   token: string | null;
@@ -49,6 +49,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    setUnauthorizedCallback(() => {
+      setToken(null);
+      setUser(null);
+    });
+
     // Check token on mount
     getToken()
       .then(async (storedToken) => {

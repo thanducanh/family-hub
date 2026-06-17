@@ -142,7 +142,7 @@ export default function ProfileScreen() {
   const fetchNotifications = async () => {
     try {
       const response = await api.get('/api/notifications');
-      setNotifications(response.data || []);
+      setNotifications(response.notifications || response.data || []);
     } catch (err) {
       console.error('Failed to load notifications:', err);
     } finally {

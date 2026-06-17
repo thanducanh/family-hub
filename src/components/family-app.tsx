@@ -294,6 +294,8 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   }
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
+    localStorage.clear();
+    sessionStorage.clear();
     setAccountMenuOpen(false);
     setUser(null);
     setData(null);
@@ -313,7 +315,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
 
   const currentMember = data.members.find(member => member.id === user.memberId) || user.member;
   const headerUser = user.member ? user : currentMember ? { ...user, member: currentMember } : user;
-  const content = children ? <>{children}</> : profilePageOpen ? <ProfilePage user={headerUser} member={currentMember} data={data} update={update} openChangePassword={() => setChangePasswordOpen(true)} logout={logout} savedUser={setUser} refreshCurrentUser={refreshCurrentUser} /> :
+  const content = children ? <>{children}</> : profilePageOpen ? <ProfilePage user={headerUser} member={currentMember} data={data} update={update} openChangePassword={() => setChangePasswordOpen(true)} logout={logout} savedUser={setUser} refreshCurrentUser={refreshCurrentUser} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} t={t} /> :
     screen === "dashboard" ? <Dashboard data={data} go={go} notifications={notifications} user={user} /> :
     screen === "members" ? <Members data={data} user={user} update={update} /> :
     screen === "tasks" ? <Tasks data={data} update={update} open={setEditor} t={t} /> :
@@ -324,23 +326,24 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     screen === "notifications" ? <NotificationsView user={user} notifications={notifications} setNotifications={setNotifications} /> :
     <Settings user={user} onLogout={logout} openProfile={() => setProfilePageOpen(true)} openChangePassword={() => setChangePasswordOpen(true)} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} updateData={setData} t={t} />;
 
-  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${sidebarCollapsed ? "pl-[64px]" : "pl-[220px]"}`}>
+  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 pb-[100px] md:pb-0 ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
+    <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} t={t} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
-    <header className="sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-4 py-3 backdrop-blur md:px-6">
-      <div className={`mx-auto flex items-center gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
-        <label className="relative w-full max-w-md block"><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-11 w-full rounded-lg border border-[var(--app-border)] bg-transparent pl-10 pr-3 text-sm outline-none focus:border-indigo-400" /></label>
-        <div className="relative ml-auto flex items-center gap-2">
-          <button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="grid size-11 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5"><ThemeIcon dark={theme === "dark"} /></button>
-          <button aria-label="Thông báo" onClick={() => go("notifications")} className="relative grid size-11 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5"><BellIcon />{notifications.some(item => isCalendarNotificationUnread(item, user)) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => isCalendarNotificationUnread(item, user)).length}</span>}</button>
-          <button aria-label="Mở menu tài khoản" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(open => !open)} className="flex items-center gap-2 rounded-lg p-1 text-left hover:bg-slate-50 dark:hover:bg-white/5">
-            <span className="grid size-10 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm"><AccountAvatar user={headerUser} /></span><span className="max-w-32 truncate text-sm font-semibold block">{headerUser.displayName}</span><ChevronDownIcon />
+    <header className="sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3">
+      <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
+        <label className="relative w-full max-w-md block"><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
+        <div className="relative ml-auto flex items-center gap-1 md:gap-2">
+          <button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="hidden md:grid size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><ThemeIcon dark={theme === "dark"} /></button>
+          <button aria-label="Thông báo" onClick={() => go("notifications")} className="hidden md:grid relative size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><BellIcon />{notifications.some(item => isCalendarNotificationUnread(item, user)) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => isCalendarNotificationUnread(item, user)).length}</span>}</button>
+          <button aria-label="Mở menu tài khoản" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(open => !open)} className="hidden md:flex items-center gap-1 rounded-full p-1 text-left hover:bg-slate-50 dark:hover:bg-white/5 md:gap-2">
+            <span className="grid size-9 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm md:size-10"><AccountAvatar user={headerUser} /></span><span className="max-w-24 truncate text-sm font-medium hidden sm:block md:max-w-32">{headerUser.displayName}</span><span className="hidden sm:block"><ChevronDownIcon /></span>
           </button>
           {accountMenuOpen && <AccountMenu user={headerUser} openProfile={() => { setAccountMenuOpen(false); setProfilePageOpen(true); }} openSettings={() => { setAccountMenuOpen(false); setProfilePageOpen(false); setScreen("settings"); }} logout={logout} />}
         </div>
       </div>
     </header>
     <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
-    <section className={`mx-auto px-5 py-5 md:pb-8 ${screen === "calendar" ? "max-w-none md:px-4" : "max-w-[1600px] md:px-8"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className="mb-5 block"><h1 className="text-2xl font-bold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
+    <section className={`mx-auto ${profilePageOpen ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none px-2 md:px-4" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className={`mb-4 md:mb-5 ${profilePageOpen ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
     {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
@@ -370,56 +373,228 @@ function AccountMenu({ user, openProfile, openSettings, logout }: { user: AuthUs
     </div>;
 }
 
-function ProfilePage({ user, member, data, update, openChangePassword, logout, savedUser, refreshCurrentUser }: { user: AuthUser; member?: Member; data: AppData; update: (data: AppData) => void; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void; refreshCurrentUser: () => Promise<AuthUser | null> }) {
+function ProfilePage({ user, member, data, update, openChangePassword, logout, savedUser, refreshCurrentUser, language, setLanguage, theme, setTheme, t }: { user: AuthUser; member?: Member; data: AppData; update: (data: AppData) => void; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void; refreshCurrentUser: () => Promise<AuthUser | null>; language?: string; setLanguage?: (l: string) => void; theme?: "light" | "dark" | "system"; setTheme?: (t: "light" | "dark" | "system") => void; t?: any }) {
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
-  if (!member && user.role === "full_access") return <SystemAdminProfile user={user} openChangePassword={openChangePassword} logout={logout} savedUser={savedUser} refreshCurrentUser={refreshCurrentUser} />;
-  if (!member) return <Card className="p-6 text-sm text-slate-500">Tài khoản chưa được liên kết với hồ sơ thành viên. Quản trị viên có thể gán thành viên trong phần quản lý tài khoản.</Card>;
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
+  const [themeSheetOpen, setThemeSheetOpen] = useState(false);
+  const ui = useUI();
+
   const activeMember = member || user.member;
   const displayName = activeMember?.name || user.displayName || user.username;
-  const displayAvatar = activeMember?.avatar || user.avatar;
+  const displayAvatar = activeMember?.avatarUrl || activeMember?.avatar || user.avatar;
   const profileUser = { ...user, displayName, avatar: displayAvatar, member: activeMember };
-  const details = [
-    ["Họ tên", activeMember?.name || "Chưa cập nhật"],
-    ["Ngày sinh", formatBirthday(activeMember?.birthday || "")],
-    ["Giới tính", genderLabel(activeMember?.gender || "")],
-    ["Điện thoại", activeMember?.phone || "Chưa cập nhật"],
-    ["Email", (user as ManagedUser).email || "Chưa cập nhật"],
-    ["Vai trò", accessLabel(user.role)],
-    ["Trạng thái", "Đang hoạt động"],
-  ];
-  const actionClass = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5";
+
   const syncProfile = (nextUser: AuthUser, nextMember?: Member | null) => {
     const syncedMember = nextMember || nextUser.member;
     savedUser({ ...nextUser, member: syncedMember || nextUser.member });
     if (syncedMember) update({ ...data, members: data.members.map(item => item.id === syncedMember.id ? syncedMember : item) });
   };
-  return <div className="max-w-3xl space-y-5">
-    <Card className="overflow-visible p-0">
-      <div className="flex flex-col gap-5 border-b border-[var(--app-border)] p-6 sm:flex-row sm:items-start">
-        <AccountAvatar user={profileUser} size="size-24" />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold uppercase tracking-[.18em] text-indigo-500">Hồ sơ cá nhân</p>
-          <h2 className="mt-2 truncate text-2xl font-semibold">{displayName}</h2>
-          <p className="mt-1 text-sm text-slate-400">{user.username} · {accessLabel(user.role)}</p>
-        </div>
-        <div className="relative self-start">
-          <button type="button" onClick={() => setMoreOpen(open => !open)} className="grid size-10 place-items-center rounded-lg border border-[var(--app-border)] text-xl text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5" aria-label="Thao tác hồ sơ" aria-expanded={moreOpen}>⋮</button>
-          {moreOpen && <div className="absolute right-0 top-12 z-20 w-56 rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-2 shadow-xl">
-            <button type="button" onClick={() => { setMoreOpen(false); setProfileEditorOpen(true); }} className={actionClass}><UserIcon /> Chỉnh sửa hồ sơ</button>
-            <button type="button" onClick={() => { setMoreOpen(false); openChangePassword(); }} className={actionClass}><LockIcon /> Đổi mật khẩu</button>
-            <button type="button" onClick={() => { setMoreOpen(false); setActivityOpen(true); }} className={actionClass}><NotesIcon /> Nhật ký hoạt động</button>
-            <button type="button" onClick={logout} className={`${actionClass} text-rose-500`}><LogoutIcon /> Đăng xuất</button>
-          </div>}
-        </div>
+
+  async function compressImage(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = document.createElement("img");
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return reject("Canvas error");
+          
+          let { width, height } = img;
+          const max = 500;
+          if (width > max || height > max) {
+            if (width > height) { height = Math.round((height * max) / width); width = max; }
+            else { width = Math.round((width * max) / height); height = max; }
+          }
+          canvas.width = width; canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.8));
+        };
+        img.onerror = () => reject("Image load error");
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject("File read error");
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleAvatarChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return ui.toast("Vui lòng chọn file hình ảnh", "error");
+    
+    try {
+      ui.toast("Đang xử lý ảnh...", "success");
+      const base64 = await compressImage(file);
+      
+      const payload = {
+        avatar: base64, 
+        avatarUrl: base64, 
+        displayName: displayName || "Quản trị viên",
+        name: activeMember?.name || displayName || "Quản trị viên",
+        nickname: activeMember?.nickname || "",
+        phone: activeMember?.phone || "",
+        birthday: activeMember?.birthday || null,
+        gender: activeMember?.gender || "",
+        notes: activeMember?.notes || ""
+      };
+
+      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await readJsonSafe<{ user?: AuthUser; error?: string }>(response);
+      
+      if (response.ok && result?.user) {
+        savedUser(result.user);
+        await refreshCurrentUser();
+        ui.toast("Đã cập nhật ảnh đại diện", "success");
+      } else {
+        console.error("Avatar upload error:", result?.error);
+        ui.toast(result?.error || "Lỗi khi cập nhật ảnh đại diện", "error");
+      }
+    } catch (e) {
+      console.error(e);
+      ui.toast("Lỗi xử lý ảnh", "error");
+    }
+  }
+
+  async function handleAvatarDelete() {
+    if (!await ui.confirm("Xóa ảnh đại diện?", "Bạn có chắc chắn muốn xóa ảnh đại diện hiện tại?")) return;
+    const response = await fetch("/api/auth/avatar", { method: "DELETE" });
+    if (response.ok) {
+      savedUser({ ...user, avatar: "", member: activeMember ? { ...activeMember, avatar: "", avatarUrl: "" } : undefined });
+      await refreshCurrentUser();
+      ui.toast("Đã xóa ảnh đại diện", "success");
+    } else {
+      ui.toast("Lỗi khi xóa ảnh đại diện", "error");
+    }
+  }
+
+  return <div className="mx-auto max-w-md pb-8">
+    {/* Profile Card (Header) */}
+    <div className="flex flex-col items-center bg-white px-4 py-8 dark:bg-slate-900 md:rounded-b-3xl shadow-sm mb-3 md:mb-6">
+      <div className="relative mb-4">
+        <span className="grid size-28 overflow-hidden rounded-full bg-indigo-50 text-4xl font-bold text-indigo-500 shadow-md ring-4 ring-slate-50 dark:bg-indigo-500/20 dark:text-indigo-400 dark:ring-slate-800">
+          <AccountAvatar user={profileUser} size="size-full object-cover object-center" />
+        </span>
+        <label className="absolute bottom-0 right-0 grid size-8 cursor-pointer place-items-center rounded-full bg-slate-100 text-slate-700 shadow-sm ring-2 ring-white hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-900">
+          <svg viewBox="0 0 24 24" className="size-4 fill-none stroke-current stroke-2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+          <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+        </label>
+        {displayAvatar && <button onClick={handleAvatarDelete} className="absolute -left-1 top-0 grid size-7 cursor-pointer place-items-center rounded-full bg-slate-100 text-rose-500 shadow-sm ring-2 ring-white hover:bg-rose-50 dark:bg-slate-800 dark:ring-slate-900"><svg viewBox="0 0 24 24" className="size-4 fill-none stroke-current stroke-2"><path d="M18 6L6 18M6 6l12 12" /></svg></button>}
       </div>
-      <div className="grid gap-0 sm:grid-cols-2">
-        {details.map(([label, value]) => <div key={label} className="border-b border-[var(--app-border)] px-6 py-4 last:border-b-0 sm:odd:border-r"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>)}
+      <h2 className="text-xl font-bold text-slate-900 dark:text-white">{displayName}</h2>
+      <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">{accessLabel(user.role)}</p>
+    </div>
+
+    {/* Zalo-style Settings List */}
+    <div className="space-y-4 px-4">
+      {/* Group 1 */}
+      <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[var(--app-card)]">
+        <button onClick={() => setProfileEditorOpen(true)} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500"><UserIcon /></span>Thông tin cá nhân</span>
+          <span className="text-slate-400">›</span>
+        </button>
+        <button onClick={() => setActivityOpen(true)} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500"><NotesIcon /></span>Lịch sử hoạt động</span>
+          <span className="text-slate-400">›</span>
+        </button>
+        <button onClick={openChangePassword} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-slate-50 dark:active:bg-white/5">
+          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500"><LockIcon /></span>Đổi mật khẩu</span>
+          <span className="text-slate-400">›</span>
+        </button>
       </div>
-    </Card>
+
+      {/* Group 2 */}
+      <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[var(--app-card)]">
+        {language && setLanguage && t && (
+          <button onClick={() => setLanguageSheetOpen(true)} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+            <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500">🌐</span>Ngôn ngữ</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">{language === "vi" ? "Tiếng Việt" : language === "en" ? "English" : "日本語"}</span>
+              <span className="text-slate-400">›</span>
+            </div>
+          </button>
+        )}
+        {theme && setTheme && t && (
+          <button onClick={() => setThemeSheetOpen(true)} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-slate-50 dark:active:bg-white/5">
+            <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500"><ThemeIcon dark={theme==="dark"} /></span>Giao diện</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">{theme === "light" ? "Sáng" : theme === "dark" ? "Tối" : "Theo hệ thống"}</span>
+              <span className="text-slate-400">›</span>
+            </div>
+          </button>
+        )}
+      </div>
+
+      {/* Group 3: Logout */}
+      <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[var(--app-card)]">
+        <button onClick={() => setLogoutConfirmOpen(true)} className="flex w-full items-center justify-between px-5 py-4 text-left active:bg-rose-50 dark:active:bg-rose-500/10">
+          <span className="flex items-center gap-3 text-sm font-medium text-rose-500"><span className="text-rose-500"><LogoutIcon /></span>Đăng xuất</span>
+        </button>
+      </div>
+    </div>
+
     {profileEditorOpen && <ProfileSheet user={profileUser} close={() => setProfileEditorOpen(false)} saved={syncProfile} refreshCurrentUser={refreshCurrentUser} profileSaved={(profile, nextMember) => syncProfile(profile, nextMember)} />}
-    {activityOpen && <Sheet close={() => setActivityOpen(false)}><h2 className="text-lg font-bold">Nhật ký hoạt động</h2><div className="mt-5 space-y-3 text-sm text-slate-500"><div className="rounded-xl border border-[var(--app-border)] p-4"><b className="text-[var(--app-foreground)]">Hồ sơ đang hoạt động</b><p className="mt-1">Phiên hiện tại đã được đồng bộ với hồ sơ thành viên liên kết.</p></div><div className="rounded-xl border border-[var(--app-border)] p-4"><b className="text-[var(--app-foreground)]">Tài khoản đăng nhập</b><p className="mt-1">{user.username} · {accessLabel(user.role)}</p></div></div></Sheet>}
+    
+    {activityOpen && <Sheet close={() => setActivityOpen(false)}>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-bold">Nhật ký hoạt động</h2>
+        <button onClick={() => setActivityOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
+      </div>
+      <div className="space-y-3 text-sm text-slate-500">
+        <div className="rounded-xl border border-[var(--app-border)] p-4"><b className="text-[var(--app-foreground)]">Hồ sơ đang hoạt động</b><p className="mt-1">Phiên hiện tại đã được đồng bộ với hồ sơ thành viên liên kết.</p></div>
+        <div className="rounded-xl border border-[var(--app-border)] p-4"><b className="text-[var(--app-foreground)]">Tài khoản đăng nhập</b><p className="mt-1">{user.username} · {accessLabel(user.role)}</p></div>
+      </div>
+    </Sheet>}
+
+    {logoutConfirmOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onMouseDown={() => setLogoutConfirmOpen(false)}>
+        <div onMouseDown={e => e.stopPropagation()} className="w-full max-w-sm rounded-2xl bg-[var(--app-card)] p-6 shadow-2xl">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Đăng xuất</h3>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này?</p>
+          <div className="mt-6 flex justify-end gap-3">
+            <button onClick={() => setLogoutConfirmOpen(false)} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5">Hủy</button>
+            <button onClick={() => { setLogoutConfirmOpen(false); logout(); }} className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white hover:bg-rose-600">Đăng xuất</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {languageSheetOpen && setLanguage && (
+      <Sheet close={() => setLanguageSheetOpen(false)}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold">Ngôn ngữ</h2>
+          <button onClick={() => setLanguageSheetOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
+        </div>
+        <div className="space-y-2">
+          {[{ id: "vi", label: "Tiếng Việt" }, { id: "en", label: "English" }, { id: "ja", label: "日本語" }].map(item => (
+            <button key={item.id} onClick={() => { setLanguage(item.id); setLanguageSheetOpen(false); }} className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/5">
+              <span className={`text-sm font-medium ${language === item.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}>{item.label}</span>
+              {language === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+    )}
+
+    {themeSheetOpen && setTheme && (
+      <Sheet close={() => setThemeSheetOpen(false)}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold">Giao diện</h2>
+          <button onClick={() => setThemeSheetOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
+        </div>
+        <div className="space-y-2">
+          {[{ id: "system", label: "Theo hệ thống" }, { id: "light", label: "Sáng" }, { id: "dark", label: "Tối" }].map(item => (
+            <button key={item.id} onClick={() => { setTheme(item.id as "light" | "dark" | "system"); setThemeSheetOpen(false); }} className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/5">
+              <span className={`text-sm font-medium ${theme === item.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}>{item.label}</span>
+              {theme === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+    )}
   </div>;
 }
 
@@ -517,8 +692,8 @@ function ChangePasswordSheet({ close, saved }: { close: () => void; saved: (user
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
-  async function submit(event: React.FormEvent) {
-    event.preventDefault(); setError(""); setSuccess("");
+  async function submit(event?: React.FormEvent | React.MouseEvent) {
+    if (event) event.preventDefault(); setError(""); setSuccess("");
     if (newPassword.length < 6) return setError("Mật khẩu mới cần ít nhất 6 ký tự.");
     if (newPassword !== confirmPassword) return setError("Nhập lại mật khẩu mới chưa khớp.");
     if (newPassword === currentPassword) return setError("Mật khẩu mới không được trùng mật khẩu hiện tại.");
@@ -532,7 +707,22 @@ function ChangePasswordSheet({ close, saved }: { close: () => void; saved: (user
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể đổi mật khẩu."); }
     finally { setLoading(false); }
   }
-  return <Sheet close={close}><form onSubmit={submit}><h2 className="text-lg font-bold">Đổi mật khẩu</h2><p className="mt-1 text-sm text-slate-400">Mật khẩu mới cần ít nhất 6 ký tự.</p><div className="mt-5 space-y-4"><PasswordField label="Mật khẩu hiện tại" value={currentPassword} setValue={setCurrentPassword} autoComplete="current-password" /><PasswordField label="Mật khẩu mới" value={newPassword} setValue={setNewPassword} autoComplete="new-password" /><PasswordField label="Nhập lại mật khẩu mới" value={confirmPassword} setValue={setConfirmPassword} autoComplete="new-password" /></div>{error && <p className="mt-3 text-sm text-red-500">{error}</p>}{success && <p className="mt-3 text-sm font-bold text-emerald-500">{success}</p>}<div className="mt-6 flex gap-3"><button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Đóng</button><button disabled={loading} className="flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{loading ? "Đang lưu..." : "Đổi mật khẩu"}</button></div></form></Sheet>;
+  return <FullScreenMobileSheet title="Đổi mật khẩu" close={close} onSubmit={submit} loading={loading}>
+    <form onSubmit={submit} className="p-4 md:p-0">
+      <p className="mb-4 text-sm text-slate-400">Mật khẩu mới cần ít nhất 6 ký tự.</p>
+      <div className="space-y-4">
+        <PasswordField label="Mật khẩu hiện tại" value={currentPassword} setValue={setCurrentPassword} autoComplete="current-password" />
+        <PasswordField label="Mật khẩu mới" value={newPassword} setValue={setNewPassword} autoComplete="new-password" />
+        <PasswordField label="Nhập lại mật khẩu mới" value={confirmPassword} setValue={setConfirmPassword} autoComplete="new-password" />
+      </div>
+      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+      {success && <p className="mt-3 text-sm font-bold text-emerald-500">{success}</p>}
+      <div className="mt-6 hidden md:flex gap-3">
+        <button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Đóng</button>
+        <button disabled={loading} className="flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{loading ? "Đang lưu..." : "Đổi mật khẩu"}</button>
+      </div>
+    </form>
+  </FullScreenMobileSheet>;
 }
 
 export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentUser }: { user: AuthUser; close: () => void; saved: (user: AuthUser) => void; profileSaved?: (user: AuthUser, member?: Member | null) => void; refreshCurrentUser?: () => Promise<AuthUser | null> }) {
@@ -542,6 +732,7 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  const [genderSheetOpen, setGenderSheetOpen] = useState(false);
   const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   useEffect(() => { 
     void fetch("/api/auth/profile").then(async response => { 
@@ -558,8 +749,8 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
       });
     }
   }, [user.role]);
-  async function submit(event: React.FormEvent) {
-    event.preventDefault(); setLoading(true); setError(""); setSuccess("");
+  async function submit(event?: React.FormEvent | React.MouseEvent) {
+    if (event) event.preventDefault(); setLoading(true); setError(""); setSuccess("");
     try {
       const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
       const result = await readJsonSafe<{ error?: string; profile?: ProfileUser; user?: AuthUser }>(response);
@@ -574,7 +765,79 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể cập nhật hồ sơ."); }
     finally { setLoading(false); }
   }
-  return <Sheet close={close}><form onSubmit={submit}><h2 className="text-lg font-bold">Hồ sơ cá nhân</h2><div className="mt-5 flex items-center gap-3"><AccountAvatar user={{ avatar: form.avatar, displayName: form.displayName }} size="size-16" /><div><b>{form.displayName || user.username}</b><p className="text-xs text-slate-400">{profile?.username ?? user.username} · {accessLabel(profile?.role ?? user.role)}</p></div></div><div className="mt-5 space-y-4"><Field label="Username"><input disabled className={inputClass} value={profile?.username ?? user.username} readOnly /></Field>{profile?.memberId ? <><Field label="Họ tên"><input required className={inputClass} value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} /></Field><Field label="Biệt danh"><input className={inputClass} value={form.nickname} onChange={event => setForm(current => ({ ...current, nickname: event.target.value }))} /></Field><Field label="Email (Tài khoản)"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field><Field label="Số điện thoại"><input type="tel" className={inputClass} value={form.phone} onChange={event => setForm(current => ({ ...current, phone: event.target.value }))} /></Field><BirthdaySelect value={form.birthday} onChange={value => setForm(current => ({...current, birthday: value}))} /><Field label="Giới tính"><select className={inputClass} value={form.gender} onChange={event => setForm(current => ({ ...current, gender: event.target.value }))}><option value="">Chưa chọn</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select></Field><Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.notes} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} /></Field></> : <><Field label="Tên hiển thị"><input required className={inputClass} value={form.displayName} onChange={event => setForm(current => ({ ...current, displayName: event.target.value }))} /></Field><Field label="Email"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field><Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field>{user.role === "full_access" && <Field label="Liên kết thành viên"><select className={inputClass} value={form.memberId} onChange={event => setForm(current => ({ ...current, memberId: event.target.value }))}><option value="">Chưa liên kết</option>{members.map(member => <option key={member.id} value={member.id}>{member.nickname || member.name}</option>)}</select></Field>}</>}<Field label="Quyền hệ thống"><input disabled className={inputClass} value={accessLabel(profile?.role ?? user.role)} readOnly /></Field><Field label="Trạng thái"><input disabled className={inputClass} value={profile?.active === false ? "Đã tắt" : "Đang hoạt động"} readOnly /></Field>{profile?.createdAt && <Field label="Ngày tạo tài khoản"><input disabled className={inputClass} value={new Date(profile.createdAt).toLocaleString("vi-VN")} readOnly /></Field>}</div>{error && <p className="mt-3 text-sm text-red-500">{error}</p>}{success && <p className="mt-3 text-sm font-bold text-emerald-500">{success}</p>}<div className="mt-6 flex gap-3"><button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Đóng</button><button disabled={loading} className="flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{loading ? "Đang lưu..." : "Lưu hồ sơ"}</button></div></form></Sheet>;
+  return <FullScreenMobileSheet title="Thông tin cá nhân" close={close} onSubmit={submit} loading={loading}>
+    <form onSubmit={submit} className="p-4 md:p-0">
+      <div className="flex items-center gap-3">
+        <AccountAvatar user={{ avatar: form.avatar, displayName: form.displayName }} size="size-16" />
+        <div><b>{form.displayName || user.username}</b><p className="text-xs text-slate-400">{profile?.username ?? user.username} · {accessLabel(profile?.role ?? user.role)}</p></div>
+      </div>
+      <div className="mt-5 space-y-4">
+        <Field label="Username"><input disabled className={inputClass} value={profile?.username ?? user.username} readOnly /></Field>
+        {profile?.memberId ? <>
+          <Field label="Họ tên"><input required className={inputClass} value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} /></Field>
+          <Field label="Biệt danh"><input className={inputClass} value={form.nickname} onChange={event => setForm(current => ({ ...current, nickname: event.target.value }))} /></Field>
+          <Field label="Email (Tài khoản)"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field>
+          <Field label="Số điện thoại"><input type="tel" className={inputClass} value={form.phone} onChange={event => setForm(current => ({ ...current, phone: event.target.value }))} /></Field>
+          <BirthdaySelect value={form.birthday} onChange={value => setForm(current => ({...current, birthday: value}))} />
+          <Field label="Giới tính">
+            <button type="button" onClick={() => setGenderSheetOpen(true)} className={`${inputClass} flex items-center justify-between text-left`}>
+              <span>{form.gender === "male" ? "Nam" : form.gender === "female" ? "Nữ" : form.gender === "other" ? "Khác" : "Chưa chọn"}</span>
+              <span className="text-slate-400">›</span>
+            </button>
+          </Field>
+          <Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field>
+          <Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.notes} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} /></Field>
+        </> : <>
+          <Field label="Tên hiển thị"><input required className={inputClass} value={form.displayName} onChange={event => setForm(current => ({ ...current, displayName: event.target.value }))} /></Field>
+          <Field label="Email"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field>
+          <Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field>
+          {user.role === "full_access" && <Field label="Liên kết thành viên"><select className={inputClass} value={form.memberId} onChange={event => setForm(current => ({ ...current, memberId: event.target.value }))}><option value="">Chưa liên kết</option>{members.map(member => <option key={member.id} value={member.id}>{member.nickname || member.name}</option>)}</select></Field>}
+        </>}
+        <Field label="Quyền hệ thống"><input disabled className={inputClass} value={accessLabel(profile?.role ?? user.role)} readOnly /></Field>
+        <Field label="Trạng thái"><input disabled className={inputClass} value={profile?.active === false ? "Đã tắt" : "Đang hoạt động"} readOnly /></Field>
+        {profile?.createdAt && <Field label="Ngày tạo tài khoản"><input disabled className={inputClass} value={new Date(profile.createdAt).toLocaleString("vi-VN")} readOnly /></Field>}
+      </div>
+      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+      {success && <p className="mt-3 text-sm font-bold text-emerald-500">{success}</p>}
+      <div className="mt-6 hidden md:flex gap-3">
+        <button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Đóng</button>
+        <button disabled={loading} className="flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{loading ? "Đang lưu..." : "Lưu hồ sơ"}</button>
+      </div>
+    </form>
+    {genderSheetOpen && (
+      <Sheet close={() => setGenderSheetOpen(false)}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold">Giới tính</h2>
+          <button onClick={() => setGenderSheetOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
+        </div>
+        <div className="space-y-2">
+          {[{ id: "male", label: "Nam" }, { id: "female", label: "Nữ" }, { id: "other", label: "Khác" }].map(item => (
+            <button key={item.id} onClick={() => { setForm(current => ({ ...current, gender: item.id })); setGenderSheetOpen(false); }} className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/5">
+              <span className={`text-sm font-medium ${form.gender === item.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}>{item.label}</span>
+              {form.gender === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+    )}
+  </FullScreenMobileSheet>;
+}
+
+function FullScreenMobileSheet({ close, children, title, onSubmit, loading }: { close: () => void; children: React.ReactNode; title: string; onSubmit?: (e: React.FormEvent | React.MouseEvent) => void; loading?: boolean }) {
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 md:items-center md:p-6" onMouseDown={close}>
+    <div onMouseDown={e => e.stopPropagation()} className="flex h-[100dvh] md:h-auto w-full flex-col overflow-hidden bg-[var(--app-background)] md:max-h-[90vh] md:max-w-lg md:rounded-3xl">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--app-border)] bg-[var(--app-nav)] px-4">
+        <button type="button" onClick={close} className="grid size-8 place-items-center text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white">✕</button>
+        <h2 className="text-[17px] font-bold truncate px-2">{title}</h2>
+        {onSubmit ? (
+          <button onClick={onSubmit} disabled={loading} className="text-[15px] font-bold text-indigo-600 hover:text-indigo-700 disabled:opacity-50 dark:text-indigo-400 dark:hover:text-indigo-300">Lưu</button>
+        ) : <div className="size-8" />}
+      </div>
+      <div className="flex-1 overflow-y-auto bg-[var(--app-card)] md:p-0">
+        {children}
+      </div>
+    </div>
+  </div>;
 }
 
 function Sheet({ close, children }: { close: () => void; children: React.ReactNode }) {
@@ -935,16 +1198,59 @@ function LoadingSkeleton() {
   return <main className="min-h-screen animate-pulse bg-[var(--app-background)] px-5 py-6 text-[var(--app-foreground)] md:pl-72 md:pr-8"><div className="mx-auto max-w-7xl"><div className="h-4 w-28 rounded bg-rose-200 dark:bg-white/10" /><div className="mt-3 h-8 w-48 rounded bg-slate-200 dark:bg-white/10" /><div className="mt-8 grid gap-4 lg:grid-cols-[1.3fr_.7fr]"><div className="h-36 rounded-3xl bg-rose-200 dark:bg-white/10" /><div className="grid grid-cols-2 gap-3"><div className="rounded-3xl bg-slate-200 dark:bg-white/10" /><div className="rounded-3xl bg-slate-200 dark:bg-white/10" /></div></div><div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{Array.from({ length: 6 }, (_, index) => <div key={index} className="h-20 rounded-3xl bg-slate-200 dark:bg-white/10" />)}</div><div className="mt-6 grid gap-4 lg:grid-cols-2"><div className="h-48 rounded-3xl bg-slate-200 dark:bg-white/10" /><div className="h-48 rounded-3xl bg-slate-200 dark:bg-white/10" /></div></div></main>;
 }
 
-function Nav({ screen, go, t }: { screen: Screen; go: (s: Screen) => void; t: ReturnType<typeof translator> }) {
-  const items: Screen[] = ["dashboard", "members", "calendar", "finance", "notifications"];
-  return <nav className="fixed bottom-0 left-0 z-20 flex w-full justify-around border-t border-[var(--app-border)] bg-[var(--app-nav)] px-2 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 backdrop-blur md:hidden">
-    {items.map(item => <button key={item} onClick={() => go(item)} className={`min-w-14 rounded-xl px-1 py-1 text-center ${screen === item ? "text-rose-500" : "text-slate-400"}`}><span className="block text-xl">{icons[item]}</span><span className="text-[10px] font-bold">{t(titleKey[item])}</span></button>)}
-  </nav>;
+function MobileNav({ screen, profileOpen, go, openProfile, t }: { screen: Screen; profileOpen: boolean; go: (s: Screen) => void; openProfile: () => void; t: ReturnType<typeof translator> }) {
+  const navItemClass = "flex flex-1 flex-col items-center justify-center pt-2 pb-1 transition-colors";
+  const inactiveColor = "text-slate-400 dark:text-slate-500";
+  const activeColor = "text-[#4f46e5] dark:text-indigo-400";
+  
+  return (
+    <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-16 w-full items-center border-t border-[var(--app-border)] bg-[var(--app-nav)] pb-[max(8px,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.05)] backdrop-blur-lg md:hidden">
+      {/* Thành viên */}
+      <button onClick={() => go("members")} className={`${navItemClass} ${screen === "members" && !profileOpen ? activeColor : inactiveColor}`}>
+        <span className="mb-1 text-xl">{icons.members}</span>
+        <span className="text-[10px] font-medium leading-none">Thành viên</span>
+      </button>
+
+      {/* Lịch */}
+      <button onClick={() => go("calendar")} className={`${navItemClass} ${screen === "calendar" && !profileOpen ? activeColor : inactiveColor}`}>
+        <span className="mb-1 text-xl">{icons.calendar}</span>
+        <span className="text-[10px] font-medium leading-none">Lịch</span>
+      </button>
+
+      {/* Spacer for center button */}
+      <div className="flex-[0.8]" />
+
+      {/* Thu chi */}
+      <button onClick={() => go("finance")} className={`${navItemClass} ${screen === "finance" && !profileOpen ? activeColor : inactiveColor}`}>
+        <span className="mb-1 text-xl">{icons.finance}</span>
+        <span className="text-[10px] font-medium leading-none">Thu chi</span>
+      </button>
+
+      {/* Cá nhân */}
+      <button onClick={openProfile} className={`${navItemClass} ${profileOpen ? activeColor : inactiveColor}`}>
+        <span className="mb-1 text-xl"><UserIcon /></span>
+        <span className="text-[10px] font-medium leading-none">Cá nhân</span>
+      </button>
+
+      {/* Center Floating Button (Tổng quan) */}
+      <div className="pointer-events-none absolute left-1/2 top-0 flex flex-col items-center -translate-x-1/2 -translate-y-[35%]">
+        <button 
+          onClick={() => go("dashboard")}
+          className="pointer-events-auto flex size-[56px] items-center justify-center rounded-full bg-[#4f46e5] shadow-lg shadow-indigo-500/30 ring-4 ring-[var(--app-nav)] transition-transform active:scale-95"
+        >
+          <span className="text-white text-2xl"><HomeIcon /></span>
+        </button>
+        <span className={`mt-1 block text-center text-[10px] font-medium ${screen === "dashboard" && !profileOpen ? activeColor : inactiveColor}`}>
+          Tổng quan
+        </span>
+      </div>
+    </nav>
+  );
 }
 
 function Sidebar({ screen, go, t, collapsed, toggle }: { screen: Screen; go: (s: Screen) => void; t: ReturnType<typeof translator>; collapsed: boolean; toggle: () => void }) {
   const items: Screen[] = ["dashboard", "members", "calendar", "finance", "chat", "notes", "notifications", "settings"];
-  return <aside className={`fixed inset-y-0 left-0 z-40 flex flex-col border-r border-[var(--app-border)] bg-[var(--app-card)] py-4 transition-[width] duration-300 shadow-sm ${collapsed ? "w-[64px] px-2" : "w-[220px] px-4"}`}>
+  return <aside className={`fixed inset-y-0 left-0 z-40 hidden md:flex flex-col border-r border-[var(--app-border)] bg-[var(--app-card)] py-4 transition-[width] duration-300 shadow-sm ${collapsed ? "w-[64px] px-2" : "w-[220px] px-4"}`}>
     <div className={`flex min-h-12 items-center ${collapsed ? "justify-center" : "justify-between gap-3 px-2"}`}>
       {!collapsed && <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[.2em] text-indigo-500">Family Hub</p><p className="truncate pt-1 text-xl font-bold">My Family</p></div>}
       <button type="button" onClick={toggle} aria-label={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"} className="grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--app-border)] text-slate-600 transition hover:bg-[#EEF2FF] hover:text-[#4F46E5] dark:text-slate-200 dark:hover:bg-indigo-400/15 dark:hover:text-indigo-200"><MenuIcon /></button>
@@ -1034,8 +1340,8 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
 
   const unreadCount = notifications.filter(item => isCalendarNotificationUnread(item, user)).length;
 
-  return <div className="grid grid-cols-12 gap-6">
-    <div className="col-span-12 grid gap-6 grid-cols-3 lg:grid-cols-6">{metrics.map(([label, value, color, hint]) => <MetricCard key={label} label={label} value={value} color={color} hint={hint} />)}</div>
+  return <div className="grid grid-cols-12 gap-4 md:gap-6">
+    <div className="col-span-12 grid gap-4 md:gap-6 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">{metrics.map(([label, value, color, hint]) => <MetricCard key={label} label={label} value={value} color={color} hint={hint} />)}</div>
     
     <div className="col-span-12 lg:col-span-8 flex flex-col gap-6">
       <MonthlyChart data={monthly} />
@@ -1071,7 +1377,7 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
     </div>
   </div>;
 }
-function MetricCard({ label, value, color, hint }: { label: string; value: string; color: string; hint: string }) { return <Card className="p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p><p className={`mt-3 text-2xl font-bold ${color}`}>{value}</p></div><span className="grid size-10 place-items-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-400/10">●</span></div><p className="mt-4 text-xs text-slate-400">{hint}</p></Card>; }
+function MetricCard({ label, value, color, hint }: { label: string; value: string; color: string; hint: string }) { return <Card className="p-4 md:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs md:text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p><p className={`mt-2 md:mt-3 text-lg md:text-2xl font-bold ${color}`}>{value}</p></div><span className="grid size-8 md:size-10 place-items-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-400/10"><span className="scale-75 md:scale-100">●</span></span></div><p className="mt-3 md:mt-4 text-[10px] md:text-xs text-slate-400">{hint}</p></Card>; }
 function MonthlyChart({ data }: { data: { label: string; income: number; expense: number }[] }) {
   const max = Math.max(...data.flatMap(item => [item.income, item.expense]), 1);
   const hasData = data.some(item => item.income || item.expense);

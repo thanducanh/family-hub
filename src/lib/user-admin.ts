@@ -10,3 +10,16 @@ export function toPublicUser(row: Record<string, unknown>): PublicUser {
 export function canManage(actor: SessionUser, targetRole: UserRole) {
   return actor.role === "full_access" && (targetRole === "full_access" || targetRole === "self_only");
 }
+
+let userAvatarUrlChecked = false;
+export async function ensureUserAvatarUrlColumn() {
+  if (userAvatarUrlChecked) return;
+  try {
+    const { pool } = await import("@/lib/db");
+    await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT ''");
+    userAvatarUrlChecked = true;
+  } catch (error) {
+    console.error("[ensureUserAvatarUrlColumn]", error);
+  }
+}
+

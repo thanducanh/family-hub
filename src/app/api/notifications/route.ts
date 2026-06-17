@@ -6,7 +6,7 @@ import crypto from "crypto";
 export async function GET() {
   try {
     const actor = await getSessionUser();
-    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập." }, { status: 401 });
+    if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
     let query = `
       SELECT id, title, message, created_by_name as "createdByName", created_at as "createdAt",
@@ -68,7 +68,7 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ ok: true, data });
+    return NextResponse.json({ ok: true, notifications: data });
   } catch (error) {
     console.error("[GET /api/notifications]", error);
     return NextResponse.json({ ok: false, error: "Không thể tải thông báo." }, { status: 500 });
@@ -78,7 +78,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const actor = await getSessionUser();
-    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập." }, { status: 401 });
+    if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
     const body = await request.json();
     const { id, title, message, createdByName, userId, visibleUserIds } = body;
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const actor = await getSessionUser();
-    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập." }, { status: 401 });
+    if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
     const { id } = await request.json().catch(() => ({ id: null }));
 

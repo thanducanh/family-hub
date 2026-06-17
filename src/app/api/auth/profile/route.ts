@@ -2,16 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, refreshedSessionCookie, type SessionUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { durableAvatarValue, ensureMemberAvatarUrlColumn, memberProfileFields, toMemberProfile, type MemberProfile } from "@/lib/member-profile";
-import { toPublicUser, type PublicUser } from "@/lib/user-admin";
+import { toPublicUser, ensureUserAvatarUrlColumn, type PublicUser } from "@/lib/user-admin";
 
 const select = "id, username, email, display_name, avatar, role, active, must_change_password, is_system, member_id, created_at, updated_at";
-type ProfileBody = Partial<MemberProfile> & { displayName?: string; email?: string; memberId?: string };
+type ProfileBody = Partial<MemberProfile> & { displayName?: string; email?: string; memberId?: string; avatarUrl?: string };
 type ProfileUser = PublicUser & { member?: MemberProfile };
 
 async function loadProfile(userId: string): Promise<ProfileUser | null> {
-  const result = await pool.query(`SELECT ${select} FROM users WHERE id = $1`, [userId]);
+  let result = await pool.query(`SELECT ${select} FROM users WHERE id = $1`, [userId]);
   if (!result.rows[0]) return null;
   const profile: ProfileUser = toPublicUser(result.rows[0]);
+  
+  // Also try to read avatar_url safely
+  try {
+    const avResult = await pool.query("SELECT avatar_url FROM users WHERE id = $1", [userId]);
+    if (avResult.rows[0]?.avatar_url) profile.avatar = avResult.rows[0].avatar_url;
+  } catch (e) {
+    // Column might not exist yet, ignore
+  }
+
   if (!profile.memberId) return profile;
   await ensureMemberAvatarUrlColumn();
   const memberResult = await pool.query(`SELECT ${memberProfileFields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [profile.memberId]);
@@ -62,7 +71,11 @@ export async function PUT(request: NextRequest) {
       await pool.query("UPDATE users SET email=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.email?.trim() || null]);
     } else {
       if (!body.displayName?.trim()) return NextResponse.json({ ok: false, error: "Tên hiển thị không được để trống." }, { status: 400 });
-      await pool.query("UPDATE users SET display_name=$2,email=$3,avatar=$4,updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.displayName.trim(), body.email?.trim() || null, body.avatar?.trim() || ""]);
+      await ensureUserAvatarUrlColumn();
+      const current = await pool.query("SELECT avatar, avatar_url FROM users WHERE id=$1", [session.id]);
+      const currentAvatar = current.rows[0]?.avatar_url || current.rows[0]?.avatar || "";
+      const avatar = durableAvatarValue(body.avatarUrl ?? body.avatar, currentAvatar);
+      await pool.query("UPDATE users SET display_name=$2,email=$3,avatar=$4,avatar_url=$5,updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.displayName.trim(), body.email?.trim() || null, avatar, avatar]);
     }
     const profile = await loadProfile(session.id);
     if (!profile) return NextResponse.json({ ok: false, error: "Không tìm thấy tài khoản." }, { status: 404 });

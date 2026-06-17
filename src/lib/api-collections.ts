@@ -271,14 +271,14 @@ export function collectionHandlers(collection: Collection) {
   const fields = columns[collection];
   return {
     GET: async () => {
-      if (!await requireSession()) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+      if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
       await ensureCollectionSchema(collection);
       const selectFields = collection === "transactions" ? [...fields, "created_at"] : fields;
       const result = await pool.query(`SELECT ${selectFields.join(", ")} FROM ${collection} ORDER BY id`);
       return NextResponse.json(result.rows.map(row => fromDb(collection, row)));
     },
     POST: async (request: NextRequest) => {
-      if (!await requireSession()) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+      if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
       await ensureCollectionSchema(collection);
       const item = toDb(collection, await request.json());
       const values = fields.map(field => item[field] ?? null);
@@ -295,7 +295,7 @@ export function collectionHandlers(collection: Collection) {
       return NextResponse.json(fromDb(collection, result.rows[0]), { status: 201 });
     },
     PUT: async (request: NextRequest) => {
-      if (!await requireSession()) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+      if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
       await ensureCollectionSchema(collection);
       const item = toDb(collection, await request.json());
       const values = fields.map(field => item[field] ?? null);
@@ -312,7 +312,7 @@ export function collectionHandlers(collection: Collection) {
       return NextResponse.json(fromDb(collection, result.rows[0]));
     },
     DELETE: async (request: NextRequest) => {
-      if (!await requireSession()) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+      if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
       const id = new URL(request.url).searchParams.get("id");
       if (!id) return NextResponse.json({ error: "Thiếu id" }, { status: 400 });
       if (collection === "transactions") {

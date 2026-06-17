@@ -291,6 +291,7 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
   const [quickPickerOpen, setQuickPickerOpen] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [mobileTab, setMobileTab] = useState<"calendar" | "list" | "share" | "agenda">("calendar");
 
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -488,7 +489,8 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
   const gridLayoutClass = ""; // Not used anymore
 
   return (
-    <div className="flex h-[calc(100vh-64px)] w-full flex-col bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <>
+    <div className="hidden md:flex h-[calc(100vh-64px)] w-full flex-col bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <CalendarToolbar
         anchor={anchor}
         view={view}
@@ -620,6 +622,23 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
         {detail && <EventDetailSheet item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />}
       </div>
     </div>
+
+    <div className="block md:hidden h-[calc(100vh-64px)] w-full overflow-hidden bg-[#f8fafc]">
+      <MobileCalendarView 
+        mobileTab={mobileTab} setMobileTab={setMobileTab}
+        anchor={anchor} setAnchor={setAnchor}
+        selectedDate={selectedDate} pickDate={pickDate}
+        events={allEvents} visibleEvents={visibleEvents} selectedEvents={selectedEvents} agendaEvents={agendaEvents}
+        calendars={calendars} members={members}
+        enabledTypes={enabledTypes} setEnabledTypes={setEnabledTypes}
+        openEventDetail={openEventDetail} openNewEvent={() => openNewEvent(selectedDate)}
+        showLunar={showLunar} user={user}
+      />
+      <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-[84px] right-5 z-[45] grid size-14 place-items-center rounded-full bg-[#4f46e5] text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 active:scale-95" aria-label="Thêm sự kiện">+</button>
+      {draft && <EventEditorSheet draft={draft} calendars={calendars} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
+      {detail && <EventDetailSheet item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />}
+    </div>
+    </>
   );
 }
 
@@ -1204,6 +1223,190 @@ function Row({ label, value, onClick, right }: { label: string; value?: string; 
           {right}
           {onClick && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>}
        </div>
+    </div>
+  );
+}
+function MobileCalendarView({
+  mobileTab, setMobileTab, anchor, setAnchor, selectedDate, pickDate, events, visibleEvents, selectedEvents, agendaEvents, calendars, members, enabledTypes, setEnabledTypes, openEventDetail, openNewEvent, showLunar, user
+}: any) {
+  const tabs = [
+    { id: "calendar", label: "Lịch" },
+    { id: "list", label: "Danh sách" },
+    { id: "share", label: "Chia sẻ" },
+    { id: "agenda", label: "Hành động" }
+  ];
+
+  const types = [
+    { id: "all", label: "Tất cả" },
+    { id: "work", label: "Công việc" },
+    { id: "study", label: "Học tập" },
+    { id: "family", label: "Gia đình" },
+    { id: "personal", label: "Cá nhân" },
+    { id: "birthday", label: "Sinh nhật" },
+    { id: "holiday", label: "Ngày lễ" },
+    { id: "reminder", label: "Nhắc nhở" },
+    { id: "other", label: "Khác" }
+  ];
+
+  const toggleType = (id: string) => {
+    if (id === "all") {
+      setEnabledTypes(["family", "personal", "birthday", "holiday", "work", "study", "reminder", "payment", "other"]);
+      return;
+    }
+    setEnabledTypes([id as any]);
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-[#f8fafc] dark:bg-slate-950 pb-20">
+      {/* Top Tabs */}
+      <div className="flex items-center justify-around bg-white px-2 py-3 shadow-sm rounded-b-2xl sticky top-0 z-10 dark:bg-slate-900">
+        {tabs.map(tab => (
+          <button 
+            key={tab.id}
+            onClick={() => setMobileTab(tab.id)}
+            className={`px-3 py-2 text-sm font-bold rounded-xl transition-colors ${mobileTab === tab.id ? "bg-indigo-50 text-[#4f46e5] dark:bg-indigo-500/20 dark:text-indigo-400" : "text-slate-500 dark:text-slate-400"}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        {mobileTab === "calendar" && (
+          <div className="space-y-2">
+            {/* Filter Chips */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide">
+              {types.map(type => {
+                const isActive = type.id === "all" ? enabledTypes.length > 3 : enabledTypes.includes(type.id as any) && enabledTypes.length < 3;
+                return (
+                  <button 
+                    key={type.id}
+                    onClick={() => toggleType(type.id)}
+                    className={`shrink-0 px-3 py-1 text-xs font-medium rounded-full border transition-colors ${isActive ? "border-[#4f46e5] bg-[#4f46e5] text-white" : "border-slate-200 bg-white text-slate-600 dark:border-white/10 dark:bg-slate-800 dark:text-slate-300"}`}
+                  >
+                    {type.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="py-2">
+              <div className="flex items-center justify-between mb-4 px-1">
+                <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))} className="p-1 text-slate-400 active:scale-95 text-xl font-bold">‹</button>
+                <h2 className="text-base font-bold text-slate-800 dark:text-white">Tháng {anchor.getMonth() + 1}, {anchor.getFullYear()}</h2>
+                <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1))} className="p-1 text-slate-400 active:scale-95 text-xl font-bold">›</button>
+              </div>
+              <div className="grid grid-cols-7 gap-x-1 gap-y-2">
+                {["CN", "T2", "T3", "T4", "T5", "T6", "T7"].map(day => (
+                  <div key={day} className="text-center text-[10px] font-bold text-slate-400 mb-2">{day}</div>
+                ))}
+                {monthCells(anchor).map(date => {
+                  const dateIso = iso(date);
+                  const isSelected = selectedDate === dateIso;
+                  const dayEvents = visibleEvents.filter((e: any) => e.startDate === dateIso);
+                  const isCurrentMonth = date.getMonth() === anchor.getMonth();
+                  const lunarInfo = showLunar ? getLunarText(dateIso) : { text: "", important: false };
+                  return (
+                    <div 
+                      key={dateIso} 
+                      onClick={() => pickDate(dateIso)}
+                      className={`flex flex-col items-center justify-start py-1 rounded-xl cursor-pointer ${!isCurrentMonth ? "opacity-30" : ""} ${isSelected ? "bg-indigo-50 border border-indigo-100 dark:bg-indigo-500/20 dark:border-indigo-500/30" : ""}`}
+                    >
+                      <span className={`text-[13px] font-semibold flex items-center justify-center size-7 rounded-full ${isSelected ? "bg-[#4f46e5] text-white" : "text-slate-700 dark:text-slate-200"}`}>
+                        {date.getDate()}
+                      </span>
+                      {showLunar && <span className={`text-[9px] -mt-1 ${lunarInfo.important ? "text-rose-500 font-bold" : "text-slate-400"}`}>{lunarInfo.text}</span>}
+                      <div className="flex flex-wrap justify-center gap-[2px] mt-1 max-w-[24px]">
+                        {dayEvents.slice(0, 4).map((e: any, i: number) => (
+                          <div key={i} className="size-[3px] rounded-full" style={{ backgroundColor: e.color || "#4f46e5" }} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Selected Date Events */}
+            <div className="mt-6">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-3 px-1">Ngày {selectedDate.split("-").reverse().join("/")}</h3>
+              {selectedEvents.length > 0 ? (
+                <div className="space-y-3">
+                  {selectedEvents.map((event: any) => (
+                    <div key={event.id} onClick={() => openEventDetail(event)} className="bg-white dark:bg-slate-900 p-3 rounded-2xl shadow-sm flex items-start gap-3 relative overflow-hidden active:scale-[0.98] transition-transform">
+                      <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: event.color || "#4f46e5" }} />
+                      <div className="flex-1 pl-1">
+                        <p className="text-sm font-bold text-slate-900 dark:text-white">{event.title}</p>
+                        <p className="text-xs text-slate-500 mt-1">{event.time || "Cả ngày"} • {event.location || event.type}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 flex flex-col items-center justify-center text-slate-400">
+                  <div className="text-3xl mb-2 opacity-50">📅</div>
+                  <p className="text-xs">Không có sự kiện nào</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {mobileTab === "list" && (
+          <div className="space-y-3">
+            {calendars.map((cal: any) => (
+              <div key={cal.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm flex items-center gap-4">
+                <div className="size-10 rounded-xl" style={{ backgroundColor: cal.color || "#4f46e5" }} />
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{cal.name}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{events.filter((e: any) => e.calendarId === cal.id).length} sự kiện</p>
+                </div>
+                <span className="text-slate-300">›</span>
+              </div>
+            ))}
+            <button className="w-full mt-4 bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 p-4 rounded-2xl text-sm font-bold text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-2">
+              <span className="text-xl">+</span> Thêm danh sách
+            </button>
+          </div>
+        )}
+
+        {mobileTab === "share" && (
+          <div className="space-y-3">
+            {members.map((member: any) => (
+              <div key={member.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm flex items-center gap-4">
+                <div className="size-10 rounded-full bg-slate-100 flex items-center justify-center text-lg shadow-inner overflow-hidden">
+                  {member.avatar ? <img src={member.avatar} alt={member.name} className="size-full object-cover" /> : member.name.charAt(0)}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{member.name || member.nickname}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{member.role === "admin" ? "Quản trị viên" : "Thành viên"}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {mobileTab === "agenda" && (
+          <div className="space-y-3">
+            {agendaEvents.filter((e: any) => e.startDate >= iso(new Date())).length > 0 ? (
+              agendaEvents.filter((e: any) => e.startDate >= iso(new Date())).map((event: any) => (
+                <div key={event.id} onClick={() => openEventDetail(event)} className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm flex items-start gap-3 relative overflow-hidden active:scale-[0.98] transition-transform">
+                  <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: event.color || "#4f46e5" }} />
+                  <div className="flex-1 pl-1">
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">{event.title}</p>
+                    <p className="text-xs text-slate-500 mt-1">{event.startDate.split("-").reverse().join("/")} {event.time ? `• ${event.time}` : ""}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="bg-white dark:bg-slate-900 rounded-2xl p-8 flex flex-col items-center justify-center text-slate-400">
+                <p className="text-sm">Chưa có sự kiện sắp tới.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

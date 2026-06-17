@@ -139,7 +139,7 @@ function isTime(value?: string) {
 export async function GET(request: NextRequest) {
   try {
     const actor = await getSessionUser();
-    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập." }, { status: 401 });
+    if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     await ensureEventSchema();
 
     const month = Number(request.nextUrl.searchParams.get("month") || 0);
@@ -186,7 +186,7 @@ export async function GET(request: NextRequest) {
 async function save(request: NextRequest, update: boolean) {
   try {
     const actor = await getSessionUser();
-    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập." }, { status: 401 });
+    if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     await ensureEventSchema();
 
     const body = await request.json() as {
@@ -358,7 +358,7 @@ export async function PUT(request: NextRequest) { return save(request, true); }
 export async function DELETE(request: NextRequest) {
   try {
     const actor = await getSessionUser();
-    if (!actor) return NextResponse.json({ ok: false, error: "Chưa đăng nhập." }, { status: 401 });
+    if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     await ensureEventSchema();
     const id = request.nextUrl.searchParams.get("id") || "";
     if (!id || !await canEditEvent(actor.id, actor.role, id)) return NextResponse.json({ ok: false, error: "Không có quyền xóa sự kiện." }, { status: 403 });

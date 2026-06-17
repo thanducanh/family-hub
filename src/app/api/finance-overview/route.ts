@@ -79,7 +79,7 @@ async function getFinanceSettings() {
 }
 
 export async function GET(req: NextRequest) {
-  if (!await requireSession()) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+  if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   const yearParam = Number(req.nextUrl.searchParams.get("year"));
   const year = Number.isFinite(yearParam) && yearParam > 0 ? yearParam : new Date().getFullYear();
