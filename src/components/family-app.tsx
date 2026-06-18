@@ -215,6 +215,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [editor, setEditor] = useState<Editor>(null);
   const [notifications, setNotifications] = useState<CalendarNotification[]>([]);
+  const [mobileShowMembers, setMobileShowMembers] = useState(false);
   
   const unreadNotificationsCount = user ? notifications.filter(n => isCalendarNotificationUnread(n, user)).length : 0;
 
@@ -269,6 +270,26 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       console.info(`[Family Hub] Render cache localStorage: ${Math.round(performance.now() - startedAt)}ms`);
       void dataService.syncFromNas(next => setData(visibleDataFor(user, next)));
     });
+  }, [user]);
+  useEffect(() => {
+    if (user) {
+      const nextDisplayName = user.member?.nickname || user.member?.name || user.displayName;
+      const nextAvatar = user.member?.avatarUrl || user.member?.avatar || user.avatar || "";
+      const nextCover = getUserCoverUrl(user);
+      localStorage.setItem("familyHubLastUser", JSON.stringify({ displayName: nextDisplayName, username: user.username, avatar: nextAvatar, coverUrl: nextCover }));
+      localStorage.setItem("lastUserName", nextDisplayName);
+      localStorage.setItem("lastUsername", user.username);
+      if (nextAvatar) localStorage.setItem("lastAvatarUrl", nextAvatar); else localStorage.removeItem("lastAvatarUrl");
+      if (nextCover) {
+        localStorage.setItem("lastUserCoverUrl", nextCover);
+        localStorage.setItem("lastCoverUrl", nextCover);
+        localStorage.setItem("lastBackgroundUrl", nextCover);
+      } else {
+        localStorage.removeItem("lastUserCoverUrl");
+        localStorage.removeItem("lastCoverUrl");
+        localStorage.removeItem("lastBackgroundUrl");
+      }
+    }
   }, [user]);
   useEffect(() => {
     if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then(registration => registration.update());
@@ -335,7 +356,14 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   }
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
+    const keysToPreserve = ["familyHubLastUser", "lastUserName", "lastUsername", "lastAvatarUrl", "lastUserCoverUrl", "lastCoverUrl", "lastBackgroundUrl"];
+    const saved: [string, string][] = [];
+    keysToPreserve.forEach(k => {
+      const val = localStorage.getItem(k);
+      if (val !== null) saved.push([k, val]);
+    });
     localStorage.clear();
+    saved.forEach(([k, v]) => localStorage.setItem(k, v));
     sessionStorage.clear();
     setAccountMenuOpen(false);
     setUser(null);
@@ -351,14 +379,43 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     return nextUser;
   }
   if (user === undefined) return <LoadingSkeleton />;
-  if (!user) return <LoginScreen onLogin={setUser} />;
+  if (!user) return <LoginScreen onLogin={(nextUser, nextScreen = "members", showMembers = false) => {
+    setUser(nextUser);
+    if (nextScreen === "settings") {
+      setScreen("members");
+      setProfilePageOpen(true);
+    } else {
+      setScreen(nextScreen);
+      setProfilePageOpen(false);
+    }
+    setMobileShowMembers(showMembers);
+  }} />;
   if (!data) return <LoadingSkeleton />;
 
   const currentMember = data.members.find(member => member.id === user.memberId) || user.member;
   const headerUser = user.member ? user : currentMember ? { ...user, member: currentMember } : user;
   const content = children ? <>{children}</> : profilePageOpen ? <ProfilePage user={headerUser} member={currentMember} data={data} update={update} openChangePassword={() => setChangePasswordOpen(true)} logout={logout} savedUser={setUser} refreshCurrentUser={refreshCurrentUser} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} t={t} /> :
     screen === "dashboard" ? <Dashboard data={data} go={go} notifications={notifications} user={user} /> :
-    screen === "members" ? <Members data={data} user={user} update={update} /> :
+    screen === "members" ? (
+      <>
+        <div className="md:hidden">
+          <MobileHome
+            data={data}
+            user={user}
+            notifications={notifications}
+            go={go}
+            openProfile={() => setProfilePageOpen(true)}
+            update={update}
+            setEditor={setEditor}
+            showMembers={mobileShowMembers}
+            setShowMembers={setMobileShowMembers}
+          />
+        </div>
+        <div className="hidden md:block">
+          <Members data={data} user={user} update={update} />
+        </div>
+      </>
+    ) :
     screen === "tasks" ? <Tasks data={data} update={update} open={setEditor} t={t} /> :
     screen === "finance" ? <Finance data={data} open={setEditor} t={t} user={user} update={update} go={go} /> :
     screen === "chat" ? <ComingSoonModule title={t("chat")} /> :
@@ -425,6 +482,21 @@ export function toArray<T = any>(value: any): T[] {
   if (Array.isArray(value?.investments)) return value.investments;
   if (Array.isArray(value?.allRecords)) return value.allRecords;
   return [];
+}
+
+export function getHomeCoverUrl(user: any, lastUser?: any): string {
+  const userCover = user?.member?.coverUrl || user?.member?.cover_url || user?.member?.coverImageUrl || user?.member?.background_url || user?.coverUrl || user?.cover_url || user?.coverImageUrl || user?.background_url;
+  if (userCover) return userCover;
+  if (lastUser) {
+    return lastUser.coverUrl || lastUser.cover_url || lastUser.coverImageUrl || lastUser.background_url || "";
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const legacy = JSON.parse(localStorage.getItem("familyHubLastUser") || "null");
+      return localStorage.getItem("lastUserCoverUrl") || localStorage.getItem("lastCoverUrl") || localStorage.getItem("lastBackgroundUrl") || legacy?.coverUrl || legacy?.cover_url || legacy?.coverImageUrl || legacy?.background_url || "";
+    } catch {}
+  }
+  return "";
 }
 
 export function getUserCoverUrl(user: any): string {
@@ -811,7 +883,8 @@ function SystemAdminProfile({ user, openChangePassword, logout, savedUser, refre
 }
 function AccountDetail({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-semibold">{value}</p></div>; }
 
-function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
+function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Screen, showMembers?: boolean) => void }) {
+  const ui = useUI();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -821,16 +894,53 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [showPassword, setShowPassword] = useState(false);
   const [forgotAccount, setForgotAccount] = useState("");
   const [forgotMessage, setForgotMessage] = useState("");
+  const [mobileLoginOpen, setMobileLoginOpen] = useState(false);
+  const [lastUser, setLastUser] = useState<{ displayName: string; username: string; avatar?: string; coverUrl?: string } | null>(null);
+  const [pendingScreen, setPendingScreen] = useState<Screen | null>(null);
+  const [loginPrompt, setLoginPrompt] = useState("");
+
+  useEffect(() => {
+    try {
+      const legacy = JSON.parse(localStorage.getItem("familyHubLastUser") || "null");
+      const stored = {
+        displayName: localStorage.getItem("lastUserName") || legacy?.displayName || "",
+        username: localStorage.getItem("lastUsername") || legacy?.username || "",
+        avatar: localStorage.getItem("lastAvatarUrl") || legacy?.avatar || "",
+        coverUrl: localStorage.getItem("lastUserCoverUrl") || localStorage.getItem("lastCoverUrl") || localStorage.getItem("lastBackgroundUrl") || legacy?.coverUrl || legacy?.cover_url || legacy?.coverImageUrl || legacy?.background_url || "",
+      };
+      if (stored?.username) { setLastUser(stored); setUsername(stored.username); }
+    } catch { localStorage.removeItem("familyHubLastUser"); }
+  }, []);
+
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setLoading(true); setError("");
     try {
       const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, remember }) });
-      const result = await readJsonSafe<{ error?: string; user?: AuthUser }>(response);
+      const result = await readJsonSafe<{ error?: string; user?: AuthUser; member?: Member }>(response);
       if (!response.ok || !result?.user) throw new Error(result?.error || "Không thể đăng nhập. Vui lòng thử lại.");
-      onLogin(result.user);
+      const nextUser = { ...result.user, member: result.member };
+      const nextDisplayName = result.member?.nickname || result.member?.name || result.user.displayName;
+      const nextAvatar = result.member?.avatarUrl || result.member?.avatar || result.user.avatar || "";
+      const nextCover = getUserCoverUrl(nextUser);
+      localStorage.setItem("familyHubLastUser", JSON.stringify({ displayName: nextDisplayName, username: result.user.username, avatar: nextAvatar, coverUrl: nextCover }));
+      localStorage.setItem("lastUserName", nextDisplayName);
+      localStorage.setItem("lastUsername", result.user.username);
+      if (nextAvatar) localStorage.setItem("lastAvatarUrl", nextAvatar); else localStorage.removeItem("lastAvatarUrl");
+      if (nextCover) {
+        localStorage.setItem("lastUserCoverUrl", nextCover);
+        localStorage.setItem("lastCoverUrl", nextCover);
+        localStorage.setItem("lastBackgroundUrl", nextCover);
+      } else {
+        localStorage.removeItem("lastUserCoverUrl");
+        localStorage.removeItem("lastCoverUrl");
+        localStorage.removeItem("lastBackgroundUrl");
+      }
+      setMobileLoginOpen(false);
+      onLogin(nextUser, pendingScreen || "members", pendingScreen === "members");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể đăng nhập."); }
     finally { setLoading(false); }
   }
+
   async function requestPasswordReset(event: React.FormEvent) {
     event.preventDefault(); setLoading(true); setError(""); setForgotMessage("");
     try {
@@ -841,7 +951,201 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể gửi yêu cầu."); }
     finally { setLoading(false); }
   }
-  return <AuthLayout>{forgot ? <form onSubmit={requestPasswordReset} className="w-full max-w-md">
+
+  const guestHour = new Date().getHours();
+  const guestGreeting = guestHour >= 5 && guestHour < 11 ? "Chào buổi sáng" : guestHour >= 11 && guestHour < 13 ? "Chào buổi trưa" : guestHour >= 13 && guestHour < 18 ? "Chào buổi chiều" : "Chào buổi tối";
+  const guestDisplayName = lastUser?.displayName || "Family Hub";
+  
+  const closeMobileLogin = () => { setMobileLoginOpen(false); setForgot(false); setError(""); setForgotMessage(""); setPendingScreen(null); setLoginPrompt(""); };
+  const openGuestLogin = (screen: Screen | null = null) => { setPendingScreen(screen); setLoginPrompt(screen ? "Vui lòng đăng nhập để sử dụng tính năng này" : ""); setMobileLoginOpen(true); };
+  
+  const guestNavItems: [string, React.ReactNode, Screen | null][] = [["Trang chủ", <HomeIcon />, null], ["Lịch", <CalendarIcon />, "calendar"], ["Tổng quan", <HomeIcon />, "dashboard"], ["Thu chi", <WalletIcon />, "finance"], ["Cá nhân", <UserIcon />, "settings"]];
+  
+  const guestActions = [
+    ["Thành viên", <UsersIcon />, () => openGuestLogin("members")],
+    ["Lịch", <CalendarIcon />, () => openGuestLogin("calendar")],
+    ["Thu chi", <WalletIcon />, () => openGuestLogin("finance")],
+    ["Công việc", <CheckListIcon />, () => openGuestLogin("tasks")],
+    ["Thông báo", <BellIcon />, () => openGuestLogin("notifications")],
+    ["Cài đặt", <SettingsIcon />, () => openGuestLogin("settings")],
+  ] as const;
+
+  const guestMetrics = [
+    ["Tổng thành viên", "0"],
+    ["Công việc hôm nay", "0"],
+    ["Sự kiện hôm nay", "0"],
+    ["Thu tháng này", "0 đ"],
+    ["Chi tháng này", "0 đ"],
+    ["Số dư tháng này", "0 đ"]
+  ] as const;
+
+  const guestShortcuts = [
+    { label: "Thêm chi tiêu", icon: icons.finance, color: "bg-rose-500", onClick: () => openGuestLogin("finance") },
+    { label: "Thêm thu nhập", icon: icons.finance, color: "bg-emerald-500", onClick: () => openGuestLogin("finance") },
+    { label: "Thêm công việc", icon: <CheckListIcon />, color: "bg-orange-500", onClick: () => openGuestLogin("tasks") },
+    { label: "Thêm sự kiện", icon: <CalendarIcon />, color: "bg-blue-500", onClick: () => openGuestLogin("calendar") },
+  ];
+
+  const guestCoverUrl = getHomeCoverUrl(null, lastUser);
+  const guestHeroStyle = guestCoverUrl 
+    ? {
+        backgroundImage: `url(${guestCoverUrl})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }
+    : {};
+  const guestHeroClass = guestCoverUrl
+    ? "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden pointer-events-none"
+    : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-gradient-to-br from-[#0b5265] via-[#064d61] to-[#023a3a] pointer-events-none";
+
+  const mobileGuestHome = (
+    <main className="relative min-h-[100dvh] overflow-x-hidden bg-[#062f3c] pb-24 font-[Arial,sans-serif] text-white min-[769px]:hidden">
+      <section style={guestHeroStyle} className={guestHeroClass}>
+        {guestCoverUrl && (
+          <div className="absolute inset-0 bg-black/55 pointer-events-none z-0" />
+        )}
+        {!guestCoverUrl && (
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/55 pointer-events-none z-0" />
+        )}
+        
+        <div className="relative z-10 w-full h-full flex flex-col pointer-events-auto">
+          <header className="flex h-11 items-center justify-between w-full mb-6">
+            <div className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-xl bg-white/12 text-[11px] font-black ring-1 ring-white/15">FH</span>
+              <b className="text-sm tracking-wide text-white">Family Hub</b>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => ui.toast("Tính năng đang phát triển")} className="grid size-9 place-items-center rounded-full bg-slate-950/25 text-white ring-1 ring-white/15" aria-label="Tìm kiếm"><SearchIcon /></button>
+              <button type="button" onClick={() => openGuestLogin("notifications")} className="grid size-9 place-items-center rounded-full bg-slate-950/25 text-white ring-1 ring-white/15" aria-label="Thông báo"><BellIcon /></button>
+            </div>
+          </header>
+
+          <div className="mt-2">
+            <p className="text-[13px] font-semibold text-cyan-100/90">{guestGreeting}!</p>
+            <h1 className="mt-1 truncate text-[26px] font-black leading-tight text-white drop-shadow-sm">{guestDisplayName}</h1>
+            <span className="mt-2 inline-flex rounded-full bg-black/30 px-2.5 py-0.5 text-[10px] font-bold text-white ring-1 ring-white/20">Chưa đăng nhập</span>
+          </div>
+
+          <div className="mt-auto space-y-3.5">
+            <button type="button" onClick={() => openGuestLogin()} className="flex h-16 w-full items-center gap-3 rounded-[20px] bg-black/25 px-3 text-left text-white ring-1 ring-white/15 backdrop-blur-md active:bg-black/40">
+              <AccountAvatar user={{ displayName: guestDisplayName, avatar: lastUser?.avatar || "" }} size="size-11" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-semibold text-cyan-100/80">Tài khoản</span>
+                <b className="block truncate text-sm text-white">{lastUser?.username || "Chưa đăng nhập"}</b>
+                <span className="block truncate text-[10px] text-white/70">@{lastUser?.username || "guest"}</span>
+              </span>
+              <span className="text-xl font-light text-white">›</span>
+            </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => openGuestLogin()} className="h-11 min-w-0 rounded-full bg-[#facc15] px-3 text-[13px] font-black text-slate-950 active:scale-[.99]">Đăng nhập</button>
+              <button type="button" onClick={() => openGuestLogin("finance")} className="h-11 min-w-0 rounded-full border border-white/30 bg-[#063f57]/70 px-3 text-[13px] font-black text-white active:scale-[.99]">Quản lý thu chi</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="space-y-4 px-3 pt-4 pointer-events-auto">
+        <section className="rounded-[22px] bg-white/[.08] p-4 ring-1 ring-white/12 backdrop-blur">
+          <h2 className="text-sm font-bold text-white mb-3">Tiện ích</h2>
+          <div className="grid grid-cols-3 gap-3">
+            {guestActions.map(([label, icon, action]) => (
+              <button key={label} onClick={action} className="flex h-[76px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-[16px] bg-white/[.07] px-1 text-center text-[11px] font-semibold text-white active:bg-white/15">
+                <span className="grid size-8 place-items-center rounded-xl bg-amber-400 text-slate-950">{icon}</span>
+                <span className="w-full truncate">{label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <h2 className="mb-3 text-sm font-bold text-white">Tổng quan nhanh</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {guestMetrics.map(([label, value]) => (
+              <div key={String(label)} onClick={() => openGuestLogin()} className="min-w-0 rounded-[18px] bg-white p-3 shadow-sm cursor-pointer border border-slate-100 dark:border-white/5 dark:bg-slate-900">
+                <p className="truncate text-[10px] text-slate-500 dark:text-slate-400 font-medium">{label}</p>
+                <b className="mt-1 block break-words text-sm text-slate-800 dark:text-slate-200">{value}</b>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-[22px] bg-white/[.08] p-4 ring-1 ring-white/12 backdrop-blur">
+          <h2 className="text-sm font-bold text-white mb-3">Lối tắt nhanh</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {guestShortcuts.map(item => (
+              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-white/[.07] text-left text-white active:bg-white/15">
+                <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.color} text-white`}>{item.icon}</span>
+                <span className="text-xs font-bold leading-tight">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-5 h-16 w-full items-center border-t border-white/10 bg-[#012f2d]/92 pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,.25)] backdrop-blur-xl pointer-events-auto">
+        {guestNavItems.map(([label, icon, target]) => {
+          const active = target === null;
+          return (
+            <button key={label} type="button" onClick={() => target ? openGuestLogin(target) : undefined} className={`flex w-full h-full flex-col items-center justify-center gap-1.5 transition-all px-0 ${active ? "text-[#facc15]" : "text-[#cbd5e1]"}`}>
+              <span className="text-lg leading-none">{icon}</span>
+              <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {mobileLoginOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm pointer-events-auto" onClick={closeMobileLogin}>
+          <div className="w-full max-w-sm rounded-[24px] bg-[#022827]/95 p-6 border border-white/10 shadow-2xl animate-in fade-in zoom-in duration-200 text-white" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#facc15]">Đăng nhập gia đình</p>
+                <h2 className="text-lg font-black mt-0.5">Family Hub</h2>
+              </div>
+              <button onClick={closeMobileLogin} className="grid size-8 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20">✕</button>
+            </div>
+            {loginPrompt && <p className="mb-4 text-xs font-semibold text-amber-300 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/25">{loginPrompt}</p>}
+            
+            {forgot ? (
+              <form onSubmit={requestPasswordReset} className="space-y-4">
+                <Field label="Tài khoản hoặc email">
+                  <input required autoComplete="username" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm outline-none focus:border-[#facc15] text-white" placeholder="Nhập username hoặc email" value={forgotAccount} onChange={event => setForgotAccount(event.target.value)} />
+                </Field>
+                {forgotMessage && <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-lg">{forgotMessage}</p>}
+                {error && <p className="text-xs text-rose-400 bg-rose-500/10 p-2 rounded-lg">{error}</p>}
+                <button disabled={loading} className="w-full h-12 rounded-xl bg-[#facc15] font-black text-slate-950 hover:bg-[#eab308] disabled:opacity-50 transition">{loading ? "Đang gửi..." : "Gửi yêu cầu"}</button>
+                <button type="button" onClick={() => { setForgot(false); setError(""); setForgotMessage(""); }} className="w-full text-center text-xs font-bold text-cyan-200">Quay lại đăng nhập</button>
+              </form>
+            ) : (
+              <form onSubmit={submit} className="space-y-4">
+                <Field label="Tài khoản hoặc email">
+                  <input required autoComplete="username" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm outline-none focus:border-[#facc15] text-white" placeholder="Tài khoản" value={username} onChange={event => setUsername(event.target.value)} />
+                </Field>
+                <Field label="Mật khẩu">
+                  <div className="relative">
+                    <input required type={showPassword ? "text" : "password"} autoComplete="current-password" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 pl-4 pr-12 text-sm outline-none focus:border-[#facc15] text-white" placeholder="Mật khẩu" value={password} onChange={event => setPassword(event.target.value)} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 grid w-12 place-items-center text-white/55 hover:text-[#facc15]">
+                      <PasswordEyeIcon visible={showPassword} />
+                    </button>
+                  </div>
+                </Field>
+                <div className="flex items-center justify-between text-xs">
+                  <label className="flex items-center gap-2 text-white/80 cursor-pointer">
+                    <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} className="size-4 rounded border-white/10 bg-white/5 accent-[#facc15]" /> Ghi nhớ
+                  </label>
+                  <button type="button" onClick={() => { setForgot(true); setError(""); }} className="font-bold text-[#facc15]">Quên mật khẩu?</button>
+                </div>
+                {error && <p className="text-xs text-rose-400 bg-rose-500/10 p-2 rounded-lg">{error}</p>}
+                <button disabled={loading} className="w-full h-12 rounded-xl bg-[#facc15] font-black text-slate-950 hover:bg-[#eab308] disabled:opacity-50 transition">{loading ? "Đang đăng nhập..." : "Đăng nhập"}</button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+    </main>
+  );
+
+  const desktopLogin = <AuthLayout>{forgot ? <form onSubmit={requestPasswordReset} className="w-full max-w-md">
     <p className="text-xs font-bold uppercase tracking-[.2em] text-indigo-500">Family Hub</p><h1 className="mt-4 text-3xl font-semibold text-slate-800 dark:text-white">Quên mật khẩu</h1><p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">Nhập username hoặc email để gửi yêu cầu đặt lại mật khẩu nội bộ. Admin hoặc Cha/Mẹ sẽ xử lý yêu cầu trong ứng dụng.</p>
     <div className="mt-7"><Field label="Tài khoản hoặc email"><input required autoComplete="username" className={authInputClass} placeholder="Nhập username hoặc email" value={forgotAccount} onChange={event => setForgotAccount(event.target.value)} /></Field></div>
     {forgotMessage && <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-600 dark:border-emerald-400/20 dark:bg-emerald-400/10">{forgotMessage}</p>}{error && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-600 dark:border-red-400/20 dark:bg-red-400/10">{error}</p>}
@@ -851,6 +1155,8 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     <div className="mt-7 space-y-5"><Field label="Tài khoản hoặc email"><input required autoComplete="username" className={authInputClass} placeholder="Nhập username hoặc email" value={username} onChange={event => setUsername(event.target.value)} /></Field><Field label="Mật khẩu"><div className="relative"><input required type={showPassword ? "text" : "password"} autoComplete="current-password" className={`${authInputClass} pr-12`} placeholder="Nhập mật khẩu" value={password} onChange={event => setPassword(event.target.value)} /><button type="button" aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onClick={() => setShowPassword(visible => !visible)} className="absolute inset-y-0 right-0 grid w-12 place-items-center text-slate-400 hover:text-indigo-500"><PasswordEyeIcon visible={showPassword} /></button></div></Field><div className="flex items-center justify-between gap-3"><label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"><input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} className="size-4 rounded border-slate-300 accent-indigo-600" /> Ghi nhớ đăng nhập trên thiết bị này</label><button type="button" onClick={() => { setForgot(true); setError(""); }} className="shrink-0 text-sm font-semibold text-indigo-600 hover:text-indigo-700">Quên mật khẩu?</button></div></div>
     {error && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-600 dark:border-red-400/20 dark:bg-red-400/10">{error}</p>}<button disabled={loading} className="mt-6 w-full rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{loading ? "Đang đăng nhập..." : "Đăng nhập"}</button>
   </form>}</AuthLayout>;
+
+  return <>{mobileGuestHome}<div className="hidden min-[769px]:block">{desktopLogin}</div></>;
 }
 
 function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -1793,35 +2099,35 @@ function LoadingSkeleton() {
 }
 
 function MobileNav({ screen, profileOpen, go, openProfile, t }: { screen: Screen; profileOpen: boolean; go: (s: Screen) => void; openProfile: () => void; t: ReturnType<typeof translator> }) {
-  const navItemClass = "flex flex-1 flex-col items-center justify-center pt-2 pb-1 transition-all";
-  const inactiveColor = "text-slate-400 dark:text-slate-500";
-  const activeColor = "text-[#4f46e5] dark:text-indigo-400";
+  const navItemClass = "flex w-full h-full flex-col items-center justify-center gap-1.5 transition-all px-0";
+  const activeColor = "text-[#facc15]";
+  const inactiveColor = "text-[#cbd5e1]";
   
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 flex h-16 w-full items-center justify-between border-t border-[var(--app-border)] bg-[var(--app-nav)] pb-[max(8px,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.05)] backdrop-blur-lg md:hidden px-2">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-5 h-16 w-full items-center border-t border-white/10 bg-[#012f2d]/92 pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,.25)] backdrop-blur-xl min-[769px]:hidden">
       <button onClick={() => go("members")} className={`${navItemClass} ${screen === "members" && !profileOpen ? activeColor : inactiveColor}`}>
-        <span className="mb-1 text-xl">{icons.members}</span>
-        {screen === "members" && !profileOpen && <span className="text-[10px] font-medium leading-none">Thành viên</span>}
+        <span className="text-lg leading-none"><HomeIcon /></span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Trang chủ</span>
       </button>
 
       <button onClick={() => go("calendar")} className={`${navItemClass} ${screen === "calendar" && !profileOpen ? activeColor : inactiveColor}`}>
-        <span className="mb-1 text-xl">{icons.calendar}</span>
-        {screen === "calendar" && !profileOpen && <span className="text-[10px] font-medium leading-none">Lịch</span>}
+        <span className="text-lg leading-none">{icons.calendar}</span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Lịch</span>
       </button>
 
       <button onClick={() => go("dashboard")} className={`${navItemClass} ${screen === "dashboard" && !profileOpen ? activeColor : inactiveColor}`}>
-        <span className="mb-1 text-xl"><HomeIcon /></span>
-        {screen === "dashboard" && !profileOpen && <span className="text-[10px] font-medium leading-none">Tổng quan</span>}
+        <span className="text-lg leading-none"><HomeIcon /></span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Tổng quan</span>
       </button>
 
       <button onClick={() => go("finance")} className={`${navItemClass} ${screen === "finance" && !profileOpen ? activeColor : inactiveColor}`}>
-        <span className="mb-1 text-xl">{icons.finance}</span>
-        {screen === "finance" && !profileOpen && <span className="text-[10px] font-medium leading-none">Thu chi</span>}
+        <span className="text-lg leading-none">{icons.finance}</span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Thu chi</span>
       </button>
 
       <button onClick={openProfile} className={`${navItemClass} ${profileOpen ? activeColor : inactiveColor}`}>
-        <span className="mb-1 text-xl"><UserIcon /></span>
-        {profileOpen && <span className="text-[10px] font-medium leading-none">Cá nhân</span>}
+        <span className="text-lg leading-none"><UserIcon /></span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Cá nhân</span>
       </button>
     </nav>
   );
@@ -6601,3 +6907,200 @@ function Settings({ user, onLogout, openProfile, openChangePassword, language, s
 }
 
 function EmptyState() { return <div className="p-8 text-center text-sm text-slate-500">Không có dữ liệu</div>; }
+
+function MobileHome({
+  data,
+  user,
+  notifications,
+  go,
+  openProfile,
+  update,
+  setEditor,
+  showMembers,
+  setShowMembers,
+}: {
+  data: AppData;
+  user: AuthUser;
+  notifications: CalendarNotification[];
+  go: (screen: Screen) => void;
+  openProfile: () => void;
+  update: (data: AppData) => void;
+  setEditor: (editor: Editor) => void;
+  showMembers: boolean;
+  setShowMembers: (show: boolean) => void;
+}) {
+  const ui = useUI();
+  const [lastUser, setLastUser] = useState<any>(null);
+  useEffect(() => {
+    try {
+      const legacy = JSON.parse(localStorage.getItem("familyHubLastUser") || "null");
+      setLastUser({
+        displayName: localStorage.getItem("lastUserName") || legacy?.displayName || "",
+        username: localStorage.getItem("lastUsername") || legacy?.username || "",
+        avatar: localStorage.getItem("lastAvatarUrl") || legacy?.avatar || "",
+        coverUrl: localStorage.getItem("lastUserCoverUrl") || localStorage.getItem("lastCoverUrl") || localStorage.getItem("lastBackgroundUrl") || legacy?.coverUrl || legacy?.cover_url || legacy?.coverImageUrl || legacy?.background_url || "",
+      });
+    } catch {}
+  }, []);
+
+  if (showMembers) {
+    return (
+      <div className="min-h-[100dvh] bg-[#f8fafc] pb-24 font-[Arial,sans-serif] dark:bg-[var(--app-bg)]">
+        <div className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 dark:border-white/10 dark:bg-[var(--app-card)]">
+          <button aria-label="Về Trang chủ" onClick={() => setShowMembers(false)} className="grid size-10 place-items-center rounded-full text-slate-600">
+            <ArrowLeft className="size-5" />
+          </button>
+          <b>Thành viên gia đình</b>
+        </div>
+        <div className="p-4">
+          <Members data={data} user={user} update={update} />
+        </div>
+      </div>
+    );
+  }
+
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? "Chào buổi sáng" : hour < 18 ? "Chào buổi chiều" : "Chào buổi tối";
+  const sameDay = (value: string) => { const date = parseDate(value, now); return Boolean(date && date.toDateString() === now.toDateString()); };
+  const sameMonth = (value: string) => { const date = parseDate(value, now); return Boolean(date && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()); };
+  const transactions = toArray<Transaction>(data.transactions);
+  const income = transactions.filter(item => item.type === "income" && sameMonth(item.date)).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const expense = transactions.filter(item => item.type === "expense" && sameMonth(item.date)).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const todayTasks = toArray<Task>(data.tasks).filter(task => isDueToday(task, now)).length;
+  const todayEvents = toArray<EventItem>(data.events).filter(event => sameDay(event.date)).length;
+  const unread = notifications.filter(item => isCalendarNotificationUnread(item, user)).length;
+  
+  const actions = [
+    ["Thành viên", <UsersIcon />, () => setShowMembers(true)], ["Lịch", <CalendarIcon />, () => go("calendar")], ["Thu chi", <WalletIcon />, () => go("finance")],
+    ["Công việc", <CheckListIcon />, () => go("tasks")], ["Thông báo", <BellIcon />, () => go("notifications")], ["Cài đặt", <SettingsIcon />, () => go("settings")],
+  ] as const;
+  
+  const metrics = [["Tổng thành viên", data.members.length], ["Công việc hôm nay", todayTasks], ["Sự kiện hôm nay", todayEvents], ["Thu tháng này", money(income)], ["Chi tháng này", money(expense)], ["Số dư tháng này", money(income - expense)]];
+  
+  const shortcuts = [
+    { label: "Thêm chi tiêu", icon: icons.finance, color: "bg-rose-500", onClick: () => setEditor({ kind: "transactions", item: { type: "expense", date: new Date().toISOString().split('T')[0] } as any }) },
+    { label: "Thêm thu nhập", icon: icons.finance, color: "bg-emerald-500", onClick: () => setEditor({ kind: "transactions", item: { type: "income", date: new Date().toISOString().split('T')[0] } as any }) },
+    { label: "Thêm công việc", icon: <CheckListIcon />, color: "bg-orange-500", onClick: () => setEditor({ kind: "tasks" }) },
+    { label: "Thêm sự kiện", icon: <CalendarIcon />, color: "bg-blue-500", onClick: () => setEditor({ kind: "events" }) },
+  ];
+
+  const coverUrl = getHomeCoverUrl(user, lastUser);
+  const heroStyle = coverUrl 
+    ? {
+        backgroundImage: `url(${coverUrl})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }
+    : {};
+  const heroClass = coverUrl
+    ? "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden pointer-events-none"
+    : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-gradient-to-br from-[#0b5265] via-[#064d61] to-[#023a3a] pointer-events-none";
+
+  return (
+    <div className="min-h-[100dvh] overflow-x-hidden bg-[#062f3c] pb-24 font-[Arial,sans-serif] text-white">
+      <section style={heroStyle} className={heroClass}>
+        {coverUrl && (
+          <div className="absolute inset-0 bg-black/55 pointer-events-none z-0" />
+        )}
+        {!coverUrl && (
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/55 pointer-events-none z-0" />
+        )}
+        
+        <div className="relative z-10 w-full h-full flex flex-col pointer-events-auto">
+          <header className="flex h-11 items-center justify-between w-full mb-6">
+            <div className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-xl bg-white/12 text-[11px] font-black ring-1 ring-white/15">FH</span>
+              <b className="text-sm tracking-wide text-white">Family Hub</b>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => ui.toast("Tính năng đang phát triển")} className="grid size-9 place-items-center rounded-full bg-slate-950/25 text-white ring-1 ring-white/15" aria-label="Tìm kiếm"><SearchIcon /></button>
+              <button onClick={() => go("notifications")} className="relative grid size-9 place-items-center rounded-full bg-slate-950/25 text-white ring-1 ring-white/15" aria-label="Thông báo">
+                <BellIcon />
+                {unread > 0 && <span className="absolute right-0 top-0 min-w-4 rounded-full bg-amber-400 px-1 text-[9px] font-bold text-slate-950">{unread}</span>}
+              </button>
+            </div>
+          </header>
+
+          <div className="mt-2">
+            <p className="text-[13px] font-semibold text-cyan-100/90">{greeting}!</p>
+            <h1 className="mt-1 truncate text-[26px] font-black leading-tight text-white drop-shadow-sm">{user.displayName}</h1>
+            <span className="mt-2 inline-flex rounded-full bg-black/30 px-2.5 py-0.5 text-[10px] font-bold text-white ring-1 ring-white/20">
+              {user.role === "full_access" ? "Quản lý gia đình" : accessLabel(user.role)}
+            </span>
+          </div>
+
+          <div className="mt-auto space-y-3.5">
+            <button type="button" onClick={openProfile} className="flex h-16 w-full items-center gap-3 rounded-[20px] bg-black/25 px-3 text-left text-white ring-1 ring-white/15 backdrop-blur-md active:bg-black/40">
+              <AccountAvatar user={user} size="size-11" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-semibold text-cyan-100/80">Tài khoản</span>
+                <b className="block truncate text-sm text-white">{user.displayName || user.username}</b>
+                <span className="block truncate text-[10px] text-white/70">@{user.username}</span>
+              </span>
+              <span className="text-xl font-light text-white">›</span>
+            </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => setShowMembers(true)} className="h-11 min-w-0 rounded-full bg-[#facc15] px-3 text-[13px] font-black text-slate-950 active:scale-[.99]">Thành viên</button>
+              <button type="button" onClick={() => go("finance")} className="h-11 min-w-0 rounded-full border border-white/30 bg-[#063f57]/70 px-3 text-[13px] font-black text-white active:scale-[.99]">Quản lý thu chi</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="space-y-4 px-3 pt-4 pointer-events-auto">
+        <section className="rounded-[22px] bg-white/[.08] p-4 ring-1 ring-white/12 backdrop-blur">
+          <h2 className="text-sm font-bold text-white mb-3">Tiện ích</h2>
+          <div className="grid grid-cols-3 gap-3">
+            {actions.map(([label, icon, action]) => (
+              <button key={label} onClick={action} className="flex h-[76px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-[16px] bg-white/[.07] px-1 text-center text-[11px] font-semibold text-white active:bg-white/15">
+                <span className="grid size-8 place-items-center rounded-xl bg-amber-400 text-slate-950">{icon}</span>
+                <span className="w-full truncate">{label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section>
+          <h2 className="mb-3 text-sm font-bold text-white">Tổng quan nhanh</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {metrics.map(([label, value]) => (
+              <div key={String(label)} className="min-w-0 rounded-[18px] bg-white p-3 shadow-sm dark:bg-slate-900 border border-slate-100 dark:border-white/5">
+                <p className="truncate text-[10px] text-slate-500 dark:text-slate-400 font-medium">{label}</p>
+                <b className="mt-1.5 block break-words text-sm text-slate-800 dark:text-slate-200">{value}</b>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-[22px] bg-white/[.08] p-4 ring-1 ring-white/12 backdrop-blur">
+          <h2 className="text-sm font-bold text-white mb-3">Lối tắt nhanh</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {shortcuts.map(item => (
+              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-white/[.07] text-left text-white active:bg-white/15">
+                <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.color} text-white`}>{item.icon}</span>
+                <span className="text-xs font-bold leading-tight">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-[24px] bg-white p-4 shadow-sm dark:bg-slate-900 border border-slate-100 dark:border-white/5">
+          <h2 className="font-bold text-slate-800 dark:text-white">Hoạt động gần đây</h2>
+          {notifications.length ? (
+            <div className="mt-3 space-y-3">
+              {notifications.slice(0, 3).map(item => (
+                <button key={item.id} onClick={() => go("notifications")} className="block w-full rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3 text-left">
+                  <b className="block truncate text-sm text-slate-700 dark:text-slate-300">{item.actorName || "Family Hub"}</b>
+                  <p className="mt-1 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{item.message}</p>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="py-6 text-center text-sm text-slate-400">Chưa có hoạt động gần đây</p>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
