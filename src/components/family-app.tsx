@@ -20,7 +20,7 @@ type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
 type EntityItem = Member | Task | Transaction | EventItem | Note;
 type Editor = { kind: EntityKind; item?: EntityItem } | null;
 type UserRole = "full_access" | "self_only";
-export interface AuthUser { id: string; username: string; displayName: string; avatar: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; email?: string; passwordPlain?: string | null; }
+export interface AuthUser { id: string; username: string; displayName: string; avatar: string; coverUrl?: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; email?: string; passwordPlain?: string | null; }
 type ManagedUser = AuthUser & { email: string; active: boolean; isSystem: boolean; createdAt: string; updatedAt: string };
 type ProfileUser = ManagedUser & { member?: Member };
 type PasswordResetRequest = { id: string; userId: string; usernameOrEmail: string; status: string; requestedAt: string; username: string; displayName: string; role: UserRole };
@@ -86,20 +86,60 @@ function daysInMonth(month: string, year: string) {
   if (!month || !year) return 31;
   return new Date(Number(year), Number(month), 0).getDate();
 }
-function BirthdaySelect({ value, onChange, disabled = false }: { value: string; onChange: (value: string) => void; disabled?: boolean }) {
+function BirthdaySelect({ value, onChange, disabled = false, asProfileField }: { value: string; onChange: (value: string) => void; disabled?: boolean; asProfileField?: boolean }) {
   const initial = birthdayParts(value);
   const [day, setDay] = useState(initial.day ? String(Number(initial.day)) : "");
   const [month, setMonth] = useState(initial.month ? String(Number(initial.month)) : "");
   const [year, setYear] = useState(initial.year);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const maxDay = daysInMonth(month, year);
+  
   const select = (nextDay: string, nextMonth: string, nextYear: string) => {
     const safeDay = nextDay && Number(nextDay) <= daysInMonth(nextMonth, nextYear) ? nextDay : "";
     setDay(safeDay); setMonth(nextMonth); setYear(nextYear);
     onChange(safeDay && nextMonth && nextYear ? `${nextYear}-${nextMonth.padStart(2, "0")}-${safeDay.padStart(2, "0")}` : "");
   };
+  
   const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   const selectClass = `${inputClass} min-h-12`;
-  return <Field label="Ngày sinh"><div className="grid grid-cols-3 gap-2"><select disabled={disabled} className={selectClass} value={day && Number(day) <= maxDay ? String(Number(day)) : ""} onChange={event => select(event.target.value, month, year)}><option value="">Ngày</option>{Array.from({ length: maxDay }, (_, index) => String(index + 1)).map(value => <option key={value}>{value}</option>)}</select><select disabled={disabled} className={selectClass} value={month ? String(Number(month)) : ""} onChange={event => select(day, event.target.value, year)}><option value="">Tháng</option>{Array.from({ length: 12 }, (_, index) => String(index + 1)).map(value => <option key={value}>{value}</option>)}</select><select disabled={disabled} className={selectClass} value={year} onChange={event => select(day, month, event.target.value)}><option value="">Năm</option>{Array.from({ length: new Date().getFullYear() - 1899 }, (_, index) => String(new Date().getFullYear() - index)).map(value => <option key={value}>{value}</option>)}</select></div></Field>;
+  
+  const selectors = (
+    <>
+      <select disabled={disabled} className={selectClass} value={day && Number(day) <= maxDay ? String(Number(day)) : ""} onChange={event => select(event.target.value, month, year)}><option value="">Ngày</option>{Array.from({ length: maxDay }, (_, index) => String(index + 1)).map(value => <option key={value}>{value}</option>)}</select>
+      <select disabled={disabled} className={selectClass} value={month ? String(Number(month)) : ""} onChange={event => select(day, event.target.value, year)}><option value="">Tháng</option>{Array.from({ length: 12 }, (_, index) => String(index + 1)).map(value => <option key={value}>{value}</option>)}</select>
+      <select disabled={disabled} className={selectClass} value={year} onChange={event => select(day, month, event.target.value)}><option value="">Năm</option>{Array.from({ length: new Date().getFullYear() - 1899 }, (_, index) => String(new Date().getFullYear() - index)).map(value => <option key={value}>{value}</option>)}</select>
+    </>
+  );
+
+  if (asProfileField) {
+    return (
+      <>
+        <ProfileField label="Ngày sinh">
+          <button type="button" onClick={() => !disabled && setSheetOpen(true)} className="w-full bg-transparent outline-none text-right flex justify-end items-center">
+            <span className={!value ? "text-slate-300 dark:text-slate-600" : ""}>
+              {day && month && year ? `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}` : "Chưa cập nhật"}
+            </span>
+          </button>
+        </ProfileField>
+        {sheetOpen && (
+          <Sheet close={() => setSheetOpen(false)}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">Ngày sinh</h2>
+              <button type="button" onClick={() => setSheetOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {selectors}
+            </div>
+            <div className="mt-6">
+              <button type="button" onClick={() => setSheetOpen(false)} className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">Xong</button>
+            </div>
+          </Sheet>
+        )}
+      </>
+    );
+  }
+
+  return <Field label="Ngày sinh"><div className="grid grid-cols-3 gap-2">{selectors}</div></Field>;
 }
 
 function Card({ children, className = "", ...props }: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode; className?: string }) {
@@ -320,7 +360,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     screen === "dashboard" ? <Dashboard data={data} go={go} notifications={notifications} user={user} /> :
     screen === "members" ? <Members data={data} user={user} update={update} /> :
     screen === "tasks" ? <Tasks data={data} update={update} open={setEditor} t={t} /> :
-    screen === "finance" ? <Finance data={data} open={setEditor} t={t} user={user} update={update} /> :
+    screen === "finance" ? <Finance data={data} open={setEditor} t={t} user={user} update={update} go={go} /> :
     screen === "chat" ? <ComingSoonModule title={t("chat")} /> :
     screen === "calendar" ? <Calendar data={data} user={user} /> :
     screen === "notes" ? <Notes data={data} open={setEditor} t={t} /> :
@@ -332,7 +372,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
     <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" ? "hidden md:block" : "block"}`}>
       <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
-        <label className="relative w-full max-w-md block"><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
+        <label className={`relative w-full max-w-md ${screen === "finance" ? "hidden md:block" : "block"}`}><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
         <div className="relative ml-auto flex items-center gap-1 md:gap-2">
           <button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="hidden md:grid size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><ThemeIcon dark={theme === "dark"} /></button>
           <button aria-label="Thông báo" onClick={() => go("notifications")} className="hidden md:grid relative size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><BellIcon />{notifications.some(item => isCalendarNotificationUnread(item, user)) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => isCalendarNotificationUnread(item, user)).length}</span>}</button>
@@ -344,7 +384,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       </div>
     </header>
     <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
-    <section className={`mx-auto ${profilePageOpen ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none px-2 md:px-4" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className={`mb-4 md:mb-5 ${profilePageOpen ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
+    <section className={`mx-auto ${profilePageOpen || screen === "finance" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none px-2 md:px-4" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
     {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
@@ -373,6 +413,26 @@ function AccountMenu({ user, openProfile, openSettings, logout }: { user: AuthUs
     <button onClick={logout} className={`${menuClass} mt-3 text-rose-500`}><LogoutIcon /> Đăng xuất</button>
     </div>;
 }
+export function toArray<T = any>(value: any): T[] {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.records)) return value.records;
+  if (Array.isArray(value?.transactions)) return value.transactions;
+  if (Array.isArray(value?.income)) return value.income;
+  if (Array.isArray(value?.expenses)) return value.expenses;
+  if (Array.isArray(value?.savingsRecords)) return value.savingsRecords;
+  if (Array.isArray(value?.investments)) return value.investments;
+  if (Array.isArray(value?.allRecords)) return value.allRecords;
+  return [];
+}
+
+export function getUserCoverUrl(user: any): string {
+  if (!user) return "";
+  const memberCover = user.member?.coverUrl || user.member?.cover_url || user.member?.coverImageUrl || user.member?.background_url;
+  if (memberCover) return memberCover;
+  return user.coverUrl || user.cover_url || user.coverImageUrl || user.background_url || "";
+}
 
 function ProfilePage({ user, member, data, update, openChangePassword, logout, savedUser, refreshCurrentUser, language, setLanguage, theme, setTheme, t }: { user: AuthUser; member?: Member; data: AppData; update: (data: AppData) => void; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void; refreshCurrentUser: () => Promise<AuthUser | null>; language?: Language; setLanguage?: React.Dispatch<React.SetStateAction<Language>>; theme?: "light" | "dark" | "system"; setTheme?: React.Dispatch<React.SetStateAction<"light" | "dark" | "system">>; t?: any }) {
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
@@ -380,12 +440,23 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [languageSheetOpen, setLanguageSheetOpen] = useState(false);
   const [themeSheetOpen, setThemeSheetOpen] = useState(false);
+  const [accountSheetOpen, setAccountSheetOpen] = useState(false);
+  const [workSheetOpen, setWorkSheetOpen] = useState(false);
+  const [bankSheetOpen, setBankSheetOpen] = useState(false);
+  const [simSheetOpen, setSimSheetOpen] = useState(false);
   const ui = useUI();
 
   const activeMember = member || user.member;
   const displayName = activeMember?.name || user.displayName || user.username;
   const displayAvatar = activeMember?.avatarUrl || activeMember?.avatar || user.avatar;
-  const profileUser = { ...user, displayName, avatar: displayAvatar, member: activeMember };
+  const displayCover = getUserCoverUrl({ ...user, member: activeMember });
+  const profileUser = { ...user, displayName, avatar: displayAvatar, coverUrl: displayCover, member: activeMember };
+
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const [coverMenuOpen, setCoverMenuOpen] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const syncProfile = (nextUser: AuthUser, nextMember?: Member | null) => {
     const syncedMember = nextMember || nextUser.member;
@@ -472,91 +543,130 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
     }
   }
 
+  async function handleCoverChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return ui.toast("Vui lòng chọn file hình ảnh", "error");
+    try {
+      ui.toast("Đang xử lý ảnh...", "success");
+      const base64 = await compressImage(file);
+      const payload = { coverUrl: base64, displayName: displayName || "Quản trị viên", name: activeMember?.name || displayName || "Quản trị viên", nickname: activeMember?.nickname || "", phone: activeMember?.phone || "", birthday: activeMember?.birthday || null, gender: activeMember?.gender || "", notes: activeMember?.notes || "" };
+      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await readJsonSafe<{ user?: AuthUser; member?: Member; error?: string }>(response);
+      if (response.ok && result?.user) {
+        const nextMember = result.member || activeMember;
+        const nextUser = { ...result.user, coverUrl: base64, member: nextMember ? { ...nextMember, coverUrl: base64 } : undefined };
+        savedUser(nextUser as any);
+        await refreshCurrentUser();
+        ui.toast("Đã cập nhật ảnh bìa", "success");
+      } else {
+        ui.toast(result?.error || "Lỗi khi cập nhật ảnh bìa", "error");
+      }
+    } catch (e) {
+      ui.toast("Lỗi xử lý ảnh", "error");
+    }
+  }
+
+  async function handleCoverDelete() {
+    if (!await ui.confirm("Xóa ảnh bìa?", "Bạn có chắc chắn muốn xóa ảnh bìa hiện tại?")) return;
+    try {
+      const payload = { coverUrl: "", displayName: displayName || "Quản trị viên", name: activeMember?.name || displayName || "Quản trị viên", nickname: activeMember?.nickname || "", phone: activeMember?.phone || "", birthday: activeMember?.birthday || null, gender: activeMember?.gender || "", notes: activeMember?.notes || "" };
+      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (response.ok) {
+        const nextUser = { ...user, coverUrl: "", member: activeMember ? { ...activeMember, coverUrl: "" } : undefined };
+        savedUser(nextUser as any);
+        await refreshCurrentUser();
+        ui.toast("Đã xóa ảnh bìa", "success");
+      } else {
+        ui.toast("Lỗi khi xóa ảnh bìa", "error");
+      }
+    } catch (e) {
+      ui.toast("Lỗi máy chủ", "error");
+    }
+  }
+
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  return <div className="mx-auto max-w-md pb-8 w-full md:rounded-3xl overflow-hidden bg-slate-50 dark:bg-slate-950">
-    <div className="h-32 md:h-40 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 relative">
-      <div className="absolute inset-0 bg-black/10" />
+  return <div className="mx-auto max-w-md pb-8 w-full md:rounded-3xl bg-[#f8fafc] dark:bg-slate-950 min-h-full">
+    <div className="h-32 md:h-40 w-full relative cursor-pointer group" onClick={() => setCoverMenuOpen(true)}>
+      {displayCover ? (
+        <Image unoptimized fill className="object-cover object-center" src={displayCover} alt="Cover" />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+      )}
+      <div className="absolute inset-0 bg-black/10 transition-opacity group-hover:bg-black/20" />
     </div>
     
-    <div className="flex flex-col items-center bg-white px-4 pb-6 pt-0 dark:bg-[var(--app-card)] md:rounded-b-3xl shadow-sm mb-4 relative z-10">
+    <div className="flex flex-col items-center bg-white px-4 pb-6 pt-0 dark:bg-[var(--app-card)] md:rounded-b-3xl relative z-10 border-b border-slate-200 dark:border-white/10">
       <div className="relative -mt-14 mb-3">
-        <span className="grid size-28 overflow-hidden rounded-full bg-white text-4xl font-bold text-indigo-500 shadow-md ring-4 ring-white dark:bg-slate-800 dark:ring-slate-900">
+        <button onClick={() => setAvatarMenuOpen(true)} className="grid size-28 overflow-hidden rounded-full bg-white text-4xl font-bold text-indigo-500 shadow-md ring-4 ring-white dark:bg-slate-800 dark:ring-slate-900 cursor-pointer hover:opacity-90 transition-opacity">
           <AccountAvatar user={profileUser} size="size-full object-cover object-center" />
-        </span>
-        <label className="absolute bottom-0 right-0 grid size-8 cursor-pointer place-items-center rounded-full bg-slate-100 text-slate-700 shadow-sm ring-2 ring-white hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-200 dark:ring-slate-800">
-          <svg viewBox="0 0 24 24" className="size-4 fill-none stroke-current stroke-2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
-          <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
-        </label>
-        {displayAvatar && <button onClick={handleAvatarDelete} className="absolute -left-1 top-0 grid size-7 cursor-pointer place-items-center rounded-full bg-slate-100 text-rose-500 shadow-sm ring-2 ring-white hover:bg-rose-50 dark:bg-slate-700 dark:ring-slate-800"><svg viewBox="0 0 24 24" className="size-4 fill-none stroke-current stroke-2"><path d="M18 6L6 18M6 6l12 12" /></svg></button>}
+        </button>
       </div>
       <h2 className="text-xl font-bold text-slate-900 dark:text-white">{displayName}</h2>
       <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">{accessLabel(user.role)}</p>
     </div>
 
-    <div className="space-y-4 px-4 md:px-0">
-      <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[var(--app-card)]">
-        <button onClick={() => setProfileEditorOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
-          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg"><UserIcon /></span>Thông tin cá nhân</span>
-          <span className="text-slate-400">›</span>
-        </button>
-        <button onClick={() => setActivityOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
-          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg"><NotesIcon /></span>Lịch sử hoạt động</span>
-          <span className="text-slate-400">›</span>
-        </button>
-        <button onClick={openChangePassword} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
-          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg"><LockIcon /></span>Đổi mật khẩu</span>
-          <span className="text-slate-400">›</span>
-        </button>
-        <button onClick={() => setSettingsOpen(true)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5">
-          <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg"><SettingsIcon /></span>Cài đặt</span>
-          <span className="text-slate-400">›</span>
-        </button>
-      </div>
-
+    <div className="mt-2 bg-white dark:bg-[var(--app-card)] border-y border-slate-200 dark:border-white/10">
+      <button onClick={() => setProfileEditorOpen(true)} className="flex w-full items-center justify-between px-4 h-[56px] text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+        <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg w-6 text-center"><UserIcon /></span>Thông tin cá nhân</span>
+        <span className="text-slate-400">›</span>
+      </button>
+      <button onClick={() => setAccountSheetOpen(true)} className="flex w-full items-center justify-between px-4 h-[56px] text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+        <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg w-6 text-center"><LockIcon /></span>Tài khoản</span>
+        <span className="text-slate-400">›</span>
+      </button>
+      <button onClick={() => setWorkSheetOpen(true)} className="flex w-full items-center justify-between px-4 h-[56px] text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+        <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg w-6 text-center"><svg className="size-5 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg></span>Công việc</span>
+        <span className="text-slate-400">›</span>
+      </button>
+      <button onClick={() => setBankSheetOpen(true)} className="flex w-full items-center justify-between px-4 h-[56px] text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+        <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg w-6 text-center"><svg className="size-5 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg></span>Thẻ ngân hàng</span>
+        <span className="text-slate-400">›</span>
+      </button>
+      <button onClick={() => setSimSheetOpen(true)} className="flex w-full items-center justify-between px-4 h-[56px] text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5">
+        <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg w-6 text-center"><svg className="size-5 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg></span>SIM / Data</span>
+        <span className="text-slate-400">›</span>
+      </button>
+      <button onClick={() => setSettingsOpen(true)} className="flex w-full items-center justify-between px-4 h-[56px] text-left active:bg-slate-50 dark:active:bg-white/5">
+        <span className="flex items-center gap-3 text-sm font-medium text-slate-800 dark:text-slate-200"><span className="text-indigo-500 text-lg w-6 text-center"><svg className="size-5 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></span>Cài đặt</span>
+        <span className="text-slate-400">›</span>
+      </button>
     </div>
 
     {settingsOpen && (
-      <div className="fixed inset-0 z-50 flex flex-col md:items-center md:justify-center bg-[#f8fafc] dark:bg-[var(--app-bg)] md:bg-black/45 md:p-4 animate-in fade-in duration-200">
-        <div className="w-full h-full md:h-auto md:max-w-md md:max-h-[85vh] flex flex-col md:overflow-hidden md:rounded-2xl bg-[#f8fafc] dark:bg-[var(--app-bg)] md:bg-white md:dark:bg-slate-900 md:shadow-2xl animate-in slide-in-from-bottom-8 md:slide-in-from-bottom-4 duration-300 relative">
-          <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-[var(--app-card)] border-b border-slate-200 dark:border-white/10 sticky top-0 z-20 shadow-sm">
-            <button onClick={() => setSettingsOpen(false)} className="text-slate-500">
-              <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-            </button>
-            <h2 className="text-lg font-bold text-slate-800 dark:text-white">Cài đặt</h2>
-          </div>
-          <div className="hidden md:flex items-center justify-between p-5 pb-0">
-            <h2 className="text-lg font-bold text-slate-800 dark:text-white">Cài đặt</h2>
-            <button onClick={() => setSettingsOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-6">
-            <div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 md:px-0">Ngôn ngữ</h3>
-              <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10">
-                {[{ id: 'vi', label: 'Tiếng Việt' }, { id: 'en', label: 'English' }, { id: 'ja', label: '日本語' }].map(item => (
-                  <button key={item.id} onClick={() => setLanguage && setLanguage(item.id as Language)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5 last:border-0">
+      <FullScreenMobileSheet title="Cài đặt" close={() => setSettingsOpen(false)}>
+        <div className="pb-10 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-full">
+            <div className="mt-4">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-6">Ngôn ngữ</h3>
+              <div className="bg-white border-y border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10 shadow-sm">
+                {[{ id: 'vi', label: 'Tiếng Việt' }, { id: 'en', label: 'English' }, { id: 'ja', label: '日本語' }].map((item, index, arr) => (
+                  <button key={item.id} onClick={() => setLanguage && setLanguage(item.id as Language)} className={`flex w-full items-center justify-between px-6 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 ${index !== arr.length - 1 ? "border-b border-slate-100 dark:border-white/5" : ""}`}>
                     <span className={`text-sm font-medium ${language === item.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}`}>{item.label}</span>
                     {language === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
                   </button>
                 ))}
               </div>
             </div>
-            <div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 md:px-0">Giao diện</h3>
-              <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10">
-                {[{ id: 'light', label: 'Sáng' }, { id: 'dark', label: 'Tối' }].map(item => (
-                  <button key={item.id} onClick={() => setTheme && setTheme(item.id as "light" | "dark")} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5 last:border-0">
+            
+            <div className="mt-6">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-6">Giao diện</h3>
+              <div className="bg-white border-y border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10 shadow-sm">
+                {[{ id: 'light', label: 'Sáng' }, { id: 'dark', label: 'Tối' }].map((item, index, arr) => (
+                  <button key={item.id} onClick={() => setTheme && setTheme(item.id as "light" | "dark")} className={`flex w-full items-center justify-between px-6 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 ${index !== arr.length - 1 ? "border-b border-slate-100 dark:border-white/5" : ""}`}>
                     <span className={`text-sm font-medium ${theme === item.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}`}>{item.label}</span>
                     {theme === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
                   </button>
                 ))}
               </div>
             </div>
-            <div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 md:px-0">Thông báo thiết bị</h3>
-              <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10 p-4">
-                <p className="text-xs text-slate-500 mb-3 leading-relaxed">Nhận thông báo push khi có sự kiện mới hoặc sắp tới. Yêu cầu trình duyệt hỗ trợ.</p>
-                <div className="flex gap-2">
+            
+            <div className="mt-6">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-6">Thông báo thiết bị</h3>
+              <div className="bg-white border-y border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10 shadow-sm p-6">
+                <p className="text-sm text-slate-500 mb-4 leading-relaxed">Nhận thông báo push khi có sự kiện mới hoặc sắp tới. Yêu cầu trình duyệt hỗ trợ.</p>
+                <div className="flex flex-col gap-3">
                   <button onClick={() => {
                     requestNotificationPermission().then(res => {
                       if (res) {
@@ -566,28 +676,31 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
                         alert('Không thể đăng ký thông báo hoặc bạn đã từ chối.');
                       }
                     });
-                  }} className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition">Bật thông báo</button>
+                  }} className="w-full py-3 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition">Bật thông báo</button>
                   <button onClick={() => {
                     fetch('/api/push/send-test', { method: 'POST' })
                       .then(res => res.json())
                       .then(data => alert(data.success ? 'Đã gửi thông báo thử nghiệm' : 'Lỗi: ' + data.error))
                       .catch(() => alert('Lỗi khi gửi test'));
-                  }} className="px-3 py-2 bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-200 dark:hover:bg-white/20 transition">Gửi thử</button>
+                  }} className="w-full py-3 bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300 rounded-xl text-sm font-semibold hover:bg-slate-200 dark:hover:bg-white/20 transition">Gửi thông báo thử nghiệm</button>
                 </div>
               </div>
             </div>
-            <div className="pt-2">
-              <button onClick={() => setLogoutConfirmOpen(true)} className="flex w-full items-center justify-center px-4 py-4 rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10 active:bg-rose-50 dark:active:bg-rose-500/10">
-                <span className="text-sm font-bold text-rose-500">Đăng xuất</span>
+            
+            <div className="mt-8 px-4">
+              <button onClick={() => setLogoutConfirmOpen(true)} className="w-full py-4 rounded-xl bg-white border border-rose-200 dark:bg-[var(--app-card)] dark:border-rose-500/30 active:bg-rose-50 dark:active:bg-rose-500/10 shadow-sm text-rose-500 font-bold text-sm">
+                Đăng xuất khỏi ứng dụng
               </button>
             </div>
-            <div className="h-20 md:hidden" />
-          </div>
         </div>
-      </div>
+      </FullScreenMobileSheet>
     )}
 
     {profileEditorOpen && <ProfileSheet user={profileUser} close={() => setProfileEditorOpen(false)} saved={syncProfile} refreshCurrentUser={refreshCurrentUser} profileSaved={(profile, nextMember) => syncProfile(profile, nextMember)} />}
+    {accountSheetOpen && <AccountSheet user={profileUser} close={() => setAccountSheetOpen(false)} saved={syncProfile} refreshCurrentUser={refreshCurrentUser} openActivity={() => { setAccountSheetOpen(false); setActivityOpen(true); }} />}
+    {workSheetOpen && <MobileWorkSheet member={activeMember} close={() => setWorkSheetOpen(false)} />}
+    {bankSheetOpen && <MobileBankSheet member={activeMember} close={() => setBankSheetOpen(false)} />}
+    {simSheetOpen && <MobileSimSheet member={activeMember} close={() => setSimSheetOpen(false)} />}
     
     {activityOpen && <Sheet close={() => setActivityOpen(false)}>
       <div className="flex items-center justify-between mb-4">
@@ -613,8 +726,64 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
       </div>
     )}
 
+    {/* Hidden inputs for file upload */}
+    <input type="file" accept="image/*" className="hidden" ref={avatarInputRef} onChange={handleAvatarChange} />
+    <input type="file" accept="image/*" className="hidden" ref={coverInputRef} onChange={handleCoverChange} />
+
+    {/* Action Menus */}
+    <ActionMenu 
+      isOpen={avatarMenuOpen} 
+      close={() => setAvatarMenuOpen(false)} 
+      actions={[
+        { label: "Xem ảnh đại diện", onClick: () => setPreviewImage(displayAvatar || null), hidden: !displayAvatar },
+        { label: "Thêm ảnh đại diện", onClick: () => avatarInputRef.current?.click(), hidden: !!displayAvatar },
+        { label: "Đổi ảnh đại diện", onClick: () => avatarInputRef.current?.click(), hidden: !displayAvatar },
+        { label: "Xóa ảnh đại diện", onClick: handleAvatarDelete, textClass: "text-rose-500", hidden: !displayAvatar }
+      ]} 
+    />
+    <ActionMenu 
+      isOpen={coverMenuOpen} 
+      close={() => setCoverMenuOpen(false)} 
+      actions={[
+        { label: "Xem ảnh bìa", onClick: () => setPreviewImage(displayCover || null), hidden: !displayCover },
+        { label: "Thêm ảnh bìa", onClick: () => coverInputRef.current?.click(), hidden: !!displayCover },
+        { label: "Đổi ảnh bìa", onClick: () => coverInputRef.current?.click(), hidden: !displayCover },
+        { label: "Xóa ảnh bìa", onClick: handleCoverDelete, textClass: "text-rose-500", hidden: !displayCover }
+      ]} 
+    />
+
+    {/* Fullscreen Image Viewer */}
+    {previewImage && (
+      <div className="fixed inset-0 z-[60] bg-black flex items-center justify-center animate-in fade-in duration-200">
+        <button onClick={() => setPreviewImage(null)} className="absolute top-4 right-4 z-10 p-2 text-white bg-black/50 rounded-full hover:bg-black/70">
+          <svg viewBox="0 0 24 24" className="w-6 h-6 stroke-current stroke-2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+        <img src={previewImage} className="max-w-full max-h-full object-contain" alt="Preview" />
+      </div>
+    )}
 
   </div>;
+}
+
+function ActionMenu({ isOpen, close, actions }: { isOpen: boolean, close: () => void, actions: { label: string, onClick: () => void, textClass?: string, hidden?: boolean }[] }) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 animate-in fade-in duration-200" onClick={close}>
+      <div className="bg-white dark:bg-slate-900 rounded-t-2xl w-full pb-safe max-w-md mx-auto" onClick={e => e.stopPropagation()}>
+        <div className="pt-2 pb-4 space-y-0 text-center">
+          {actions.filter(a => !a.hidden).map((a, i) => (
+            <button key={i} onClick={() => { close(); a.onClick(); }} className={`w-full py-4 text-[15px] font-medium active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5 last:border-0 ${a.textClass || 'text-slate-800 dark:text-slate-200'}`}>
+              {a.label}
+            </button>
+          ))}
+          <div className="h-2 bg-slate-100 dark:bg-black/20" />
+          <button onClick={close} className="w-full py-4 text-[15px] font-medium text-slate-800 dark:text-slate-200 active:bg-slate-50 dark:active:bg-white/5">
+            Hủy
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function SystemAdminProfile({ user, openChangePassword, logout, savedUser, refreshCurrentUser }: { user: AuthUser; openChangePassword: () => void; logout: () => void; savedUser: (user: AuthUser) => void; refreshCurrentUser: () => Promise<AuthUser | null> }) {
@@ -747,19 +916,47 @@ function ChangePasswordSheet({ close, saved }: { close: () => void; saved: (user
 export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentUser }: { user: AuthUser; close: () => void; saved: (user: AuthUser) => void; profileSaved?: (user: AuthUser, member?: Member | null) => void; refreshCurrentUser?: () => Promise<AuthUser | null> }) {
   const [profile, setProfile] = useState<ProfileUser | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
-  const [form, setForm] = useState({ displayName: user.displayName, email: "", avatar: user.avatar, memberId: user.memberId || "", name: "", nickname: "", phone: "", birthday: "", gender: "", notes: "" });
+  
+  const [profileForm, setProfileForm] = useState(() => ({
+    displayName: user.displayName || "",
+    email: user.email || "",
+    avatar: user.avatar || "",
+    memberId: user.memberId || "",
+    name: user.member?.name || user.displayName || "",
+    nickname: user.member?.nickname || "",
+    phone: user.member?.phone || "",
+    birthday: user.member?.birthday || "",
+    gender: user.member?.gender || "",
+    notes: user.member?.notes || ""
+  }));
+
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [genderSheetOpen, setGenderSheetOpen] = useState(false);
-  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+  const inputClass = "w-full bg-transparent outline-none text-right placeholder:text-slate-300 dark:placeholder:text-slate-600";
+  
   useEffect(() => { 
     void fetch("/api/auth/profile").then(async response => { 
       const result = await readJsonSafe<{ error?: string; user?: ProfileUser }>(response); 
       if (!response.ok || !result?.user) throw new Error(result?.error || "Không thể tải hồ sơ."); 
       setProfile(result.user); 
-      setForm({ displayName: result.user.displayName, email: result.user.email || "", avatar: result.user.avatar || "", memberId: result.user.memberId || "", name: result.user.member?.name || "", nickname: result.user.member?.nickname || "", phone: result.user.member?.phone || "", birthday: result.user.member?.birthday || "", gender: result.user.member?.gender || "", notes: result.user.member?.notes || "" }); 
+      
+      const u = result.user;
+      setProfileForm(current => ({
+        displayName: current.displayName !== (user.displayName || "") ? current.displayName : (u.displayName || ""),
+        email: current.email !== (user.email || "") ? current.email : (u.email || ""),
+        name: current.name !== (user.member?.name || user.displayName || "") ? current.name : (u.member?.name || u.displayName || ""),
+        nickname: current.nickname !== (user.member?.nickname || "") ? current.nickname : (u.member?.nickname || ""),
+        phone: current.phone !== (user.member?.phone || "") ? current.phone : (u.member?.phone || ""),
+        birthday: current.birthday !== (user.member?.birthday || "") ? current.birthday : (u.member?.birthday || ""),
+        gender: current.gender !== (user.member?.gender || "") ? current.gender : (u.member?.gender || ""),
+        notes: current.notes !== (user.member?.notes || "") ? current.notes : (u.member?.notes || ""),
+        avatar: current.avatar,
+        memberId: u.memberId || current.memberId
+      }));
     }).catch(reason => setError(reason instanceof Error ? reason.message : "Không thể tải hồ sơ."));
+    
     if (user.role === "full_access") {
       void fetch("/api/members").then(async response => {
         const json = await response.json();
@@ -767,11 +964,12 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
         if (response.ok) setMembers(members);
       });
     }
-  }, [user.role]);
+  }, [user.role, user]);
+
   async function submit(event?: React.FormEvent | React.MouseEvent) {
     if (event) event.preventDefault(); setLoading(true); setError(""); setSuccess("");
     try {
-      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(profileForm) });
       const result = await readJsonSafe<{ error?: string; profile?: ProfileUser; user?: AuthUser }>(response);
       if (!response.ok || !result?.profile || !result.user) throw new Error(result?.error || "Không thể cập nhật hồ sơ.");
       const refreshedUser = await refreshCurrentUser?.();
@@ -784,41 +982,53 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể cập nhật hồ sơ."); }
     finally { setLoading(false); }
   }
+
   return <FullScreenMobileSheet title="Thông tin cá nhân" close={close} onSubmit={submit} loading={loading}>
-    <form onSubmit={submit} className="p-4 md:p-0">
-      <div className="flex items-center gap-3">
-        <AccountAvatar user={{ avatar: form.avatar, displayName: form.displayName }} size="size-16" />
-        <div><b>{form.displayName || user.username}</b><p className="text-xs text-slate-400">{profile?.username ?? user.username} · {accessLabel(profile?.role ?? user.role)}</p></div>
+    <form onSubmit={submit} className="pb-10">
+      <div className="flex flex-col items-center gap-3 bg-white dark:bg-[var(--app-card)] pt-6 pb-4">
+        <AccountAvatar user={{ avatar: profileForm.avatar, displayName: profileForm.displayName }} size="size-20" />
+        <div className="text-center">
+          <b className="text-lg">{profileForm.displayName || user.username}</b>
+          <p className="text-[13px] text-slate-400 mt-0.5">{profile?.username ?? user.username} · {accessLabel(profile?.role ?? user.role)}</p>
+        </div>
       </div>
-      <div className="mt-5 space-y-4">
-        <Field label="Username"><input disabled className={inputClass} value={profile?.username ?? user.username} readOnly /></Field>
-        {profile?.memberId ? <>
-          <Field label="Họ tên"><input required className={inputClass} value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} /></Field>
-          <Field label="Biệt danh"><input className={inputClass} value={form.nickname} onChange={event => setForm(current => ({ ...current, nickname: event.target.value }))} /></Field>
-          <Field label="Email (Tài khoản)"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field>
-          <Field label="Số điện thoại"><input type="tel" className={inputClass} value={form.phone} onChange={event => setForm(current => ({ ...current, phone: event.target.value }))} /></Field>
-          <BirthdaySelect value={form.birthday} onChange={value => setForm(current => ({...current, birthday: value}))} />
-          <Field label="Giới tính">
-            <button type="button" onClick={() => setGenderSheetOpen(true)} className={`${inputClass} flex items-center justify-between text-left`}>
-              <span>{form.gender === "male" ? "Nam" : form.gender === "female" ? "Nữ" : form.gender === "other" ? "Khác" : "Chưa chọn"}</span>
-              <span className="text-slate-400">›</span>
-            </button>
-          </Field>
-          <Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field>
-          <Field label="Ghi chú"><textarea rows={3} className={inputClass} value={form.notes} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} /></Field>
-        </> : <>
-          <Field label="Tên hiển thị"><input required className={inputClass} value={form.displayName} onChange={event => setForm(current => ({ ...current, displayName: event.target.value }))} /></Field>
-          <Field label="Email"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field>
-          <Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field>
-          {user.role === "full_access" && <Field label="Liên kết thành viên"><select className={inputClass} value={form.memberId} onChange={event => setForm(current => ({ ...current, memberId: event.target.value }))}><option value="">Chưa liên kết</option>{members.map(member => <option key={member.id} value={member.id}>{member.nickname || member.name}</option>)}</select></Field>}
-        </>}
-        <Field label="Quyền hệ thống"><input disabled className={inputClass} value={accessLabel(profile?.role ?? user.role)} readOnly /></Field>
-        <Field label="Trạng thái"><input disabled className={inputClass} value={profile?.active === false ? "Đã tắt" : "Đang hoạt động"} readOnly /></Field>
-        {profile?.createdAt && <Field label="Ngày tạo tài khoản"><input disabled className={inputClass} value={new Date(profile.createdAt).toLocaleString("vi-VN")} readOnly /></Field>}
+      <div className="h-4 bg-[var(--app-background)]" />
+      <div className="flex flex-col border-y border-slate-200 dark:border-white/10 bg-white dark:bg-[var(--app-card)]">
+        <ProfileField label="Username" isText>{profile?.username ?? user.username}</ProfileField>
+        
+        <ProfileField label="Họ tên"><input required className={inputClass} value={profileForm.name} onChange={event => setProfileForm(current => ({ ...current, name: event.target.value }))} placeholder="Nhập họ tên" /></ProfileField>
+        <ProfileField label="Biệt danh"><input className={inputClass} value={profileForm.nickname} onChange={event => setProfileForm(current => ({ ...current, nickname: event.target.value }))} placeholder="Nhập biệt danh" /></ProfileField>
+        <ProfileField label="Email"><input type="email" className={inputClass} value={profileForm.email} onChange={event => setProfileForm(current => ({ ...current, email: event.target.value }))} placeholder="Nhập email" /></ProfileField>
+        <ProfileField label="Số điện thoại"><input type="tel" className={inputClass} value={profileForm.phone} onChange={event => setProfileForm(current => ({ ...current, phone: event.target.value }))} placeholder="Nhập SĐT" /></ProfileField>
+        <BirthdaySelect value={profileForm.birthday} onChange={value => setProfileForm(current => ({...current, birthday: value}))} asProfileField />
+        <ProfileField label="Giới tính">
+          <button type="button" onClick={() => setGenderSheetOpen(true)} className={`${inputClass} flex items-center justify-end text-right`}>
+            <span className={!profileForm.gender ? "text-slate-300 dark:text-slate-600" : ""}>{profileForm.gender === "male" ? "Nam" : profileForm.gender === "female" ? "Nữ" : profileForm.gender === "other" ? "Khác" : "Chưa chọn"}</span>
+            <span className="text-slate-400 ml-1">›</span>
+          </button>
+        </ProfileField>
+        <ProfileField label="Ghi chú"><input className={inputClass} value={profileForm.notes} onChange={event => setProfileForm(current => ({ ...current, notes: event.target.value }))} placeholder="Thêm ghi chú" /></ProfileField>
+        
+        <ProfileField label="Thành viên">
+          {user.role === "full_access" && !user.memberId ? (
+            <select className={`${inputClass} appearance-none text-right`} value={profileForm.memberId} onChange={event => setProfileForm(current => ({ ...current, memberId: event.target.value }))}>
+              <option value="">Chưa liên kết</option>
+              {members.map(member => <option key={member.id} value={member.id}>{member.nickname || member.name}</option>)}
+            </select>
+          ) : (
+            <span className="truncate">{profile?.member?.name || user.member?.name || profileForm.name || profileForm.displayName || "—"}</span>
+          )}
+        </ProfileField>
       </div>
-      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
-      {success && <p className="mt-3 text-sm font-bold text-emerald-500">{success}</p>}
-      <div className="mt-6 hidden md:flex gap-3">
+      <div className="h-4 bg-[var(--app-background)]" />
+      <div className="flex flex-col border-y border-slate-200 dark:border-white/10 bg-white dark:bg-[var(--app-card)]">
+        <ProfileField label="Quyền hệ thống" isText>{accessLabel(profile?.role ?? user.role)}</ProfileField>
+        <ProfileField label="Trạng thái" isText>{profile?.active === false ? "Đã tắt" : "Đang hoạt động"}</ProfileField>
+        <ProfileField label="Ngày tạo" isText>{profile?.createdAt ? new Date(profile.createdAt).toLocaleString("vi-VN") : "—"}</ProfileField>
+      </div>
+      {error && <p className="mt-4 px-4 text-sm text-red-500 text-center">{error}</p>}
+      {success && <p className="mt-4 px-4 text-sm font-bold text-emerald-500 text-center">{success}</p>}
+      <div className="mt-6 hidden md:flex gap-3 px-4">
         <button type="button" onClick={close} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Đóng</button>
         <button disabled={loading} className="flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{loading ? "Đang lưu..." : "Lưu hồ sơ"}</button>
       </div>
@@ -831,9 +1041,9 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
         </div>
         <div className="space-y-2">
           {[{ id: "male", label: "Nam" }, { id: "female", label: "Nữ" }, { id: "other", label: "Khác" }].map(item => (
-            <button key={item.id} onClick={() => { setForm(current => ({ ...current, gender: item.id })); setGenderSheetOpen(false); }} className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/5">
-              <span className={`text-sm font-medium ${form.gender === item.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}>{item.label}</span>
-              {form.gender === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
+            <button key={item.id} onClick={() => { setProfileForm(current => ({ ...current, gender: item.id })); setGenderSheetOpen(false); }} className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/5">
+              <span className={`text-sm font-medium ${profileForm.gender === item.id ? "text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}>{item.label}</span>
+              {profileForm.gender === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
             </button>
           ))}
         </div>
@@ -842,21 +1052,386 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
   </FullScreenMobileSheet>;
 }
 
-function FullScreenMobileSheet({ close, children, title, onSubmit, loading }: { close: () => void; children: React.ReactNode; title: string; onSubmit?: (e: React.FormEvent | React.MouseEvent) => void; loading?: boolean }) {
+function FullScreenMobileSheet({ close, children, title, onSubmit, loading, headerLeft, headerRight }: { close: () => void; children: React.ReactNode; title?: string; onSubmit?: (e: React.FormEvent | React.MouseEvent) => void; loading?: boolean; headerLeft?: React.ReactNode; headerRight?: React.ReactNode }) {
   return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 md:items-center md:p-6" onMouseDown={close}>
     <div onMouseDown={e => e.stopPropagation()} className="flex h-[100dvh] md:h-auto w-full flex-col overflow-hidden bg-[var(--app-background)] md:max-h-[90vh] md:max-w-lg md:rounded-3xl">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--app-border)] bg-[var(--app-nav)] px-4">
-        <button type="button" onClick={close} className="grid size-8 place-items-center text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white">✕</button>
-        <h2 className="text-[17px] font-bold truncate px-2">{title}</h2>
-        {onSubmit ? (
-          <button onClick={onSubmit} disabled={loading} className="text-[15px] font-bold text-indigo-600 hover:text-indigo-700 disabled:opacity-50 dark:text-indigo-400 dark:hover:text-indigo-300">Lưu</button>
-        ) : <div className="size-8" />}
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 dark:border-[var(--app-border)] bg-white dark:bg-[var(--app-card)] px-4">
+        {headerLeft ? headerLeft : <button type="button" aria-label="Quay lại" onClick={close} className="grid size-10 place-items-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg></button>}
+        {title && <h2 className="text-[17px] font-bold truncate px-2">{title}</h2>}
+        {headerRight ? headerRight : (onSubmit ? <button onClick={onSubmit} disabled={loading} className="text-[16px] font-bold text-indigo-600 hover:text-indigo-700 disabled:opacity-50 dark:text-indigo-400 dark:hover:text-indigo-300">Lưu</button> : <div className="w-10" />)}
       </div>
-      <div className="flex-1 overflow-y-auto bg-[var(--app-card)] md:p-0">
+      <div className="flex-1 overflow-y-auto bg-[var(--app-background)] md:p-0">
         {children}
       </div>
     </div>
   </div>;
+}
+
+// --- Mobile Profile Sheets ---
+export function AccountSheet({ user, close, saved, openActivity, refreshCurrentUser }: { user: AuthUser; close: () => void; saved: (user: AuthUser) => void; openActivity: () => void; refreshCurrentUser: () => Promise<AuthUser | null> }) {
+  const [view, setView] = useState<"view" | "edit">("view");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const ui = useUI();
+
+  const [username, setUsername] = useState(user.username);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400 disabled:opacity-70";
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    let updatedUser = user;
+    const usernameChanged = username !== user.username;
+    const passwordChanged = currentPassword.length > 0 || newPassword.length > 0 || confirmPassword.length > 0;
+
+    if (!usernameChanged && !passwordChanged) {
+      return setView("view");
+    }
+
+    if (usernameChanged) {
+      if (!username.trim() || username.includes(" ") || username.length < 3) return ui.toast("Tên đăng nhập tối thiểu 3 ký tự và không chứa khoảng trắng.", "error");
+      if (!/^[a-zA-Z0-9_]+$/.test(username)) return ui.toast("Tên đăng nhập chỉ được chứa chữ, số và gạch dưới.", "error");
+    }
+
+    if (passwordChanged) {
+      if (!currentPassword) return ui.toast("Vui lòng nhập mật khẩu hiện tại.", "error");
+      if (newPassword.length < 6) return ui.toast("Mật khẩu mới cần ít nhất 6 ký tự.", "error");
+      if (newPassword !== confirmPassword) return ui.toast("Nhập lại mật khẩu mới chưa khớp.", "error");
+      if (newPassword === currentPassword) return ui.toast("Mật khẩu mới không được trùng mật khẩu hiện tại.", "error");
+    }
+
+    setLoading(true);
+    try {
+      if (usernameChanged) {
+        const res = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username }) });
+        const resData = await readJsonSafe<{ error?: string; user?: AuthUser; profile?: any }>(res);
+        if (!res.ok) throw new Error(resData?.error || "Không thể đổi tên đăng nhập. Có thể đã bị trùng.");
+        updatedUser = { ...updatedUser, username: resData?.profile?.username || username };
+      }
+
+      if (passwordChanged) {
+        const pwRes = await fetch("/api/auth/change-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) });
+        const pwData = await readJsonSafe<{ error?: string; user?: AuthUser }>(pwRes);
+        if (!pwRes.ok) throw new Error(pwData?.error || "Không thể đổi mật khẩu.");
+        updatedUser = pwData?.user || updatedUser;
+      }
+
+      await refreshCurrentUser();
+      saved(updatedUser);
+      ui.toast("Cập nhật tài khoản thành công", "success");
+      setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
+      setView("view");
+    } catch (err: any) {
+      ui.toast(err.message || "Lỗi cập nhật tài khoản.", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (view === "edit") {
+    return <FullScreenMobileSheet title="Sửa tài khoản" close={() => { setView("view"); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setUsername(user.username); }} onSubmit={submit} loading={loading}>
+      <div className="pb-10 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-full">
+         <div className="bg-white dark:bg-[var(--app-card)] border-b border-slate-200 dark:border-white/10 mt-2 px-4 py-5 shadow-sm space-y-4">
+           <Field label="Tên đăng nhập"><input className={inputClass} value={username} onChange={e => setUsername(e.target.value)} /></Field>
+         </div>
+         <div className="bg-white dark:bg-[var(--app-card)] border-y border-slate-200 dark:border-white/10 mt-4 px-4 py-5 shadow-sm space-y-4">
+           <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-2">Đổi mật khẩu (không bắt buộc)</h3>
+           <PasswordField label="Mật khẩu hiện tại" value={currentPassword} setValue={setCurrentPassword} autoComplete="current-password" required={false} />
+           <PasswordField label="Mật khẩu mới" value={newPassword} setValue={setNewPassword} autoComplete="new-password" required={false} />
+           <PasswordField label="Nhập lại mật khẩu mới" value={confirmPassword} setValue={setConfirmPassword} autoComplete="new-password" required={false} />
+         </div>
+      </div>
+    </FullScreenMobileSheet>;
+  }
+
+  return <FullScreenMobileSheet 
+    close={close} 
+    title="Tài khoản"
+    headerLeft={<button onClick={close} className="p-2 -ml-2 text-slate-500 active:bg-slate-100 rounded-full dark:text-slate-400 dark:active:bg-slate-800"><svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>}
+    headerRight={<button onClick={() => setMenuOpen(true)} className="p-2 -mr-2 text-slate-500 active:bg-slate-100 rounded-full dark:text-slate-400 dark:active:bg-slate-800"><svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg></button>}
+  >
+    <div className="pb-10 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-full pt-4">
+       <div className="bg-white dark:bg-[var(--app-card)] border-y border-slate-200 dark:border-white/10 shadow-sm">
+         <ProfileField label="Tên đăng nhập" isText>{user.username}</ProfileField>
+         <ProfileField label="Mật khẩu" isText>••••••••</ProfileField>
+       </div>
+    </div>
+
+    {menuOpen && <div className="fixed inset-0 z-[70] bg-black/50 flex flex-col justify-end" onClick={() => setMenuOpen(false)}>
+      <div className="bg-white dark:bg-[var(--app-card)] w-full rounded-t-2xl flex flex-col pb-6" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b border-slate-100 dark:border-white/5 flex justify-between items-center"><h3 className="font-bold text-lg">Tùy chọn</h3><button onClick={() => setMenuOpen(false)} className="text-slate-400 p-2 text-xl font-bold">×</button></div>
+        <div className="p-2 space-y-1 mt-2">
+          <button className="w-full text-left p-4 rounded-xl active:bg-slate-50 dark:active:bg-white/5 font-medium flex items-center gap-3" onClick={() => { setView("edit"); setMenuOpen(false); }}><span className="text-slate-400"><UserIcon /></span>Sửa tài khoản</button>
+          <button className="w-full text-left p-4 rounded-xl text-rose-500 active:bg-rose-50 dark:active:bg-rose-500/10 font-medium flex items-center gap-3 mt-2" onClick={() => setMenuOpen(false)}><span className="text-rose-400"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></span>Hủy</button>
+        </div>
+      </div>
+    </div>}
+  </FullScreenMobileSheet>;
+}
+
+export function MobileWorkSheet({ member, close }: { member?: Member | null; close: () => void }) {
+  const [data, setData] = useState<any[] | null>(null);
+  useEffect(() => {
+    if (!member) { setData([]); return; }
+    fetch(`/api/member-jobs?memberId=${encodeURIComponent(member.id)}`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => setData(res?.data || [])).catch(() => setData([]));
+  }, [member]);
+
+  return <FullScreenMobileSheet title="Công việc" close={close}>
+    <div className="pb-10 min-h-full bg-[#f8fafc] dark:bg-[var(--app-bg)] p-4">
+       {!data ? <div className="text-center py-10 text-slate-400">Đang tải...</div> : data.length === 0 ? <div className="flex flex-col items-center justify-center py-16 text-slate-400"><svg className="size-16 mb-4 text-slate-200 dark:text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg><p>Chưa có công việc liên quan.</p></div> : (
+         <div className="space-y-3">
+           {data.map((job: any) => <Card key={job.id} className="p-4"><b className="block text-slate-800 dark:text-white">{job.name}</b>{job.company && <p className="text-sm text-slate-500 mt-1">{job.company}</p>}</Card>)}
+         </div>
+       )}
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+export function MobileBankSheet({ member, close, user }: { member?: Member | null; close: () => void; user?: AuthUser }) {
+  const ui = useUI();
+  const [data, setData] = useState<any[] | null>(null);
+  const [view, setView] = useState<"list" | "detail" | "form">("list");
+  const [selected, setSelected] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+
+  const load = useCallback(() => {
+    fetch(`/api/bank-accounts`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => {
+      const all = res?.data || [];
+      setData(member ? all.filter((x: any) => x.memberId === member.id) : all);
+    }).catch(() => setData([]));
+  }, [member]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (payload: any) => {
+    setLoading(true); setError("");
+    const isNew = !payload.id;
+    const response = await fetch(isNew ? "/api/bank-accounts" : `/api/bank-accounts/${payload.id}`, { method: isNew ? "POST" : "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const result = await readJsonSafe<{ ok?: boolean; data?: any; error?: string }>(response);
+    setLoading(false);
+    if (!response.ok || !result?.ok) return setError(result?.error || "Lỗi lưu thẻ ngân hàng.");
+    ui.toast("Đã lưu thẻ ngân hàng", "success");
+    setView("list");
+    load();
+  };
+
+  const remove = async (id: string) => {
+    if (!await ui.confirm("Xóa thẻ ngân hàng?", "Bạn có chắc chắn muốn xóa thẻ này?")) return;
+    setLoading(true);
+    const response = await fetch(`/api/bank-accounts/${id}`, { method: "DELETE" });
+    setLoading(false);
+    if (!response.ok) return ui.toast("Lỗi khi xóa", "error");
+    ui.toast("Đã xóa", "success");
+    setView("list");
+    load();
+  };
+
+  if (view === "form") {
+    return <MobileBankForm account={selected} member={member} close={() => setView(selected?.id ? "detail" : "list")} save={save} loading={loading} error={error} inputClass={inputClass} />;
+  }
+
+  if (view === "detail" && selected) {
+    return <FullScreenMobileSheet title="Chi tiết thẻ" close={() => setView("list")}>
+      <div className="pb-10 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-full">
+         <div className="bg-white dark:bg-[var(--app-card)] border-b border-slate-200 dark:border-white/10 px-4 py-6 text-center shadow-sm">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-white">{selected.bankName}</h2>
+            <p className="text-sm font-medium text-slate-500 mt-1">{selected.cardType || "Tài khoản thường"}</p>
+         </div>
+         <div className="bg-white dark:bg-[var(--app-card)] border-y border-slate-200 dark:border-white/10 mt-4 shadow-sm">
+            <Field label="Tên thẻ / SP"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200">{selected.productName || "-"}</div></Field>
+            <Field label="Chủ thẻ"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200">{selected.accountName || "-"}</div></Field>
+            <Field label="4 số cuối"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200">{selected.cardNumber ? `**** ${selected.cardNumber.slice(-4)}` : "-"}</div></Field>
+            <Field label="Trạng thái"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200">{selected.status === "active" ? "Đang hoạt động" : "Đã khóa"}</div></Field>
+            {selected.note && <Field label="Ghi chú"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap">{selected.note}</div></Field>}
+         </div>
+         <div className="mt-6 px-4 flex flex-col gap-3">
+            <button onClick={() => { setSelected(selected); setView("form"); }} className="w-full py-3.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm active:bg-indigo-700">Sửa thông tin</button>
+            <button onClick={() => remove(selected.id)} className="w-full py-3.5 bg-white dark:bg-transparent border border-rose-200 dark:border-rose-500/30 text-rose-500 rounded-xl text-sm font-bold active:bg-rose-50 dark:active:bg-rose-500/10">Xóa thẻ</button>
+         </div>
+      </div>
+    </FullScreenMobileSheet>;
+  }
+
+  return <FullScreenMobileSheet title="Thẻ ngân hàng" close={close}>
+    <div className="pb-10 min-h-full bg-[#f8fafc] dark:bg-[var(--app-bg)]">
+       <div className="p-4">
+         {!data ? <div className="text-center py-10 text-slate-400">Đang tải...</div> : data.length === 0 ? <div className="flex flex-col items-center justify-center py-16 text-slate-400"><svg className="size-16 mb-4 text-slate-200 dark:text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg><p>Chưa có thẻ ngân hàng.</p></div> : (
+           <div className="space-y-3">
+             {data.map((card: any, i: number) => (
+               <button key={i} onClick={() => { setSelected(card); setView("detail"); }} className="w-full text-left bg-white dark:bg-[var(--app-card)] border-b border-slate-200 dark:border-white/10 rounded-xl p-4 flex items-center justify-between shadow-sm active:bg-slate-50 dark:active:bg-white/5 transition-colors">
+                 <div className="min-w-0">
+                   <b className="block text-slate-800 dark:text-white text-sm">{card.bankName}</b>
+                   <p className="text-xs text-slate-500 mt-1">{card.cardType || "Tài khoản thường"} {card.cardNumber && `· **** ${card.cardNumber.slice(-4)}`}</p>
+                 </div>
+                 <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md ${card.status === "active" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}>{card.status === "active" ? "Hoạt động" : "Đã khóa"}</span>
+               </button>
+             ))}
+           </div>
+         )}
+         {data !== null && <button onClick={() => { setSelected({ id: "", memberId: member?.id || "", bankName: "", cardType: "Tài khoản thường", productName: "", accountName: member?.name || member?.nickname || "", cardNumber: "", status: "active", note: "" }); setView("form"); }} className="mt-6 w-full py-4 border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold rounded-xl active:bg-slate-50 dark:active:bg-white/5">+ Thêm thẻ mới</button>}
+       </div>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+function MobileBankForm({ account, close, save, loading, error, inputClass }: any) {
+  const [form, setForm] = useState(account);
+  const set = (key: string, val: any) => setForm((c: any) => ({ ...c, [key]: val }));
+  const [showPicker, setShowPicker] = useState(false);
+  const bankNames = ["Vietcombank", "Techcombank", "ACB", "MB Bank", "VietinBank", "BIDV", "VPBank", "Sacombank"];
+  return <FullScreenMobileSheet title={form.id ? "Sửa thẻ" : "Thêm thẻ"} close={close}>
+    <div className="pb-10 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-full">
+      <div className="bg-white dark:bg-[var(--app-card)] border-y border-slate-200 dark:border-white/10 shadow-sm mt-2">
+        <Field label="Ngân hàng">
+          <button type="button" onClick={() => setShowPicker(true)} className={`${inputClass} text-left flex items-center justify-between`}>
+            <span>{form.bankName || "Chọn ngân hàng"}</span>
+            <span className="text-slate-400">›</span>
+          </button>
+        </Field>
+        <Field label="Loại thẻ/TK"><select className={inputClass} value={form.cardType} onChange={e => set("cardType", e.target.value)}><option value="">Tài khoản thường</option><option value="Thẻ tín dụng">Thẻ tín dụng</option><option value="Thẻ ghi nợ">Thẻ ghi nợ</option></select></Field>
+        <Field label="Sản phẩm"><input className={inputClass} value={form.productName} onChange={e => set("productName", e.target.value)} placeholder="Tên thẻ/tài khoản" /></Field>
+        <Field label="Tên in trên thẻ"><input className={inputClass} value={form.accountName} onChange={e => set("accountName", e.target.value)} /></Field>
+        <Field label="Số thẻ / STK (không bắt buộc)"><input className={inputClass} value={form.cardNumber} onChange={e => set("cardNumber", e.target.value)} /></Field>
+        <Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={e => set("status", e.target.value)}><option value="active">Đang hoạt động</option><option value="closed">Đã khóa</option></select></Field>
+        <Field label="Ghi chú"><textarea className={inputClass} value={form.note} onChange={e => set("note", e.target.value)} rows={3} /></Field>
+      </div>
+      {error && <div className="px-4 mt-4"><p className="text-sm font-medium text-rose-500 bg-rose-50 p-3 rounded-lg border border-rose-200">{error}</p></div>}
+      <div className="mt-6 px-4"><button disabled={loading} type="button" onClick={() => save(form)} className="w-full py-3.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm disabled:opacity-50">Lưu lại</button></div>
+    </div>
+    {showPicker && <div className="fixed inset-0 z-[70] bg-black/50 flex flex-col justify-end" onClick={() => setShowPicker(false)}>
+      <div className="bg-white dark:bg-[var(--app-card)] w-full max-h-[80vh] rounded-t-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b border-slate-100 flex justify-between items-center"><h3 className="font-bold text-lg">Chọn ngân hàng</h3><button onClick={() => setShowPicker(false)} className="text-slate-400 p-2 text-xl font-bold">×</button></div>
+        <div className="overflow-y-auto p-2">
+          {bankNames.map(name => <button key={name} className="w-full text-left p-4 border-b border-slate-50 active:bg-slate-50 font-medium" onClick={() => { set("bankName", name); setShowPicker(false); }}>{name}</button>)}
+        </div>
+      </div>
+    </div>}
+  </FullScreenMobileSheet>;
+}
+
+
+export function MobileSimSheet({ member, close }: { member?: Member | null; close: () => void }) {
+  const ui = useUI();
+  const [data, setData] = useState<any[] | null>(null);
+  const [view, setView] = useState<"list" | "detail" | "form">("list");
+  const [selected, setSelected] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+
+  const load = useCallback(() => {
+    fetch(`/api/member-sims`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => {
+      const all = res?.data || [];
+      setData(member ? all.filter((x: any) => x.memberId === member.id || x.member_id === member.id) : all);
+    }).catch(() => setData([]));
+  }, [member]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (payload: any) => {
+    setLoading(true); setError("");
+    const isNew = !payload.id;
+    const body = { ...payload, memberId: member?.id || payload.memberId || payload.member_id };
+    const response = await fetch(isNew ? "/api/member-sims" : `/api/member-sims/${payload.id}`, { method: isNew ? "POST" : "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const result = await readJsonSafe<{ ok?: boolean; data?: any; error?: string }>(response);
+    setLoading(false);
+    if (!response.ok || !result?.ok) return setError(result?.error || "Lỗi lưu SIM/Data.");
+    ui.toast("Đã lưu SIM/Data", "success");
+    setView("list");
+    load();
+  };
+
+  const remove = async (id: string) => {
+    if (!await ui.confirm("Xóa SIM/Data?", "Bạn có chắc chắn muốn xóa SIM này?")) return;
+    setLoading(true);
+    const response = await fetch(`/api/member-sims/${id}`, { method: "DELETE" });
+    setLoading(false);
+    if (!response.ok) return ui.toast("Lỗi khi xóa", "error");
+    ui.toast("Đã xóa", "success");
+    setView("list");
+    load();
+  };
+
+  if (view === "form") {
+    return <MobileSimForm sim={selected} close={() => setView(selected?.id ? "detail" : "list")} save={save} loading={loading} error={error} inputClass={inputClass} />;
+  }
+
+  if (view === "detail" && selected) {
+    return <FullScreenMobileSheet title="Chi tiết SIM" close={() => setView("list")}>
+      <div className="pb-10 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-full">
+         <div className="bg-white dark:bg-[var(--app-card)] border-b border-slate-200 dark:border-white/10 px-4 py-6 text-center shadow-sm">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-white">{selected.phoneNumber || selected.phone_number}</h2>
+            <p className="text-sm font-medium text-slate-500 mt-1">{selected.carrier || "Chưa xác định"}</p>
+         </div>
+         <div className="bg-white dark:bg-[var(--app-card)] border-y border-slate-200 dark:border-white/10 mt-4 shadow-sm">
+            <Field label="Loại SIM"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200">{selected.simType || selected.sim_type === "data" ? "SIM Data" : "SIM Nghe gọi"}</div></Field>
+            <Field label="Gói cước"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200">{selected.planName || selected.plan_name || "-"}</div></Field>
+            <Field label="Trạng thái"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200">{selected.status === "active" ? "Đang hoạt động" : "Đã khóa"}</div></Field>
+            {selected.note && <Field label="Ghi chú"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap">{selected.note}</div></Field>}
+         </div>
+         <div className="mt-6 px-4 flex flex-col gap-3">
+            <button onClick={() => { setSelected(selected); setView("form"); }} className="w-full py-3.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm active:bg-indigo-700">Sửa thông tin</button>
+            <button onClick={() => remove(selected.id)} className="w-full py-3.5 bg-white dark:bg-transparent border border-rose-200 dark:border-rose-500/30 text-rose-500 rounded-xl text-sm font-bold active:bg-rose-50 dark:active:bg-rose-500/10">Xóa SIM</button>
+         </div>
+      </div>
+    </FullScreenMobileSheet>;
+  }
+
+  return <FullScreenMobileSheet title="SIM / Data" close={close}>
+    <div className="pb-10 min-h-full bg-[#f8fafc] dark:bg-[var(--app-bg)]">
+       <div className="p-4">
+         {!data ? <div className="text-center py-10 text-slate-400">Đang tải...</div> : data.length === 0 ? <div className="flex flex-col items-center justify-center py-16 text-slate-400"><svg className="size-16 mb-4 text-slate-200 dark:text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg><p>Chưa có SIM / Data.</p></div> : (
+           <div className="space-y-3">
+             {data.map((sim: any, i: number) => (
+               <button key={i} onClick={() => { setSelected(sim); setView("detail"); }} className="w-full text-left bg-white dark:bg-[var(--app-card)] border-b border-slate-200 dark:border-white/10 rounded-xl p-4 flex items-center justify-between shadow-sm active:bg-slate-50 dark:active:bg-white/5 transition-colors">
+                 <div className="min-w-0">
+                   <b className="block text-slate-800 dark:text-white text-sm">{sim.phoneNumber || sim.phone_number}</b>
+                   <p className="text-xs text-slate-500 mt-1">{sim.carrier || "Chưa xác định"} {sim.planName || sim.plan_name ? `· ${sim.planName || sim.plan_name}` : ""}</p>
+                 </div>
+                 <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md ${sim.status === "active" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}>{sim.status === "active" ? "Đang dùng" : "Tạm ngưng"}</span>
+               </button>
+             ))}
+           </div>
+         )}
+         {data !== null && <button onClick={() => { setSelected({ id: "", memberId: member?.id || "", carrier: "Viettel", phoneNumber: "", simType: "personal", planName: "", status: "active", note: "" }); setView("form"); }} className="mt-6 w-full py-4 border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold rounded-xl active:bg-slate-50 dark:active:bg-white/5">+ Thêm SIM mới</button>}
+       </div>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+function MobileSimForm({ sim, close, save, loading, error, inputClass }: any) {
+  const [form, setForm] = useState({ ...sim, phoneNumber: sim.phoneNumber || sim.phone_number || "", simType: sim.simType || sim.sim_type || "personal", planName: sim.planName || sim.plan_name || "" });
+  const set = (key: string, val: any) => setForm((c: any) => ({ ...c, [key]: val }));
+  return <FullScreenMobileSheet title={form.id ? "Sửa SIM" : "Thêm SIM"} close={close}>
+    <div className="pb-10 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-full">
+      <div className="bg-white dark:bg-[var(--app-card)] border-y border-slate-200 dark:border-white/10 shadow-sm mt-2">
+        <Field label="Số điện thoại"><input className={inputClass} type="tel" value={form.phoneNumber} onChange={e => set("phoneNumber", e.target.value)} placeholder="09xxxx" /></Field>
+        <Field label="Nhà mạng"><select className={inputClass} value={form.carrier} onChange={e => set("carrier", e.target.value)}><option value="Viettel">Viettel</option><option value="MobiFone">MobiFone</option><option value="VinaPhone">VinaPhone</option><option value="Wintel">Wintel</option><option value="Local">Local</option><option value="Khác">Khác</option></select></Field>
+        <Field label="Loại SIM"><select className={inputClass} value={form.simType} onChange={e => set("simType", e.target.value)}><option value="personal">Cá nhân</option><option value="work">Công việc</option><option value="data">Chỉ Data</option><option value="esim">eSIM</option></select></Field>
+        <Field label="Gói cước"><input className={inputClass} value={form.planName} onChange={e => set("planName", e.target.value)} placeholder="Tên gói data..." /></Field>
+        <Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={e => set("status", e.target.value)}><option value="active">Đang dùng</option><option value="paused">Tạm ngưng</option><option value="cancelled">Đã hủy</option></select></Field>
+        <Field label="Ghi chú"><textarea className={inputClass} value={form.note} onChange={e => set("note", e.target.value)} rows={3} /></Field>
+      </div>
+      {error && <div className="px-4 mt-4"><p className="text-sm font-medium text-rose-500 bg-rose-50 p-3 rounded-lg border border-rose-200">{error}</p></div>}
+      <div className="mt-6 px-4"><button disabled={loading || !form.phoneNumber?.trim()} type="button" onClick={() => save(form)} className="w-full py-3.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm disabled:opacity-50">Lưu lại</button></div>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+export function ProfileField({ label, children, isText }: { label: string; children: React.ReactNode; isText?: boolean }) {
+  return (
+    <div className="flex flex-row items-center justify-between border-b border-slate-100 dark:border-white/5 last:border-0 px-4 py-3.5 bg-white dark:bg-[var(--app-card)]">
+      <div className="text-[15px] text-slate-500 dark:text-slate-400 w-[110px] shrink-0">{label}</div>
+      <div className={`flex-1 text-[15px] font-medium text-slate-900 dark:text-white flex items-center justify-end text-right min-w-0 ${isText ? 'truncate' : ''}`}>
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function Sheet({ close, children }: { close: () => void; children: React.ReactNode }) {
@@ -2056,7 +2631,7 @@ function ConfirmMemberDelete({ member, warning, close, remove }: { member: Membe
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-5" onMouseDown={close}><div className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-6 shadow-2xl" onMouseDown={event => event.stopPropagation()}><h2 className="text-lg font-semibold">Ẩn thành viên?</h2><p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Thành viên <b>{member.nickname || member.name}</b> sẽ được ẩn khỏi danh sách. Dữ liệu lịch sử không bị xóa.</p>{warning && <p className="mt-4 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-600 dark:bg-orange-400/10">{warning}</p>}<div className="mt-6 flex justify-end gap-3"><button onClick={close} className="rounded-lg border border-[var(--app-border)] px-4 py-2 text-sm font-semibold">Hủy</button><button onClick={remove} className="rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white">Xác nhận ẩn</button></div></div></div>;
 }
 type ListProps = { data: AppData; open: (editor: Editor) => void; t: ReturnType<typeof translator> };
-type FinanceProps = ListProps & { user: AuthUser; update: (data: AppData) => void };
+type FinanceProps = ListProps & { user: AuthUser; update: (data: AppData) => void; go?: (screen: Screen) => void };
 type TaskProps = ListProps & { update: (data: AppData) => void };
 function EditButton({ onClick }: { onClick: () => void }) { return <button onClick={onClick} className="rounded-xl px-3 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Sửa</button>; }
 function TaskRow({ task, toggle, edit }: { task: Task; toggle?: () => void; edit?: () => void }) { const overdue = isOverdue(task); return <Card className="mb-3 flex items-center gap-3"><button onClick={toggle} className={`grid size-7 shrink-0 place-items-center rounded-full border ${task.status === "done" ? "border-emerald-400 bg-emerald-400 text-white" : task.status === "doing" ? "border-orange-400 bg-orange-100 text-orange-500" : "border-slate-200"}`}>{task.status === "done" && icons.check}</button><div className="min-w-0 flex-1"><b className={task.status === "done" ? "line-through opacity-50" : ""}>{task.title}</b><p className={`text-xs ${overdue ? "text-red-500" : "text-slate-400"}`}>{task.assignee} · {task.dueDate || task.due} · {overdue ? "Quá hạn" : task.status === "todo" ? "Chờ làm" : task.status === "doing" ? "Đang làm" : "Hoàn thành"} · {task.priority === "high" ? "Cao" : task.priority === "low" ? "Thấp" : "Bình thường"}</p></div>{edit && <EditButton onClick={edit} />}</Card>; }
@@ -2383,7 +2958,7 @@ const sortRecordsAsc = (a: any, b: any) => {
   return new Date(a.createdAt || a.created_at || 0).getTime() - new Date(b.createdAt || b.created_at || 0).getTime();
 };
 
-function Finance({ data, open, t, user, update }: FinanceProps) {
+function DesktopFinance({ data, open, t, user, update }: FinanceProps) {
   const [tab, setTab] = useState<"overview" | "income" | "expense" | "savings" | "investment">("overview");
   return (
     <>
@@ -2401,6 +2976,734 @@ function Finance({ data, open, t, user, update }: FinanceProps) {
       {tab === "investment" && <InvestmentSheet />}
     </>
   );
+}
+
+function MobileFinance({ data, open, t, user, update, go }: FinanceProps) {
+  const [tab, setTab] = useState<"transactions" | "savings" | "investments">("transactions");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const back = () => tab === "transactions" ? go?.("dashboard") : setTab("transactions");
+
+  const activeTabClass = "flex-1 py-3 text-center text-[15px] font-bold text-white border-b-[3px] border-[#fbbf24] transition-all whitespace-nowrap";
+  const inactiveTabClass = "flex-1 py-3 text-center text-[15px] font-medium text-white/60 border-b-[3px] border-transparent transition-all whitespace-nowrap";
+
+  return (
+    <div className="flex flex-col h-[100dvh] bg-[#f0f2f5] dark:bg-[var(--app-bg)] md:hidden font-sans">
+      <div className="bg-gradient-to-br from-[#0d3b66] to-[#0a2342] dark:from-slate-800 dark:to-slate-900 pt-3 px-4 pb-0 shrink-0 shadow-md relative z-10">
+        <div className="flex items-center justify-between mb-2">
+          <button type="button" aria-label="Quay lại" onClick={back} className="text-white p-2 -ml-2 active:bg-white/10 rounded-full">
+            <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <h1 className="text-[20px] font-bold text-white tracking-wide">Thu chi</h1>
+          <button onClick={() => setSettingsOpen(true)} className="text-white p-2 -mr-2 active:bg-white/10 rounded-full">
+            <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+          </button>
+        </div>
+
+        <div className="flex w-full mt-1 overflow-x-auto hide-scrollbar">
+          <button className={tab === "transactions" ? activeTabClass : inactiveTabClass} onClick={() => setTab("transactions")}>Thu chi</button>
+          <button className={tab === "savings" ? activeTabClass : inactiveTabClass} onClick={() => setTab("savings")}>Tiết kiệm</button>
+          <button className={tab === "investments" ? activeTabClass : inactiveTabClass} onClick={() => setTab("investments")}>Đầu tư</button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto relative z-0">
+        <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-br from-[#0d3b66] to-[#0a2342] dark:from-slate-800 dark:to-slate-900 rounded-b-[2rem] shadow-sm pointer-events-none -z-10" />
+        
+        {tab === "transactions" && <MobileTransactionList data={data} update={update} user={user} refreshTrigger={refreshTrigger} refresh={() => setRefreshTrigger(r => r + 1)} />}
+        {tab === "savings" && <MobileSavingsList data={data} update={update} user={user} refreshTrigger={refreshTrigger} refresh={() => setRefreshTrigger(r => r + 1)} />}
+        {tab === "investments" && <MobileInvestmentList data={data} update={update} user={user} refreshTrigger={refreshTrigger} refresh={() => setRefreshTrigger(r => r + 1)} />}
+      </div>
+
+      {settingsOpen && <MobileFinanceSettingsSheet close={() => setSettingsOpen(false)} data={data} onSaved={() => setRefreshTrigger(r => r + 1)} />}
+    </div>
+  );
+}
+
+function MobileTransactionList({ data: appData, update, user, refreshTrigger, refresh }: any) {
+  const ui = useUI();
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [subTab, setSubTab] = useState<"all" | "income" | "expense">("all");
+  const [incomes, setIncomes] = useState<any[]>([]);
+  const [loadingIncomes, setLoadingIncomes] = useState(true);
+  const [overviewDataCache, setOverviewDataCache] = useState<Record<number, any>>({});
+  const [loadingOverview, setLoadingOverview] = useState(false);
+  
+  const [editor, setEditor] = useState<any>(null);
+  const [detail, setDetail] = useState<any>(null);
+  const [menuItem, setMenuItem] = useState<any>(null);
+
+  const year = selectedDate.getFullYear();
+  const month = selectedDate.getMonth() + 1;
+
+  useEffect(() => {
+    setLoadingOverview(true);
+    fetch(`/api/finance-overview?year=${year}`)
+      .then(res => res.json())
+      .then(res => {
+        setOverviewDataCache(prev => ({ ...prev, [year]: res?.data || res || {} }));
+        setLoadingOverview(false);
+      })
+      .catch(() => setLoadingOverview(false));
+  }, [year, refreshTrigger]);
+
+  const loadIncomes = () => {
+    setLoadingIncomes(true);
+    fetch(`/api/incomes?year=${year}`).then(r => r.json()).then(res => {
+      const payload = res?.data || res;
+      setIncomes(toArray(payload?.allRecords?.length ? payload.allRecords : payload?.records || payload));
+      setLoadingIncomes(false);
+    }).catch(() => { setIncomes([]); setLoadingIncomes(false); });
+  };
+
+  useEffect(() => { loadIncomes(); }, [refreshTrigger, year]);
+
+  const prevMonth = () => {
+    const d = new Date(selectedDate);
+    d.setMonth(d.getMonth() - 1);
+    setSelectedDate(d);
+  };
+  
+  const nextMonth = () => {
+    const d = new Date(selectedDate);
+    d.setMonth(d.getMonth() + 1);
+    setSelectedDate(d);
+  };
+
+  const overviewData = overviewDataCache[year] || {};
+  const currentCash = Number(overviewData.currentCash || 0);
+  const monthItems = useMemo(() => {
+    const exps = toArray(appData?.transactions).filter((t: any) => String(t.type).toLowerCase() === "expense").map((t: any) => ({
+      ...t, _isExpense: true, _displayDate: t.date || t.createdAt || t.created_at, _displayName: t.title || t.name || "Chi tiêu", _displayCategory: t.category || "Khác",
+      _displayTime: t.transactionTime || t.transaction_time || (String(t.date || "").includes("T") ? String(t.date).slice(11, 16) : "")
+    }));
+    const incs = toArray(incomes).map(t => ({
+      ...t, _isIncome: true, _displayDate: t.receivedDate || t.incomeDate || t.date || t.createdAt, _displayName: t.name || t.title || "Thu nhập", _displayCategory: t.category || "Khác",
+      _displayTime: t.transactionTime || t.transaction_time || (String(t.date || "").includes("T") ? String(t.date).slice(11, 16) : "")
+    }));
+    
+    const all = [...exps, ...incs].filter(item => {
+      const d = new Date(item._displayDate || 0);
+      return d.getMonth() + 1 === month && d.getFullYear() === year;
+    });
+    
+    return [...all].sort((a, b) => {
+      const dateDiff = new Date(b._displayDate || 0).getTime() - new Date(a._displayDate || 0).getTime();
+      if (dateDiff) return dateDiff;
+      return String(b._displayTime || "").localeCompare(String(a._displayTime || ""));
+    });
+  }, [appData?.transactions, incomes, month, year]);
+
+  const displayList = monthItems.filter(item => subTab === "all" || (subTab === "income" ? item._isIncome : !item._isIncome));
+  const groupedItems = displayList.reduce((groups: Record<string, any[]>, item: any) => {
+    const date = new Date(item._displayDate || 0);
+    const key = Number.isNaN(date.getTime()) ? "Không rõ ngày" : date.toLocaleDateString("vi-VN");
+    (groups[key] ||= []).push(item);
+    return groups;
+  }, {});
+  const editItem = (item: any) => { setEditor({ ...item, type: item._isIncome ? "income" : "expense" }); setMenuItem(null); setDetail(null); };
+  const deleteItem = async (item: any) => {
+    setMenuItem(null);
+    if (!await ui.confirm("Xóa giao dịch?", `Bạn có chắc muốn xóa "${item._displayName}"?`)) return;
+    const response = await fetch(item._isIncome ? `/api/incomes?id=${encodeURIComponent(item.id)}` : `/api/transactions?id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    if (!response.ok) { const result = await readJsonSafe<{ error?: string }>(response); ui.toast(result?.error || "Không thể xóa giao dịch.", "error"); return; }
+    if (!item._isIncome) update({ ...appData, transactions: toArray(appData?.transactions).filter((record: any) => record.id !== item.id) });
+    ui.toast("Đã xóa giao dịch.", "success");
+    refresh();
+  };
+
+  return <div className="px-4 pt-3 pb-32">
+    <div className="flex items-center justify-between mb-4">
+      <div className="bg-white/20 backdrop-blur-md px-3 py-1.5 rounded-full text-white text-[12px] font-semibold shadow-sm flex items-center gap-1">
+        <span>Việt Nam Đồng</span>
+        <svg className="size-3 opacity-70" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+      </div>
+      <div className="bg-white/20 backdrop-blur-md px-1 py-1 rounded-full text-white text-[13px] font-semibold shadow-sm flex items-center gap-2">
+        <button onClick={prevMonth} className="p-1 hover:bg-white/20 active:bg-white/30 rounded-full transition-colors"><svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg></button>
+        <span className="min-w-[90px] text-center">Tháng {month} {year}</span>
+        <button onClick={nextMonth} className="p-1 hover:bg-white/20 active:bg-white/30 rounded-full transition-colors"><svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
+      </div>
+    </div>
+
+    <div className="bg-[#1e40af] bg-gradient-to-br from-[#1e40af] to-[#3b82f6] dark:from-indigo-900 dark:to-indigo-700 rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden">
+      <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
+      <p className="text-[14px] text-white/80 font-medium mb-1">Tiền hiện tại</p>
+      <b className="text-[clamp(24px,8vw,32px)] leading-tight font-bold block mb-5 tracking-tight whitespace-nowrap">{loadingOverview ? "..." : (overviewDataCache[year] ? money(currentCash) : "-")}</b>
+      
+      <div className="grid grid-cols-3 border-t border-white/20 pt-3 gap-1">
+        {([['all', 'Chi tiết'], ['income', 'Thu nhập'], ['expense', 'Chi tiêu']] as const).map(([value, label]) => (
+          <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] font-bold transition-colors ${subTab === value ? "bg-white text-[#123a6d] shadow-sm" : "text-white/80 active:bg-white/10"}`}>{label}</button>
+        ))}
+      </div>
+    </div>
+
+    <div className="min-h-[300px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-gradient-to-b from-[#123a6d] to-[#071f3c] p-4 shadow-xl text-white">
+      {loadingIncomes ? <div className="py-10 text-center text-sm font-medium text-white/60">Đang tải...</div> : displayList.length === 0 ? <div className="py-12 text-center text-sm font-medium text-white/55">Chưa có giao dịch</div> : (
+        <div className="space-y-6">
+          {Object.entries(groupedItems).map(([date, items]) => <section key={date}>
+            <h3 className="mb-2 text-[18px] font-bold tracking-tight text-white">{date}</h3>
+            <div className="divide-y divide-white/10">
+              {items.map((item: any) => <div key={`${item._isIncome ? 'income' : 'expense'}-${item.id}`} className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 py-1">
+                <button type="button" onClick={() => setDetail(item)} className="min-w-0 py-2 text-left active:opacity-70">
+                  <b className="block truncate text-[15px] leading-5 text-white">{item._displayName}</b>
+                  <span className="mt-1 block truncate text-[12px] text-white/55">{item.note || item._displayCategory || "Khác"}</span>
+                </button>
+                <button type="button" onClick={() => setDetail(item)} className="min-w-0 py-2 text-right active:opacity-70">
+                  <b className={`block whitespace-nowrap text-[14px] ${item._isIncome ? "text-emerald-300" : "text-orange-300"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
+                  {item._displayTime && <span className="mt-1 block text-[12px] text-white/50">{String(item._displayTime).slice(0, 5)}</span>}
+                </button>
+                <button type="button" aria-label={`Tùy chọn ${item._displayName}`} onClick={(event) => { event.stopPropagation(); setMenuItem(item); }} className="grid size-9 place-items-center rounded-full text-xl font-bold text-white/70 active:bg-white/10">•••</button>
+              </div>)}
+            </div>
+          </section>)}
+        </div>
+      )}
+    </div>
+
+    <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-12">
+      <button type="button" aria-label={subTab === "all" ? "Thêm giao dịch" : subTab === "income" ? "Thêm thu" : "Thêm chi"} onClick={() => setEditor({ type: subTab === "all" ? "expense" : subTab, isNew: true })} className={`grid size-12 place-items-center rounded-full text-white shadow-xl active:scale-95 transition-transform ${subTab === "income" ? "bg-emerald-500" : subTab === "expense" ? "bg-orange-500" : "bg-indigo-500"}`}>
+        <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
+      </button>
+    </div>
+
+    {menuItem && <ActionMenu isOpen close={() => setMenuItem(null)} actions={[{ label: "Xem chi tiết", onClick: () => { setDetail(menuItem); setMenuItem(null); } }, { label: "Sửa", onClick: () => editItem(menuItem) }, { label: "Xóa", onClick: () => void deleteItem(menuItem), textClass: "text-rose-500" }]} />}
+    {detail && <MobileTransactionDetail item={detail} close={() => setDetail(null)} onEdit={() => editItem(detail)} onDeleted={() => { refresh(); setDetail(null); }} data={appData} update={update} />}
+    {editor && <MobileTransactionEditor item={editor.isNew ? null : editor} defaultType={editor.type} allowTypeChange={editor.isNew && subTab === "all"} close={() => setEditor(null)} onSaved={() => { refresh(); }} user={user} data={appData} update={update} />}
+  </div>;
+}
+
+function MobileTransactionDetail({ item, close, onEdit, onDeleted, data, update }: any) {
+  const ui = useUI();
+  const [loading, setLoading] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const paymentMethod = String(item.paymentMethod || item.payment_method || "");
+  const paymentMethodLabel: Record<string, string> = { cash: "Tiền mặt", transfer: "Chuyển khoản", bank_account: "Tài khoản ngân hàng", card: "Thẻ", credit_card: "Thẻ tín dụng", momo: "MoMo", apple_pay: "Apple Pay", other: "Khác" };
+
+  const remove = async () => {
+    if (!item?.id || !await ui.confirm("Xóa giao dịch?", `Bạn có chắc muốn xóa "${item._displayName}"?`)) return;
+    setLoading(true);
+    try {
+      if (item._isIncome) {
+        const res = await fetch(`/api/incomes?id=${item.id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Lỗi khi xóa");
+      } else {
+        const res = await fetch(`/api/transactions?id=${item.id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Lỗi khi xóa");
+        if (data && update) update({ ...data, transactions: toArray(data.transactions).filter((t:any) => t.id !== item.id) });
+      }
+      ui.toast("Đã xóa", "success");
+      onDeleted();
+    } catch (err: any) {
+      ui.toast(err.message, "error");
+      setLoading(false);
+    }
+  };
+
+  return <FullScreenMobileSheet title="Chi tiết giao dịch" close={close} headerRight={<button type="button" aria-label="Tùy chọn giao dịch" onClick={() => setMenuOpen(true)} className="grid size-10 place-items-center rounded-full text-xl font-bold text-slate-500 active:bg-slate-100 dark:text-slate-300 dark:active:bg-white/10">•••</button>}>
+    <div className="p-4 space-y-4 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-[100dvh] pb-32">
+      <div className="bg-white dark:bg-[var(--app-card)] px-4 py-6 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 space-y-5">
+        <div className="text-center pb-5 border-b border-slate-100 dark:border-white/5">
+          <p className="text-[13px] text-slate-500 font-medium mb-1.5 uppercase tracking-wider">{item._displayCategory || "Khác"}</p>
+          <h2 className="text-[20px] font-bold text-slate-800 dark:text-white mb-2">{item._displayName}</h2>
+          <b className={`text-[32px] block ${item._isIncome ? "text-emerald-500" : "text-rose-500"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
+        </div>
+        <div className="space-y-4 pt-1">
+          <div className="flex justify-between items-center">
+            <span className="text-[14px] text-slate-500">Ngày giao dịch</span>
+            <span className="text-[15px] font-bold">{formatDateVN(item._displayDate)}</span>
+          </div>
+          {item._displayTime && <div className="flex justify-between items-center"><span className="text-[14px] text-slate-500">Giờ</span><span className="text-[15px] font-bold">{String(item._displayTime).slice(0, 5)}</span></div>}
+          {item.memberName && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Thành viên</span><span className="text-right text-[15px] font-bold">{item.memberName}</span></div>}
+          {(item.jobName || item.workName) && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Nguồn thu</span><span className="max-w-[65%] text-right text-[15px] font-bold">{item.jobName || item.workName}</span></div>}
+          {item.status && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Trạng thái</span><span className="text-right text-[15px] font-bold">{item.status}</span></div>}
+          {item.subcategory && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Loại chi tiết</span><span className="text-right text-[15px] font-bold">{item.subcategory}</span></div>}
+          {Number(item.grossAmount || 0) > 0 && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Giá gốc</span><span className="text-right text-[15px] font-bold">{money(Number(item.grossAmount))}</span></div>}
+          {Number(item.discountAmount || 0) > 0 && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Giảm giá</span><span className="text-right text-[15px] font-bold">{money(Number(item.discountAmount))}</span></div>}
+          {paymentMethod && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Phương thức</span><span className="text-right text-[15px] font-bold">{paymentMethodLabel[paymentMethod] || paymentMethod}</span></div>}
+          {(item.paymentAccountId || item.payment_account_id || item.bankAccountId || item.bank_account_id) && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Tài khoản / Thẻ</span><span className="max-w-[65%] break-all text-right text-[13px] font-medium">{item.paymentAccountId || item.payment_account_id || item.bankAccountId || item.bank_account_id}</span></div>}
+          {typeof item.countsForPersonalExpense === "boolean" && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Tính vào thống kê</span><span className="text-right text-[15px] font-bold">{item.countsForPersonalExpense ? "Có" : "Không"}</span></div>}
+          {item.note && (
+            <div className="flex justify-between items-start">
+              <span className="text-[14px] text-slate-500">Ghi chú</span>
+              <span className="text-[15px] font-medium text-right break-words max-w-[65%]">{item.note}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {menuOpen && <ActionMenu isOpen close={() => setMenuOpen(false)} actions={[{ label: "Sửa", onClick: onEdit }, { label: "Xóa", onClick: () => void remove(), textClass: "text-rose-500" }]} />}
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+function MobileTransactionEditor({ item, defaultType, allowTypeChange = false, close, onSaved, user, data, update }: any) {
+  const ui = useUI();
+  const [type, setType] = useState<"income" | "expense">(defaultType || "expense");
+  const incomeRecord = item?._isIncome ? item as IncomeRecord : null;
+  const expenseRecord = item && !item?._isIncome ? item as Transaction : null;
+  const finish = () => { onSaved(); close(); };
+
+  const shortTitle = `${item?.id ? "Sửa" : "Thêm"} ${type === "income" ? "thu" : "chi"}`;
+  const formId = type === "income" ? "mobile-income-transaction-form" : "mobile-expense-transaction-form";
+  return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="button" onClick={() => (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit()} className="px-2 text-[15px] font-bold text-indigo-600 dark:text-indigo-400">Lưu</button>}>
+    <div className="min-h-full bg-[var(--app-background)] p-4 pb-28">
+      {(!item?.id && allowTypeChange) && <div className="sticky top-0 z-10 mb-4 flex rounded-xl bg-slate-100 p-1.5 shadow-sm dark:bg-slate-800">
+        <button type="button" onClick={() => setType("income")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "income" ? "bg-white text-emerald-500 shadow-sm dark:bg-slate-700" : "text-slate-500"}`}>Thu nhập</button>
+        <button type="button" onClick={() => setType("expense")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "expense" ? "bg-white text-rose-500 shadow-sm dark:bg-slate-700" : "text-slate-500"}`}>Chi tiêu</button>
+      </div>}
+      {type === "income" ? <IncomeRecordForm record={incomeRecord} members={toArray(data?.members).map((member: Member) => ({ id: member.id, name: member.name }))} templates={incomeTemplates} user={user} back={close} saved={finish} notify={(message, toastType) => ui.toast(message, toastType)} compactMobile /> : <ExpenseForm record={expenseRecord} members={toArray(data?.members)} user={user} close={close} compactMobile saved={(record) => {
+        const transactions = toArray<Transaction>(data?.transactions);
+        update({ ...data, transactions: transactions.some(current => current.id === record.id) ? transactions.map(current => current.id === record.id ? record : current) : [record, ...transactions] });
+        finish();
+      }} />}
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+function MobileSavingsList({ data: appData, update, user, refreshTrigger, refresh }: any) {
+  const [detail, setDetail] = useState<any>(null);
+  const [editor, setEditor] = useState<any>(null);
+  const [records, setRecords] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch("/api/savings-records", { cache: "no-store" }).then(async response => {
+      const result = await readJsonSafe<any>(response);
+      if (!response.ok) throw new Error(result?.error || "Không thể tải tiết kiệm");
+      setRecords(toArray(result));
+    }).catch(() => setRecords([]));
+  }, [refreshTrigger]);
+
+  const savings = useMemo(() => {
+    return [...toArray(records)].sort((a, b) => {
+      return new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime();
+    });
+  }, [records]);
+
+  const totalSavings = savings.reduce((sum, item) => sum + (item.type === "withdraw" ? -Number(item.amount || 0) : Number(item.amount || 0)), 0);
+
+  return <div className="px-4 pt-3 pb-32">
+    <div className="bg-gradient-to-br from-blue-600 to-indigo-600 dark:from-blue-900 dark:to-indigo-800 rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden mt-2">
+      <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
+      <p className="text-[14px] text-white/80 font-medium mb-1">Tiết kiệm hiện có</p>
+      <b className="text-[32px] font-bold block mb-1 tracking-tight truncate">{money(totalSavings)}</b>
+    </div>
+
+    <div className="bg-white dark:bg-[var(--app-card)] rounded-[1.5rem] shadow-sm p-4 border border-slate-100 dark:border-white/5 min-h-[300px]">
+      <h3 className="font-bold text-slate-800 dark:text-white mb-4 text-[16px] px-1">Danh sách tiết kiệm</h3>
+      {savings.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-slate-400"><svg className="size-12 mb-3 text-slate-200 dark:text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có tiết kiệm</p></div> : (
+        <div className="space-y-4">
+          {savings.map(item => (
+            <div key={item.id} onClick={() => setDetail(item)} className="flex justify-between items-center active:opacity-60 transition-opacity">
+              <div className="flex gap-3 items-center min-w-0 pr-3">
+                <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-blue-50 text-blue-500 dark:bg-blue-500/10">
+                   <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+                <div className="min-w-0">
+                  <b className="text-slate-800 dark:text-white text-[15px] font-bold block truncate leading-tight">{item.description || "Tiết kiệm"}</b>
+                  <p className="text-[13px] text-slate-500 mt-0.5 truncate">Tháng {item.month}/{item.year} • {item.holder || "Không rõ"}</p>
+                </div>
+              </div>
+              <b className="shrink-0 text-right text-[15px] font-bold text-blue-500">{money(item.amount)}</b>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+    
+    <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-14">
+      <button type="button" aria-label="Thêm tiết kiệm" onClick={() => setEditor({ isNew: true })} className="grid size-14 place-items-center rounded-full bg-blue-500 text-white shadow-xl active:scale-95 transition-transform">
+        <svg className="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
+      </button>
+    </div>
+
+    {detail && <MobileSavingsDetail item={detail} close={() => setDetail(null)} onEdit={() => { setEditor(detail); setDetail(null); }} onDeleted={() => { refresh(); setDetail(null); }} data={appData} update={update} />}
+    {editor && <MobileSavingsEditor item={editor.isNew ? null : editor} close={() => setEditor(null)} onSaved={() => { refresh(); }} user={user} data={appData} update={update} />}
+  </div>;
+}
+
+function MobileSavingsDetail({ item, close, onEdit, onDeleted, data, update }: any) {
+  const ui = useUI();
+  const [loading, setLoading] = useState(false);
+
+  const remove = async () => {
+    if (!item?.id || String(item.id).startsWith("transaction-") || !await ui.confirm("Xóa khoản tiết kiệm?", `Xóa "${item.description || "khoản tiết kiệm"}"?`)) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/savings-records/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Lỗi khi xóa");
+      if (data && update) update({ ...data, savingsRecords: toArray(data.savingsRecords).filter((t:any) => t.id !== item.id) });
+      ui.toast("Đã xóa", "success");
+      onDeleted();
+    } catch (err: any) {
+      ui.toast(err.message, "error");
+      setLoading(false);
+    }
+  };
+
+  return <FullScreenMobileSheet title="Chi tiết tiết kiệm" close={close}>
+    <div className="p-4 space-y-4 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-[100dvh] pb-32">
+      <div className="bg-white dark:bg-[var(--app-card)] px-4 py-6 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 space-y-5">
+        <div className="text-center pb-5 border-b border-slate-100 dark:border-white/5">
+          <p className="text-[13px] text-slate-500 font-medium mb-1.5 uppercase tracking-wider">{item.type === "withdraw" ? "Rút tiết kiệm" : "Gửi tiết kiệm"}</p>
+          <h2 className="text-[20px] font-bold text-slate-800 dark:text-white mb-2">{item.description || "Tiết kiệm"}</h2>
+          <b className="text-[32px] block text-blue-500">{money(item.amount)}</b>
+        </div>
+        <div className="space-y-4 pt-1">
+          <div className="flex justify-between items-center">
+            <span className="text-[14px] text-slate-500">Kỳ</span>
+            <span className="text-[15px] font-bold">Tháng {item.month}/{item.year}</span>
+          </div>
+          <div className="flex justify-between items-center"><span className="text-[14px] text-slate-500">Nơi giữ</span><span className="text-[15px] font-bold">{item.holder || "Không rõ"}</span></div>
+          {item.note && (
+            <div className="flex justify-between items-start">
+              <span className="text-[14px] text-slate-500">Ghi chú</span>
+              <span className="text-[15px] font-medium text-right break-words max-w-[65%]">{item.note}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        {!String(item.id).startsWith("transaction-") && <><button onClick={onEdit} disabled={loading} className="flex-1 py-3.5 bg-blue-500 text-white rounded-xl font-bold text-[15px] active:bg-blue-600">Sửa</button><button onClick={remove} disabled={loading} className="flex-1 py-3.5 bg-white text-rose-500 border border-rose-100 rounded-xl font-bold text-[15px] active:bg-rose-50">Xóa</button></>}
+      </div>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+function MobileSavingsEditor({ item, close, onSaved, user, data, update }: any) {
+  const ui = useUI();
+  const [form, setForm] = useState({
+    description: item?.description || "",
+    amount: String(item?.amount || ""),
+    year: String(item?.year || new Date().getFullYear()),
+    month: String(item?.month || new Date().getMonth() + 1),
+    type: item?.type || "monthly",
+    holder: item?.holder || "Ngân hàng",
+    note: item?.note || ""
+  });
+  const [loading, setLoading] = useState(false);
+
+  const save = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!form.description.trim()) return ui.toast("Vui lòng nhập nội dung", "error");
+    if (parseVndInput(form.amount) <= 0) return ui.toast("Số tiền phải lớn hơn 0", "error");
+    if (!Number.isInteger(Number(form.year)) || Number(form.month) < 1 || Number(form.month) > 12) return ui.toast("Tháng/năm không hợp lệ", "error");
+
+    setLoading(true);
+    try {
+      const payload = {
+        id: item?.id || crypto.randomUUID(),
+        description: form.description.trim(),
+        amount: parseVndInput(form.amount),
+        year: Number(form.year),
+        month: Number(form.month),
+        holder: form.holder.trim() || "Ngân hàng",
+        note: form.note.trim(),
+        type: form.type,
+        memberId: user.memberId || ""
+      };
+      const res = await fetch(item?.id ? `/api/savings-records/${encodeURIComponent(item.id)}` : "/api/savings-records", {
+        method: item?.id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error("Lỗi khi lưu");
+      if (data && update) {
+        const records = toArray(data.savingsRecords);
+        const newRecords = item?.id ? records.map((t:any) => t.id === item.id ? { ...t, ...payload } : t) : [...records, payload];
+        update({ ...data, savingsRecords: newRecords as any });
+      }
+      ui.toast("Đã lưu tiết kiệm", "success");
+      onSaved();
+      close();
+    } catch (err: any) {
+      ui.toast(err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const inputClass = "h-[50px] w-full min-w-0 max-w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 px-4 text-[15px] outline-none focus:border-blue-400 focus:bg-white dark:focus:bg-black/40 transition-colors";
+  const title = item?.id ? "Sửa tiết kiệm" : "Thêm tiết kiệm";
+
+  return <FullScreenMobileSheet title={title} close={close} onSubmit={save} loading={loading}>
+    <div className="p-4 space-y-4 bg-white dark:bg-[var(--app-card)] min-h-[100dvh] pb-32">
+        <Field label="Nội dung">
+          <input className={inputClass} value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="VD: Gửi tiết kiệm ACB" />
+        </Field>
+        <Field label="Số tiền (VND)">
+          <input type="text" inputMode="numeric" className={`${inputClass} text-lg font-bold text-blue-500`} value={formatVndInput(form.amount)} onChange={e => setForm({...form, amount: e.target.value})} placeholder="0" />
+        </Field>
+        <div className="grid grid-cols-2 gap-3"><Field label="Tháng"><select className={inputClass} value={form.month} onChange={e => setForm({...form, month: e.target.value})}>{Array.from({length: 12}, (_, i) => <option key={i + 1} value={i + 1}>Tháng {i + 1}</option>)}</select></Field><Field label="Năm"><input type="number" className={inputClass} value={form.year} onChange={e => setForm({...form, year: e.target.value})} /></Field></div>
+        <Field label="Loại"><select className={inputClass} value={form.type} onChange={e => setForm({...form, type: e.target.value})}><option value="monthly">Gửi tiết kiệm</option><option value="extra">Gửi thêm</option><option value="bonus">Tiền thưởng</option><option value="interest">Tiền lãi</option><option value="withdraw">Rút tiết kiệm</option><option value="adjustment">Điều chỉnh</option></select></Field>
+        <Field label="Nơi giữ"><input className={inputClass} value={form.holder} onChange={e => setForm({...form, holder: e.target.value})} placeholder="Ngân hàng / Người giữ" /></Field>
+        <Field label="Ghi chú (không bắt buộc)">
+          <textarea className="w-full min-w-0 max-w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 p-4 text-[15px] outline-none focus:border-blue-400 focus:bg-white dark:focus:bg-black/40 min-h-[100px] transition-colors" value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
+        </Field>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+function MobileInvestmentList({ data: appData, update, user, refreshTrigger, refresh }: any) {
+  const [detail, setDetail] = useState<any>(null);
+  const [editor, setEditor] = useState<any>(null);
+  const [records, setRecords] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch("/api/investments", { cache: "no-store" }).then(async response => {
+      const result = await readJsonSafe<any>(response);
+      if (!response.ok) throw new Error(result?.error || "Không thể tải đầu tư");
+      setRecords(toArray(result));
+    }).catch(() => setRecords([]));
+  }, [refreshTrigger]);
+
+  const investments = useMemo(() => {
+    return [...toArray(records)].sort((a, b) => {
+      return new Date(b.tradeDate || b.createdAt || 0).getTime() - new Date(a.tradeDate || a.createdAt || 0).getTime();
+    });
+  }, [records]);
+
+  const totalInvestments = investments.reduce((sum, item) => sum + (item.action === "sell" ? -1 : 1) * (Number(item.quantity || 0) * Number(item.price || 0) + (item.action === "buy" ? Number(item.fee || 0) : -Number(item.fee || 0))), 0);
+
+  return <div className="px-4 pt-3 pb-32">
+    <div className="bg-gradient-to-br from-purple-600 to-fuchsia-600 dark:from-purple-900 dark:to-fuchsia-900 rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden mt-2">
+      <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
+      <p className="text-[14px] text-white/80 font-medium mb-1">Đầu tư hiện có</p>
+      <b className="text-[32px] font-bold block mb-1 tracking-tight truncate">{money(totalInvestments)}</b>
+    </div>
+
+    <div className="bg-white dark:bg-[var(--app-card)] rounded-[1.5rem] shadow-sm p-4 border border-slate-100 dark:border-white/5 min-h-[300px]">
+      <h3 className="font-bold text-slate-800 dark:text-white mb-4 text-[16px] px-1">Danh sách đầu tư</h3>
+      {investments.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-slate-400"><svg className="size-12 mb-3 text-slate-200 dark:text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có đầu tư</p></div> : (
+        <div className="space-y-4">
+          {investments.map(item => (
+            <div key={item.id} onClick={() => setDetail(item)} className="flex justify-between items-center active:opacity-60 transition-opacity">
+              <div className="flex gap-3 items-center min-w-0 pr-3">
+                <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-purple-50 text-purple-500 dark:bg-purple-500/10">
+                   <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+                </div>
+                <div className="min-w-0">
+                  <b className="text-slate-800 dark:text-white text-[15px] font-bold block truncate leading-tight">{item.stockCode || "Đầu tư"}</b>
+                  <p className="text-[13px] text-slate-500 mt-0.5 truncate">{formatDateVN(item.tradeDate || item.createdAt)} • {item.action === "sell" ? "Bán" : "Mua"}</p>
+                </div>
+              </div>
+              <b className="shrink-0 text-right text-[15px] font-bold text-purple-500">{money(Number(item.quantity || 0) * Number(item.price || 0))}</b>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+    
+    <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-14">
+      <button type="button" aria-label="Thêm đầu tư" onClick={() => setEditor({ isNew: true })} className="grid size-14 place-items-center rounded-full bg-purple-500 text-white shadow-xl active:scale-95 transition-transform">
+        <svg className="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
+      </button>
+    </div>
+
+    {detail && <MobileInvestmentDetail item={detail} close={() => setDetail(null)} onEdit={() => { setEditor(detail); setDetail(null); }} onDeleted={() => { refresh(); setDetail(null); }} data={appData} update={update} />}
+    {editor && <MobileInvestmentEditor item={editor.isNew ? null : editor} close={() => setEditor(null)} onSaved={() => { refresh(); }} user={user} data={appData} update={update} />}
+  </div>;
+}
+
+function MobileInvestmentDetail({ item, close, onEdit, onDeleted, data, update }: any) {
+  const ui = useUI();
+  const [loading, setLoading] = useState(false);
+
+  const remove = async () => {
+    if (!item?.id || !await ui.confirm("Xóa giao dịch đầu tư?", `Xóa giao dịch ${item.stockCode || "này"}?`)) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/investments/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Lỗi khi xóa");
+      if (data && update) update({ ...data, investments: toArray(data.investments).filter((t:any) => t.id !== item.id) });
+      ui.toast("Đã xóa", "success");
+      onDeleted();
+    } catch (err: any) {
+      ui.toast(err.message, "error");
+      setLoading(false);
+    }
+  };
+
+  return <FullScreenMobileSheet title="Chi tiết đầu tư" close={close}>
+    <div className="p-4 space-y-4 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-[100dvh] pb-32">
+      <div className="bg-white dark:bg-[var(--app-card)] px-4 py-6 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 space-y-5">
+        <div className="text-center pb-5 border-b border-slate-100 dark:border-white/5">
+          <p className="text-[13px] text-slate-500 font-medium mb-1.5 uppercase tracking-wider">{item.action === "sell" ? "Bán" : "Mua"}</p>
+          <h2 className="text-[20px] font-bold text-slate-800 dark:text-white mb-2">{item.stockCode || "Đầu tư"}</h2>
+          <b className="text-[32px] block text-purple-500">{money(Number(item.quantity || 0) * Number(item.price || 0))}</b>
+        </div>
+        <div className="space-y-4 pt-1">
+          <div className="flex justify-between items-center">
+            <span className="text-[14px] text-slate-500">Ngày</span>
+            <span className="text-[15px] font-bold">{formatDateVN(item.tradeDate || item.createdAt)}</span>
+          </div>
+          <div className="flex justify-between items-center"><span className="text-[14px] text-slate-500">Số lượng</span><span className="text-[15px] font-bold">{Number(item.quantity || 0).toLocaleString("vi-VN")}</span></div>
+          <div className="flex justify-between items-center"><span className="text-[14px] text-slate-500">Đơn giá</span><span className="text-[15px] font-bold">{money(Number(item.price || 0))}</span></div>
+          <div className="flex justify-between items-center"><span className="text-[14px] text-slate-500">Phí</span><span className="text-[15px] font-bold">{money(Number(item.fee || 0))}</span></div>
+          {item.note && (
+            <div className="flex justify-between items-start">
+              <span className="text-[14px] text-slate-500">Ghi chú</span>
+              <span className="text-[15px] font-medium text-right break-words max-w-[65%]">{item.note}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        <button onClick={onEdit} disabled={loading} className="flex-1 py-3.5 bg-purple-500 text-white rounded-xl font-bold text-[15px] active:bg-purple-600">Sửa</button>
+        <button onClick={remove} disabled={loading} className="flex-1 py-3.5 bg-white text-rose-500 border border-rose-100 rounded-xl font-bold text-[15px] active:bg-rose-50">Xóa</button>
+      </div>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+function MobileInvestmentEditor({ item, close, onSaved, user, data, update }: any) {
+  const ui = useUI();
+  const [form, setForm] = useState({
+    stockCode: item?.stockCode || "",
+    action: item?.action || "buy",
+    quantity: String(item?.quantity || ""),
+    price: String(item?.price || ""),
+    fee: String(item?.fee || "0"),
+    tradeDate: item?.tradeDate || new Date().toISOString().slice(0, 10),
+    note: item?.note || ""
+  });
+  const [loading, setLoading] = useState(false);
+
+  const save = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!form.stockCode.trim()) return ui.toast("Vui lòng nhập mã đầu tư", "error");
+    if (Number(form.quantity) <= 0 || parseVndInput(form.price) <= 0) return ui.toast("Số lượng và đơn giá phải lớn hơn 0", "error");
+    if (!form.tradeDate) return ui.toast("Vui lòng chọn ngày", "error");
+
+    setLoading(true);
+    try {
+      const payload = {
+        tradeDate: form.tradeDate,
+        stockCode: form.stockCode.trim().toUpperCase(),
+        action: form.action,
+        quantity: Number(form.quantity),
+        price: parseVndInput(form.price),
+        fee: parseVndInput(form.fee),
+        note: form.note.trim(),
+        memberId: user.memberId || ""
+      };
+      const res = await fetch(item?.id ? `/api/investments/${encodeURIComponent(item.id)}` : "/api/investments", {
+        method: item?.id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error("Lỗi khi lưu");
+      if (data && update) {
+        const records = toArray(data.investments);
+        const savedPayload = { ...payload, id: item?.id || (await res.clone().json().catch(() => null))?.id || crypto.randomUUID() };
+        const newRecords = item?.id ? records.map((t:any) => t.id === item.id ? savedPayload : t) : [...records, savedPayload];
+        update({ ...data, investments: newRecords as any });
+      }
+      ui.toast("Đã lưu đầu tư", "success");
+      onSaved();
+      close();
+    } catch (err: any) {
+      ui.toast(err.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const inputClass = "h-[50px] w-full min-w-0 max-w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 px-4 text-[15px] outline-none focus:border-purple-400 focus:bg-white dark:focus:bg-black/40 transition-colors";
+  const title = item?.id ? "Sửa đầu tư" : "Thêm đầu tư";
+
+  return <FullScreenMobileSheet title={title} close={close} onSubmit={save} loading={loading}>
+    <div className="p-4 space-y-4 bg-white dark:bg-[var(--app-card)] min-h-[100dvh] pb-32">
+        <Field label="Mã đầu tư / cổ phiếu">
+          <input className={inputClass} value={form.stockCode} onChange={e => setForm({...form, stockCode: e.target.value.toUpperCase()})} placeholder="VD: VNM" />
+        </Field>
+        <Field label="Loại giao dịch"><select className={inputClass} value={form.action} onChange={e => setForm({...form, action: e.target.value})}><option value="buy">Mua</option><option value="sell">Bán</option></select></Field>
+        <Field label="Ngày giao dịch"><input type="date" className={inputClass} value={form.tradeDate} onChange={e => setForm({...form, tradeDate: e.target.value})} /></Field>
+        <Field label="Số lượng"><input type="number" min="0" step="any" className={inputClass} value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})} /></Field>
+        <Field label="Đơn giá (VND)"><input type="text" inputMode="numeric" className={`${inputClass} font-bold text-purple-500`} value={formatVndInput(form.price)} onChange={e => setForm({...form, price: e.target.value})} /></Field>
+        <Field label="Phí (VND)"><input type="text" inputMode="numeric" className={inputClass} value={formatVndInput(form.fee)} onChange={e => setForm({...form, fee: e.target.value})} /></Field>
+        <Field label="Ghi chú (không bắt buộc)">
+          <textarea className="w-full min-w-0 max-w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 p-4 text-[15px] outline-none focus:border-purple-400 focus:bg-white dark:focus:bg-black/40 min-h-[100px] transition-colors" value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
+        </Field>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+
+function MobileFinanceSettingsSheet({ close, data, onSaved }: { close: () => void; data: any; onSaved: () => void }) {
+  const ui = useUI();
+  const [form, setForm] = useState({
+    trackingStartMonth: String(data?.settings?.trackingStartMonth || new Date().getMonth() + 1),
+    trackingStartYear: String(data?.settings?.trackingStartYear || new Date().getFullYear()),
+    openingCashBalance: String(data?.settings?.openingCashBalance ?? data?.openingCashBalance ?? 0),
+    openingSavingsBalance: String(data?.settings?.openingSavingsBalance ?? data?.openingSavingsBalance ?? 0),
+    openingInvestmentBalance: String(data?.settings?.openingInvestmentBalance ?? data?.openingInvestmentBalance ?? 0)
+  });
+  const [loading, setLoading] = useState(false);
+
+  const save = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/finance-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trackingStartMonth: Number(form.trackingStartMonth) || 1,
+          trackingStartYear: Number(form.trackingStartYear) || new Date().getFullYear(),
+          openingCashBalance: parseVndInput(form.openingCashBalance),
+          openingSavingsBalance: parseVndInput(form.openingSavingsBalance),
+          openingInvestmentBalance: parseVndInput(form.openingInvestmentBalance),
+        }),
+      });
+      if (!response.ok) throw new Error("Lỗi khi lưu cài đặt");
+      ui.toast("Đã lưu cài đặt tài chính", "success");
+      onSaved();
+      close();
+    } catch (e: any) {
+      ui.toast(e.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+
+  return <FullScreenMobileSheet title="Cài đặt tài chính" close={close} onSubmit={save} loading={loading}>
+    <div className="p-4 space-y-4 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-[100dvh] pb-32">
+      <div className="bg-white dark:bg-[var(--app-card)] px-4 py-5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 space-y-4">
+        <Field label="Tháng bắt đầu theo dõi">
+          <input type="number" className={inputClass} value={form.trackingStartMonth} onChange={e => setForm({...form, trackingStartMonth: e.target.value})} />
+        </Field>
+        <Field label="Năm bắt đầu theo dõi">
+          <input type="number" className={inputClass} value={form.trackingStartYear} onChange={e => setForm({...form, trackingStartYear: e.target.value})} />
+        </Field>
+      </div>
+      <div className="bg-white dark:bg-[var(--app-card)] px-4 py-5 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 space-y-4">
+        <Field label="Tiền hiện tại ban đầu (VND)">
+          <input className={inputClass} value={formatVndInput(form.openingCashBalance)} onChange={e => setForm({...form, openingCashBalance: e.target.value})} />
+        </Field>
+        <Field label="Tiết kiệm ban đầu (VND)">
+          <input className={inputClass} value={formatVndInput(form.openingSavingsBalance)} onChange={e => setForm({...form, openingSavingsBalance: e.target.value})} />
+        </Field>
+        <Field label="Đầu tư ban đầu (VND)">
+          <input className={inputClass} value={formatVndInput(form.openingInvestmentBalance)} onChange={e => setForm({...form, openingInvestmentBalance: e.target.value})} />
+        </Field>
+      </div>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+export function Finance({ data, open, t, user, update, go }: FinanceProps) {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  
+  return isMobile ? <MobileFinance data={data} open={open} t={t} user={user} update={update} go={go} /> : <div className="hidden md:block"><DesktopFinance data={data} open={open} t={t} user={user} update={update} /></div>;
 }
 
 function InstallPromptBanner({ promptEvent, dismissed, onDismiss }: { promptEvent: BeforeInstallPromptEvent | null; dismissed: boolean; onDismiss: () => void }) {
@@ -3090,7 +4393,7 @@ function IncomeRecordInlineActions({ edit, remove }: { edit: () => void; remove:
     <button type="button" onClick={() => void remove()} className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 dark:hover:bg-white/5">Xóa</button>
   </div>;
 }
-function IncomeRecordForm({ record, members: initialMembers, templates, user, back, saved, notify, fixedJobId, fixedMemberId }: { record: IncomeRecord | null; members: { id: string; name: string }[]; templates: string[]; user?: AuthUser; back: () => void; saved: () => void; notify?: (message: string, type?: "success" | "error") => void; fixedJobId?: string; fixedMemberId?: string }) {
+function IncomeRecordForm({ record, members: initialMembers, templates, user, back, saved, notify, fixedJobId, fixedMemberId, compactMobile = false }: { record: IncomeRecord | null; members: { id: string; name: string }[]; templates: string[]; user?: AuthUser; back: () => void; saved: () => void; notify?: (message: string, type?: "success" | "error") => void; fixedJobId?: string; fixedMemberId?: string; compactMobile?: boolean }) {
   const today = new Date(new Date().getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
   const emptyRow = (): IncomeDraft => ({ memberId: fixedMemberId || user?.memberId || initialMembers[0]?.id || "", jobId: fixedJobId || "", incomeDate: today, category: "Lương", name: "", amount: "", status: "Đã nhận", note: "" });
   const [draft, setDraft] = useState<IncomeDraft>(() => record ? { id: record.id, memberId: record.memberId || fixedMemberId || user?.memberId || initialMembers[0]?.id || "", jobId: record.jobId || record.workId || fixedJobId || "", incomeDate: record.incomeDate || record.receivedDate || today, category: record.category, name: record.name, amount: String(record.amount), status: record.status, note: record.note } : emptyRow());
@@ -3157,7 +4460,7 @@ function IncomeRecordForm({ record, members: initialMembers, templates, user, ba
   const rawAmountStr = String(draft.amount).replace(/\D/g, "");
   const amountPreview = rawAmountStr ? money(Number(rawAmountStr)) : "";
 
-  return <div className="space-y-5"><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button><div><h2 className="text-2xl font-bold">{record ? "Sửa khoản thu" : "Thêm thu nhập"}</h2><p className="mt-1 text-sm text-slate-400">Khoản thu sẽ được ghi nhận vào bảng thu nhập.</p></div><form onSubmit={submit} className="space-y-4"><Card><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+  return <div className="space-y-4">{!compactMobile && <><button onClick={back} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">← Quay lại bảng thu nhập</button><div><h2 className="text-2xl font-bold">{record ? "Sửa khoản thu" : "Thêm thu nhập"}</h2><p className="mt-1 text-sm text-slate-400">Khoản thu sẽ được ghi nhận vào bảng thu nhập.</p></div></>}<form id={compactMobile ? "mobile-income-transaction-form" : undefined} onSubmit={submit} className="space-y-4"><Card><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
   {allowMemberSelect && (
     <div className="md:col-span-2 xl:col-span-4 mb-2">
       <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -3190,7 +4493,7 @@ function IncomeRecordForm({ record, members: initialMembers, templates, user, ba
   <Field label="Loại khoản thu"><select className={inputClass} value={draft.category} onChange={event => patch({ category: event.target.value as IncomeCategory })}>{incomeCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></Field>
   <Field label="Nội dung khoản thu"><input required className={inputClass} value={draft.name} onChange={event => patch({ name: event.target.value })} placeholder={fixedJobId ? "VD: Lương CB..." : "VD: Bán đồ, được thưởng..."} /></Field>
   <Field label="Số tiền"><input required type="text" inputMode="numeric" pattern="[0-9]*" className={inputClass} value={draft.amount} onChange={e => patch({ amount: e.target.value.replace(/\D/g, "") })} placeholder="VD: 2280000" />{amountPreview && <p className="mt-1 text-xs text-slate-400">Khoảng {amountPreview}</p>}</Field>
-  <div className="md:col-span-2 xl:col-span-4"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist><div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div></form></div>;
+  <div className="md:col-span-2 xl:col-span-4"><Field label="Ghi chú"><input className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} /></Field></div></div></Card><datalist id="income-template-list">{Array.from(new Set([...incomeTemplates, ...templates])).map(name => <option key={name} value={name} />)}</datalist>{!compactMobile && <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={back} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-emerald-500 px-6 py-3 text-sm font-bold text-white">Lưu</button></div>}</form></div>;
 }
 function IncomeManagement() {
   const ui = useUI();
@@ -3631,7 +4934,7 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
   );
 }
 
-function ExpenseForm({ record, members, user, close, saved }: { record: Transaction | null; members: Member[]; user: AuthUser; close: () => void; saved: (record: Transaction) => void }) {
+function ExpenseForm({ record, members, user, close, saved, compactMobile = false }: { record: Transaction | null; members: Member[]; user: AuthUser; close: () => void; saved: (record: Transaction) => void; compactMobile?: boolean }) {
   const ui = useUI();
   const today = new Date().toISOString().slice(0, 10);
   const [draft, setDraft] = useState<ExpenseDraft>(() => {
@@ -3795,9 +5098,8 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
   ];
 
   return <div className="space-y-5">
-    <button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">{"← Quay lại bảng chi tiêu"}</button>
-    <div><h2 className="text-2xl font-bold">{record ? "Sửa khoản chi" : "Thêm khoản chi"}</h2><p className="mt-1 text-sm text-slate-400">{"Mỗi khoản chi là một phiếu chi. Nhập nhanh chi tiết vào ghi chú nếu cần."}</p></div>
-    <form onSubmit={submit} className="space-y-4">
+    {!compactMobile && <><button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">{"← Quay lại bảng chi tiêu"}</button><div><h2 className="text-2xl font-bold">{record ? "Sửa khoản chi" : "Thêm khoản chi"}</h2><p className="mt-1 text-sm text-slate-400">{"Mỗi khoản chi là một phiếu chi. Nhập nhanh chi tiết vào ghi chú nếu cần."}</p></div></>}
+    <form id={compactMobile ? "mobile-expense-transaction-form" : undefined} onSubmit={submit} className="space-y-4">
       <Card><div className="grid gap-3 md:grid-cols-2">
         <Field label="Ngày chi"><DateVNInput required value={draft.date} onChange={value => patch({ date: value })} /></Field>
         <Field label="Giờ chi"><input required type="time" className={inputClass} value={draft.transactionTime} onChange={event => patch({ transactionTime: event.target.value })} /></Field>
@@ -3858,7 +5160,7 @@ function ExpenseForm({ record, members, user, close, saved }: { record: Transact
         })()}
         <div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} placeholder="Coopmart: rau 30k, thịt 120k, sữa 70k" /></Field></div>
       </div></Card>
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-rose-500 px-6 py-3 text-sm font-bold text-white">Lưu phiếu chi</button></div>
+      {!compactMobile && <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-rose-500 px-6 py-3 text-sm font-bold text-white">Lưu phiếu chi</button></div>}
     </form>
   </div>;
 }

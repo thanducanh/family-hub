@@ -5,7 +5,7 @@ import { durableAvatarValue, ensureMemberAvatarUrlColumn, memberProfileFields, t
 import { toPublicUser, ensureUserAvatarUrlColumn, type PublicUser } from "@/lib/user-admin";
 
 const select = "id, username, email, display_name, avatar, role, active, must_change_password, is_system, member_id, created_at, updated_at";
-type ProfileBody = Partial<MemberProfile> & { displayName?: string; email?: string; memberId?: string; avatarUrl?: string };
+type ProfileBody = Partial<MemberProfile> & { displayName?: string; email?: string; memberId?: string; avatarUrl?: string; coverUrl?: string };
 type ProfileUser = PublicUser & { member?: MemberProfile };
 
 async function loadProfile(userId: string): Promise<ProfileUser | null> {
@@ -13,10 +13,11 @@ async function loadProfile(userId: string): Promise<ProfileUser | null> {
   if (!result.rows[0]) return null;
   const profile: ProfileUser = toPublicUser(result.rows[0]);
   
-  // Also try to read avatar_url safely
+  // Also try to read avatar_url and cover_url safely
   try {
-    const avResult = await pool.query("SELECT avatar_url FROM users WHERE id = $1", [userId]);
+    const avResult = await pool.query("SELECT avatar_url, cover_url FROM users WHERE id = $1", [userId]);
     if (avResult.rows[0]?.avatar_url) profile.avatar = avResult.rows[0].avatar_url;
+    if (avResult.rows[0]?.cover_url) profile.coverUrl = avResult.rows[0].cover_url;
   } catch (e) {
     // Column might not exist yet, ignore
   }
@@ -26,7 +27,7 @@ async function loadProfile(userId: string): Promise<ProfileUser | null> {
   const memberResult = await pool.query(`SELECT ${memberProfileFields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [profile.memberId]);
   if (!memberResult.rows[0]) return profile;
   const member = toMemberProfile(memberResult.rows[0]);
-  return { ...profile, displayName: member.name || profile.displayName, avatar: member.avatarUrl || member.avatar || profile.avatar, member };
+  return { ...profile, displayName: member.name || profile.displayName, avatar: member.avatarUrl || member.avatar || profile.avatar, coverUrl: member.coverUrl || profile.coverUrl, member };
 }
 
 async function assignOwnMember(session: SessionUser, memberId: string) {
@@ -40,7 +41,7 @@ async function assignOwnMember(session: SessionUser, memberId: string) {
 }
 
 function sessionFrom(profile: ProfileUser): SessionUser {
-  return { id: profile.id, username: profile.username, displayName: profile.displayName, avatar: profile.avatar, role: profile.role, mustChangePassword: profile.mustChangePassword, memberId: profile.memberId };
+  return { id: profile.id, username: profile.username, displayName: profile.displayName, avatar: profile.avatar, coverUrl: profile.coverUrl, role: profile.role, mustChangePassword: profile.mustChangePassword, memberId: profile.memberId };
 }
 
 export async function GET() {
@@ -64,18 +65,22 @@ export async function PUT(request: NextRequest) {
     if (session.memberId) {
       if (!body.name?.trim()) return NextResponse.json({ ok: false, error: "Họ tên không được để trống." }, { status: 400 });
       await ensureMemberAvatarUrlColumn();
-      const current = await pool.query("SELECT avatar, avatar_url FROM members WHERE id=$1 AND deleted_at IS NULL", [session.memberId]);
+      const current = await pool.query("SELECT avatar, avatar_url, cover_url FROM members WHERE id=$1 AND deleted_at IS NULL", [session.memberId]);
       const currentAvatar = current.rows[0]?.avatar_url || current.rows[0]?.avatar || "";
+      const currentCover = current.rows[0]?.cover_url || "";
       const avatar = durableAvatarValue(body.avatarUrl ?? body.avatar, currentAvatar);
-      await pool.query("UPDATE members SET name=$2,nickname=$3,phone=$4,birthday=$5,gender=$6,avatar=$7,avatar_url=$8,notes=$9 WHERE id=$1 AND deleted_at IS NULL", [session.memberId, body.name.trim(), body.nickname?.trim() || "", body.phone?.trim() || "", body.birthday || null, body.gender?.trim() || "", avatar, avatar, body.notes?.trim() || ""]);
+      const coverUrl = body.coverUrl !== undefined ? body.coverUrl : currentCover;
+      await pool.query("UPDATE members SET name=$2,nickname=$3,phone=$4,birthday=$5,gender=$6,avatar=$7,avatar_url=$8,cover_url=$9,notes=$10 WHERE id=$1 AND deleted_at IS NULL", [session.memberId, body.name.trim(), body.nickname?.trim() || "", body.phone?.trim() || "", body.birthday || null, body.gender?.trim() || "", avatar, avatar, coverUrl, body.notes?.trim() || ""]);
       await pool.query("UPDATE users SET email=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.email?.trim() || null]);
     } else {
       if (!body.displayName?.trim()) return NextResponse.json({ ok: false, error: "Tên hiển thị không được để trống." }, { status: 400 });
       await ensureUserAvatarUrlColumn();
-      const current = await pool.query("SELECT avatar, avatar_url FROM users WHERE id=$1", [session.id]);
+      const current = await pool.query("SELECT avatar, avatar_url, cover_url FROM users WHERE id=$1", [session.id]);
       const currentAvatar = current.rows[0]?.avatar_url || current.rows[0]?.avatar || "";
+      const currentCover = current.rows[0]?.cover_url || "";
       const avatar = durableAvatarValue(body.avatarUrl ?? body.avatar, currentAvatar);
-      await pool.query("UPDATE users SET display_name=$2,email=$3,avatar=$4,avatar_url=$5,updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.displayName.trim(), body.email?.trim() || null, avatar, avatar]);
+      const coverUrl = body.coverUrl !== undefined ? body.coverUrl : currentCover;
+      await pool.query("UPDATE users SET display_name=$2,email=$3,avatar=$4,avatar_url=$5,cover_url=$6,updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.displayName.trim(), body.email?.trim() || null, avatar, avatar, coverUrl]);
     }
     const profile = await loadProfile(session.id);
     if (!profile) return NextResponse.json({ ok: false, error: "Không tìm thấy tài khoản." }, { status: 404 });

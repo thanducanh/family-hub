@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies, headers } from "next/headers";
 
 export type UserRole = "full_access" | "self_only";
-export interface SessionUser { id: string; username: string; displayName: string; avatar: string; role: UserRole; mustChangePassword: boolean; memberId: string; }
+export interface SessionUser { id: string; username: string; displayName: string; avatar: string; coverUrl?: string; role: UserRole; mustChangePassword: boolean; memberId: string; }
 interface SessionDetails extends SessionUser { expiresAt: number; }
 const COOKIE_NAME = "family_hub_session";
 const SHORT_SESSION_SECONDS = 60 * 60 * 8;
@@ -18,8 +18,8 @@ export function normalizeUserRole(role: string): UserRole {
   return role === "full_access" || role === "system_admin" || role === "parent" || role === "admin" ? "full_access" : "self_only";
 }
 function createSessionTokenUntil(user: SessionUser, expiresAt: number) {
-  // Avatar may be a large data URL. Keep the cookie small and hydrate profile data from members in API responses.
-  const payload = Buffer.from(JSON.stringify({ ...user, avatar: "", expiresAt })).toString("base64url");
+  // Avatar and coverUrl may be large data URLs. Keep the cookie small and hydrate profile data from members in API responses.
+  const payload = Buffer.from(JSON.stringify({ ...user, avatar: "", coverUrl: "", expiresAt })).toString("base64url");
   return `${payload}.${sign(payload)}`;
 }
 export function createSessionToken(user: SessionUser, remember: boolean) {
@@ -40,7 +40,7 @@ function readSessionDetails(token?: string): SessionDetails | null {
 }
 export function readSessionToken(token?: string): SessionUser | null {
   const value = readSessionDetails(token);
-  return value && { id: value.id, username: value.username, displayName: value.displayName, avatar: value.avatar, role: normalizeUserRole(String(value.role)), mustChangePassword: value.mustChangePassword, memberId: value.memberId || "" };
+  return value && { id: value.id, username: value.username, displayName: value.displayName, avatar: value.avatar, coverUrl: value.coverUrl, role: normalizeUserRole(String(value.role)), mustChangePassword: value.mustChangePassword, memberId: value.memberId || "" };
 }
 export async function getSessionUser() {
   const reqHeaders = await headers();

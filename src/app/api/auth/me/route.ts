@@ -7,7 +7,7 @@ export async function GET() {
   try {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ ok: false, error: "Unauthorized", user: null }, { status: 401 });
-    const accountResult = await pool.query("SELECT email, display_name, avatar FROM users WHERE id = $1", [user.id]);
+    const accountResult = await pool.query("SELECT email, display_name, avatar, cover_url FROM users WHERE id = $1", [user.id]);
     const account = accountResult.rows[0];
     if (user.memberId) await ensureMemberAvatarUrlColumn();
     const result = user.memberId
@@ -18,6 +18,7 @@ export async function GET() {
       ...user,
       displayName: member?.name || account?.display_name || user.displayName,
       avatar: member?.avatarUrl || member?.avatar || account?.avatar || user.avatar,
+      coverUrl: member?.coverUrl || account?.cover_url || user.coverUrl,
       email: account?.email || "",
       memberId: member?.id || user.memberId || "",
       member: member ?? undefined,

@@ -7,6 +7,7 @@ export interface MemberProfile {
   avatar: string;
   avatarUrl?: string;
   avatarPreview?: string;
+  coverUrl?: string;
   phone: string;
   birthday: string;
   gender: string;
@@ -14,10 +15,11 @@ export interface MemberProfile {
   color: string;
 }
 
-export const memberProfileFields = "id, name, nickname, avatar, avatar_url, phone, birthday, gender, notes, color";
+export const memberProfileFields = "id, name, nickname, avatar, avatar_url, cover_url, phone, birthday, gender, notes, color";
 
 export async function ensureMemberAvatarUrlColumn() {
   await pool.query("ALTER TABLE members ADD COLUMN IF NOT EXISTS avatar_url TEXT");
+  await pool.query("ALTER TABLE members ADD COLUMN IF NOT EXISTS cover_url TEXT");
   await pool.query("UPDATE members SET avatar_url = avatar WHERE (avatar_url IS NULL OR avatar_url = '') AND avatar IS NOT NULL AND avatar <> ''");
 }
 
@@ -52,6 +54,7 @@ export function toMemberProfile(row: Record<string, unknown>): MemberProfile {
     avatar: String(row.avatar_url ?? row.avatar ?? ""),
     avatarUrl: String(row.avatar_url ?? row.avatar ?? ""),
     avatarPreview: row.avatarPreview !== undefined ? String(row.avatarPreview) : undefined,
+    coverUrl: String(row.cover_url ?? ""),
     phone: String(row.phone ?? ""),
     birthday: normalizeBirthday(row.birthday),
     gender: String(row.gender ?? ""),
