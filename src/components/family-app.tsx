@@ -427,7 +427,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 pb-[100px] md:pb-0 ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
     <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} t={t} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
-    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" ? "hidden md:block" : "block"}`}>
+    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" ? "hidden md:block" : "block"}`}>
       <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
         <label className={`relative w-full max-w-md ${screen === "finance" ? "hidden md:block" : "block"}`}><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
         <div className="relative ml-auto flex items-center gap-1 md:gap-2">
@@ -441,7 +441,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       </div>
     </header>
     <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
-    <section className={`mx-auto ${profilePageOpen || screen === "finance" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none px-2 md:px-4" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
+    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none px-2 md:px-4" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
     {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
@@ -471,16 +471,22 @@ function AccountMenu({ user, openProfile, openSettings, logout }: { user: AuthUs
     </div>;
 }
 export function toArray<T = any>(value: any): T[] {
+  if (!value) return [];
   if (Array.isArray(value)) return value;
-  if (Array.isArray(value?.data)) return value.data;
-  if (Array.isArray(value?.items)) return value.items;
-  if (Array.isArray(value?.records)) return value.records;
-  if (Array.isArray(value?.transactions)) return value.transactions;
-  if (Array.isArray(value?.income)) return value.income;
-  if (Array.isArray(value?.expenses)) return value.expenses;
-  if (Array.isArray(value?.savingsRecords)) return value.savingsRecords;
-  if (Array.isArray(value?.investments)) return value.investments;
-  if (Array.isArray(value?.allRecords)) return value.allRecords;
+  if (Array.isArray(value.data)) return value.data;
+  if (Array.isArray(value.items)) return value.items;
+  if (Array.isArray(value.records)) return value.records;
+  if (Array.isArray(value.transactions)) return value.transactions;
+  if (Array.isArray(value.income)) return value.income;
+  if (Array.isArray(value.expenses)) return value.expenses;
+  if (Array.isArray(value.savingsRecords)) return value.savingsRecords;
+  if (Array.isArray(value.investments)) return value.investments;
+  if (Array.isArray(value.allRecords)) return value.allRecords;
+  if (typeof value === "object") {
+    // Convert object map to array
+    const values = Object.values(value);
+    if (values.length > 0) return values as T[];
+  }
   return [];
 }
 
@@ -970,14 +976,12 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
     ["Cài đặt", <SettingsIcon />, () => openGuestLogin("settings")],
   ] as const;
 
-  const guestMetrics = [
-    ["Tổng thành viên", "0"],
-    ["Công việc hôm nay", "0"],
-    ["Sự kiện hôm nay", "0"],
-    ["Thu tháng này", "0 đ"],
-    ["Chi tháng này", "0 đ"],
-    ["Số dư tháng này", "0 đ"]
-  ] as const;
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  const guestChartData = [2, 1, 0].map(offset => {
+    const d = new Date(currentYear, currentMonth - offset, 1);
+    return { name: `T${d.getMonth() + 1}`, thu: 0, chi: 0 };
+  });
 
   const guestShortcuts = [
     { label: "Thêm chi tiêu", icon: icons.finance, color: "bg-rose-500", onClick: () => openGuestLogin("finance") },
@@ -996,16 +1000,16 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
     : {};
   const guestHeroClass = guestCoverUrl
     ? "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden pointer-events-none"
-    : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-gradient-to-br from-[#0b5265] via-[#064d61] to-[#023a3a] pointer-events-none";
+    : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-gradient-to-br from-[#003f3a] to-[#012f2d] pointer-events-none";
 
   const mobileGuestHome = (
-    <main className="relative min-h-[100dvh] overflow-x-hidden bg-[#062f3c] pb-24 font-[Arial,sans-serif] text-white min-[769px]:hidden">
+    <main className="relative min-h-[100dvh] overflow-x-hidden bg-[#003f3a] pb-24 font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif] text-white min-[769px]:hidden">
       <section style={guestHeroStyle} className={guestHeroClass}>
         {guestCoverUrl && (
           <div className="absolute inset-0 bg-black/55 pointer-events-none z-0" />
         )}
         {!guestCoverUrl && (
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/55 pointer-events-none z-0" />
+          <div className="absolute inset-0 bg-black/40 pointer-events-none z-0" />
         )}
         
         <div className="relative z-10 w-full h-full flex flex-col pointer-events-auto">
@@ -1015,14 +1019,13 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
               <b className="text-sm tracking-wide text-white">Family Hub</b>
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={() => ui.toast("Tính năng đang phát triển")} className="grid size-9 place-items-center rounded-full bg-slate-950/25 text-white ring-1 ring-white/15" aria-label="Tìm kiếm"><SearchIcon /></button>
               <button type="button" onClick={() => openGuestLogin("notifications")} className="grid size-9 place-items-center rounded-full bg-slate-950/25 text-white ring-1 ring-white/15" aria-label="Thông báo"><BellIcon /></button>
             </div>
           </header>
 
           <div className="mt-2">
-            <p className="text-[13px] font-semibold text-cyan-100/90">{guestGreeting}!</p>
-            <h1 className="mt-1 truncate text-[26px] font-black leading-tight text-white drop-shadow-sm">{guestDisplayName}</h1>
+            <p className="text-[12px] font-medium text-cyan-100/90">{guestGreeting}!</p>
+            <h1 className="mt-1 truncate text-[24px] font-bold leading-tight text-white drop-shadow-sm">{guestDisplayName}</h1>
             <span className="mt-2 inline-flex rounded-full bg-black/30 px-2.5 py-0.5 text-[10px] font-bold text-white ring-1 ring-white/20">Chưa đăng nhập</span>
           </div>
 
@@ -1030,50 +1033,51 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
             <button type="button" onClick={() => openGuestLogin()} className="flex h-16 w-full items-center gap-3 rounded-[20px] bg-black/25 px-3 text-left text-white ring-1 ring-white/15 backdrop-blur-md active:bg-black/40">
               <AccountAvatar user={{ displayName: guestDisplayName, avatar: lastUser?.avatar || "" }} size="size-11" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-semibold text-cyan-100/80">Tài khoản</span>
+                <span className="block text-[11px] font-semibold text-white/80">Tài khoản</span>
                 <b className="block truncate text-sm text-white">{lastUser?.username || "Chưa đăng nhập"}</b>
                 <span className="block truncate text-[10px] text-white/70">@{lastUser?.username || "guest"}</span>
               </span>
               <span className="text-xl font-light text-white">›</span>
             </button>
-            <div className="grid grid-cols-2 gap-3">
-              <button type="button" onClick={() => openGuestLogin()} className="h-11 min-w-0 rounded-full bg-[#facc15] px-3 text-[13px] font-black text-slate-950 active:scale-[.99]">Đăng nhập</button>
-              <button type="button" onClick={() => openGuestLogin("finance")} className="h-11 min-w-0 rounded-full border border-white/30 bg-[#063f57]/70 px-3 text-[13px] font-black text-white active:scale-[.99]">Quản lý thu chi</button>
+            <div className="grid grid-cols-2 gap-3 pointer-events-auto">
+              <button type="button" onClick={() => openGuestLogin()} className="h-11 min-w-0 rounded-full bg-[#facc15] px-3 text-[13px] font-bold text-[#003f3a] shadow-sm active:scale-[.99]">Đăng nhập</button>
+              <button type="button" onClick={() => openGuestLogin("finance")} className="h-11 min-w-0 rounded-full bg-[#064e46]/80 px-3 text-[13px] font-bold text-white shadow-sm ring-1 ring-white/50 backdrop-blur-sm active:scale-[.99]">Quản lý thu chi</button>
             </div>
           </div>
         </div>
       </section>
 
-      <div className="space-y-4 px-3 pt-4 pointer-events-auto">
-        <section className="rounded-[22px] bg-white/[.08] p-4 ring-1 ring-white/12 backdrop-blur">
+      <div className="space-y-3 px-3 pt-3 pointer-events-auto">
+        <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
           <h2 className="text-sm font-bold text-white mb-3">Tiện ích</h2>
           <div className="grid grid-cols-3 gap-3">
             {guestActions.map(([label, icon, action]) => (
-              <button key={label} onClick={action} className="flex h-[76px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-[16px] bg-white/[.07] px-1 text-center text-[11px] font-semibold text-white active:bg-white/15">
-                <span className="grid size-8 place-items-center rounded-xl bg-amber-400 text-slate-950">{icon}</span>
+              <button key={label} onClick={action} className="flex h-[76px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl bg-white/5 px-1 text-center text-[11px] font-semibold text-[#cbd5e1] active:bg-white/10">
+                <span className="grid size-8 place-items-center rounded-xl bg-white/10 text-[#facc15] shadow-sm ring-1 ring-white/10">{icon}</span>
                 <span className="w-full truncate">{label}</span>
               </button>
             ))}
           </div>
         </section>
 
-        <section>
-          <h2 className="mb-3 text-sm font-bold text-white">Tổng quan nhanh</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {guestMetrics.map(([label, value]) => (
-              <div key={String(label)} onClick={() => openGuestLogin()} className="min-w-0 rounded-[18px] bg-white p-3 shadow-sm cursor-pointer border border-slate-100 dark:border-white/5 dark:bg-slate-900">
-                <p className="truncate text-[10px] text-slate-500 dark:text-slate-400 font-medium">{label}</p>
-                <b className="mt-1 block break-words text-sm text-slate-800 dark:text-slate-200">{value}</b>
-              </div>
-            ))}
+        <section onClick={() => openGuestLogin("finance")} className="cursor-pointer">
+          <div className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-[15px] font-bold text-white">Quản lý tài chính cá nhân</h2>
+              <span className="text-[13px] font-bold text-[#facc15]">Chi tiết</span>
+            </div>
+            <div className="py-6 flex flex-col items-center justify-center bg-black/10 rounded-xl">
+              <span className="text-2xl mb-2 opacity-50">🔒</span>
+              <p className="text-[13px] font-medium text-[#cbd5e1]">Đăng nhập để xem tài chính</p>
+            </div>
           </div>
         </section>
 
-        <section className="rounded-[22px] bg-white/[.08] p-4 ring-1 ring-white/12 backdrop-blur">
+        <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
           <h2 className="text-sm font-bold text-white mb-3">Lối tắt nhanh</h2>
           <div className="grid grid-cols-2 gap-3">
             {guestShortcuts.map(item => (
-              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-white/[.07] text-left text-white active:bg-white/15">
+              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 text-left text-white active:bg-white/10">
                 <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.color} text-white`}>{item.icon}</span>
                 <span className="text-xs font-bold leading-tight">{item.label}</span>
               </button>
@@ -1096,47 +1100,50 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
 
       {mobileLoginOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm pointer-events-auto" onClick={closeMobileLogin}>
-          <div className="w-full max-w-sm rounded-[24px] bg-[#022827]/95 p-6 border border-white/10 shadow-2xl animate-in fade-in zoom-in duration-200 text-white" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-sm rounded-[24px] bg-[#064e46] p-6 shadow-2xl animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#facc15]">Đăng nhập gia đình</p>
-                <h2 className="text-lg font-black mt-0.5">Family Hub</h2>
+                <h2 className="text-lg font-black mt-0.5 text-white">Family Hub</h2>
               </div>
-              <button onClick={closeMobileLogin} className="grid size-8 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20">✕</button>
+              <button onClick={closeMobileLogin} className="grid size-8 place-items-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white">✕</button>
             </div>
-            {loginPrompt && <p className="mb-4 text-xs font-semibold text-amber-300 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/25">{loginPrompt}</p>}
+            {loginPrompt && <p className="mb-4 text-xs font-semibold text-[#facc15] bg-[#facc15]/10 p-2.5 rounded-xl border border-[#facc15]/20">{loginPrompt}</p>}
             
             {forgot ? (
               <form onSubmit={requestPasswordReset} className="space-y-4">
-                <Field label="Tài khoản hoặc email">
-                  <input required autoComplete="username" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm outline-none focus:border-[#facc15] text-white" placeholder="Nhập username hoặc email" value={forgotAccount} onChange={event => setForgotAccount(event.target.value)} />
-                </Field>
-                {forgotMessage && <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-lg">{forgotMessage}</p>}
-                {error && <p className="text-xs text-rose-400 bg-rose-500/10 p-2 rounded-lg">{error}</p>}
-                <button disabled={loading} className="w-full h-12 rounded-xl bg-[#facc15] font-black text-slate-950 hover:bg-[#eab308] disabled:opacity-50 transition">{loading ? "Đang gửi..." : "Gửi yêu cầu"}</button>
-                <button type="button" onClick={() => { setForgot(false); setError(""); setForgotMessage(""); }} className="w-full text-center text-xs font-bold text-cyan-200">Quay lại đăng nhập</button>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold text-white/70">Tài khoản hoặc email</span>
+                  <input required autoComplete="username" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm outline-none focus:border-[#facc15] text-white placeholder-white/40" placeholder="Nhập username hoặc email" value={forgotAccount} onChange={event => setForgotAccount(event.target.value)} />
+                </label>
+                {forgotMessage && <p className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 p-2 rounded-lg">{forgotMessage}</p>}
+                {error && <p className="text-xs text-rose-400 bg-rose-400/10 border border-rose-400/20 p-2 rounded-lg">{error}</p>}
+                <button disabled={loading} className="w-full h-12 rounded-xl bg-[#facc15] font-black text-[#003f3a] hover:bg-[#eab308] disabled:opacity-50 transition">{loading ? "Đang gửi..." : "Gửi yêu cầu"}</button>
+                <button type="button" onClick={() => { setForgot(false); setError(""); setForgotMessage(""); }} className="w-full text-center text-xs font-bold text-[#facc15]">Quay lại đăng nhập</button>
               </form>
             ) : (
               <form onSubmit={submit} className="space-y-4">
-                <Field label="Tài khoản hoặc email">
-                  <input required autoComplete="username" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm outline-none focus:border-[#facc15] text-white" placeholder="Tài khoản" value={username} onChange={event => setUsername(event.target.value)} />
-                </Field>
-                <Field label="Mật khẩu">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold text-white/70">Tài khoản hoặc email</span>
+                  <input required autoComplete="username" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm outline-none focus:border-[#facc15] text-white placeholder-white/40" placeholder="Tài khoản" value={username} onChange={event => setUsername(event.target.value)} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold text-white/70">Mật khẩu</span>
                   <div className="relative">
-                    <input required type={showPassword ? "text" : "password"} autoComplete="current-password" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 pl-4 pr-12 text-sm outline-none focus:border-[#facc15] text-white" placeholder="Mật khẩu" value={password} onChange={event => setPassword(event.target.value)} />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 grid w-12 place-items-center text-white/55 hover:text-[#facc15]">
+                    <input required type={showPassword ? "text" : "password"} autoComplete="current-password" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 pl-4 pr-12 text-sm outline-none focus:border-[#facc15] text-white placeholder-white/40" placeholder="Mật khẩu" value={password} onChange={event => setPassword(event.target.value)} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 grid w-12 place-items-center text-white/50 hover:text-[#facc15]">
                       <PasswordEyeIcon visible={showPassword} />
                     </button>
                   </div>
-                </Field>
+                </label>
                 <div className="flex items-center justify-between text-xs">
-                  <label className="flex items-center gap-2 text-white/80 cursor-pointer">
-                    <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} className="size-4 rounded border-white/10 bg-white/5 accent-[#facc15]" /> Ghi nhớ
+                  <label className="flex items-center gap-2 text-white/70 cursor-pointer">
+                    <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} className="size-4 rounded border-white/20 bg-white/10 accent-[#facc15]" /> Ghi nhớ
                   </label>
                   <button type="button" onClick={() => { setForgot(true); setError(""); }} className="font-bold text-[#facc15]">Quên mật khẩu?</button>
                 </div>
-                {error && <p className="text-xs text-rose-400 bg-rose-500/10 p-2 rounded-lg">{error}</p>}
-                <button disabled={loading} className="w-full h-12 rounded-xl bg-[#facc15] font-black text-slate-950 hover:bg-[#eab308] disabled:opacity-50 transition">{loading ? "Đang đăng nhập..." : "Đăng nhập"}</button>
+                {error && <p className="text-xs text-rose-400 bg-rose-400/10 border border-rose-400/20 p-2 rounded-lg">{error}</p>}
+                <button disabled={loading} className="w-full h-12 rounded-xl bg-[#facc15] font-black text-[#003f3a] hover:bg-[#eab308] disabled:opacity-50 transition">{loading ? "Đang đăng nhập..." : "Đăng nhập"}</button>
               </form>
             )}
           </div>
@@ -3290,12 +3297,12 @@ function MobileFinance({ data, open, t, user, update, go }: FinanceProps) {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const back = () => tab === "transactions" ? go?.("dashboard") : setTab("transactions");
 
-  const activeTabClass = "flex-1 py-3 text-center text-[15px] font-bold text-white border-b-[3px] border-[#fbbf24] transition-all whitespace-nowrap";
+  const activeTabClass = "flex-1 py-3 text-center text-[15px] font-bold text-white border-b-[3px] border-[#facc15] transition-all whitespace-nowrap";
   const inactiveTabClass = "flex-1 py-3 text-center text-[15px] font-medium text-white/60 border-b-[3px] border-transparent transition-all whitespace-nowrap";
 
   return (
     <div className="flex flex-col h-[100dvh] bg-[#f0f2f5] dark:bg-[var(--app-bg)] md:hidden font-sans">
-      <div className="bg-gradient-to-br from-[#0d3b66] to-[#0a2342] dark:from-slate-800 dark:to-slate-900 pt-3 px-4 pb-0 shrink-0 shadow-md relative z-10">
+      <div className="bg-[#003f3a] pt-3 px-4 pb-0 shrink-0 shadow-md relative z-10">
         <div className="flex items-center justify-between mb-2">
           <button type="button" aria-label="Quay lại" onClick={back} className="text-white p-2 -ml-2 active:bg-white/10 rounded-full">
             <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
@@ -3314,7 +3321,7 @@ function MobileFinance({ data, open, t, user, update, go }: FinanceProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto relative z-0">
-        <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-br from-[#0d3b66] to-[#0a2342] dark:from-slate-800 dark:to-slate-900 rounded-b-[2rem] shadow-sm pointer-events-none -z-10" />
+        <div className="absolute top-0 inset-x-0 h-40 bg-[#003f3a] rounded-b-[2rem] shadow-sm pointer-events-none -z-10" />
         
         {tab === "transactions" && <MobileTransactionList data={data} update={update} user={user} refreshTrigger={refreshTrigger} refresh={() => setRefreshTrigger(r => r + 1)} />}
         {tab === "savings" && <MobileSavingsList data={data} update={update} user={user} refreshTrigger={refreshTrigger} refresh={() => setRefreshTrigger(r => r + 1)} />}
@@ -3431,19 +3438,19 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
       </div>
     </div>
 
-    <div className="bg-[#1e40af] bg-gradient-to-br from-[#1e40af] to-[#3b82f6] dark:from-indigo-900 dark:to-indigo-700 rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden">
+    <div className="bg-[#064e46] rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden border border-[rgba(250,204,21,0.25)]">
       <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
       <p className="text-[14px] text-white/80 font-medium mb-1">Tiền hiện tại</p>
       <b className="text-[clamp(24px,8vw,32px)] leading-tight font-bold block mb-5 tracking-tight whitespace-nowrap">{loadingOverview ? "..." : (overviewDataCache[year] ? money(currentCash) : "-")}</b>
       
       <div className="grid grid-cols-3 border-t border-white/20 pt-3 gap-1">
         {([['all', 'Chi tiết'], ['income', 'Thu nhập'], ['expense', 'Chi tiêu']] as const).map(([value, label]) => (
-          <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] font-bold transition-colors ${subTab === value ? "bg-white text-[#123a6d] shadow-sm" : "text-white/80 active:bg-white/10"}`}>{label}</button>
+          <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] font-bold transition-colors ${subTab === value ? "bg-[#facc15] text-[#003f3a] shadow-sm" : "text-[#cbd5e1] active:bg-white/10"}`}>{label}</button>
         ))}
       </div>
     </div>
 
-    <div className="min-h-[300px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-gradient-to-b from-[#123a6d] to-[#071f3c] p-4 shadow-xl text-white">
+    <div className="min-h-[300px] overflow-hidden rounded-[1.5rem] border border-[rgba(250,204,21,0.25)] bg-[#064e46] p-4 shadow-xl text-white">
       {loadingIncomes ? <div className="py-10 text-center text-sm font-medium text-white/60">Đang tải...</div> : displayList.length === 0 ? <div className="py-12 text-center text-sm font-medium text-white/55">Chưa có giao dịch</div> : (
         <div className="space-y-6">
           {Object.entries(groupedItems).map(([date, items]) => <section key={date}>
@@ -3452,10 +3459,10 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
               {items.map((item: any) => <div key={`${item._isIncome ? 'income' : 'expense'}-${item.id}`} className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 py-1">
                 <button type="button" onClick={() => setDetail(item)} className="min-w-0 py-2 text-left active:opacity-70">
                   <b className="block truncate text-[15px] leading-5 text-white">{item._displayName}</b>
-                  <span className="mt-1 block truncate text-[12px] text-white/55">{item.note || item._displayCategory || "Khác"}</span>
+                  <span className="mt-1 block truncate text-[12px] text-[#cbd5e1]">{item.note || item._displayCategory || "Khác"}</span>
                 </button>
                 <button type="button" onClick={() => setDetail(item)} className="min-w-0 py-2 text-right active:opacity-70">
-                  <b className={`block whitespace-nowrap text-[14px] ${item._isIncome ? "text-emerald-300" : "text-orange-300"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
+                  <b className={`block whitespace-nowrap text-[14px] ${item._isIncome ? "text-[#22c55e]" : "text-[#fb923c]"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
                   {item._displayTime && <span className="mt-1 block text-[12px] text-white/50">{String(item._displayTime).slice(0, 5)}</span>}
                 </button>
                 <button type="button" aria-label={`Tùy chọn ${item._displayName}`} onClick={(event) => { event.stopPropagation(); setMenuItem(item); }} className="grid size-9 place-items-center rounded-full text-xl font-bold text-white/70 active:bg-white/10">•••</button>
@@ -3467,7 +3474,7 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
     </div>
 
     <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-12">
-      <button type="button" aria-label={subTab === "all" ? "Thêm giao dịch" : subTab === "income" ? "Thêm thu" : "Thêm chi"} onClick={() => setEditor({ type: subTab === "all" ? "expense" : subTab, isNew: true })} className={`grid size-12 place-items-center rounded-full text-white shadow-xl active:scale-95 transition-transform ${subTab === "income" ? "bg-emerald-500" : subTab === "expense" ? "bg-orange-500" : "bg-indigo-500"}`}>
+      <button type="button" aria-label={subTab === "all" ? "Thêm giao dịch" : subTab === "income" ? "Thêm thu" : "Thêm chi"} onClick={() => setEditor({ type: subTab === "all" ? "expense" : subTab, isNew: true })} className={`grid size-12 place-items-center rounded-full shadow-xl active:scale-95 transition-transform ${subTab === "income" ? "bg-[#22c55e] text-white" : subTab === "expense" ? "bg-[#fb923c] text-white" : "bg-[#facc15] text-[#003f3a]"}`}>
         <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
       </button>
     </div>
@@ -3551,7 +3558,7 @@ function MobileTransactionEditor({ item, defaultType, allowTypeChange = false, c
 
   const shortTitle = `${item?.id ? "Sửa" : "Thêm"} ${type === "income" ? "thu" : "chi"}`;
   const formId = type === "income" ? "mobile-income-transaction-form" : "mobile-expense-transaction-form";
-  return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="button" onClick={() => (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit()} className="px-2 text-[15px] font-bold text-indigo-600 dark:text-indigo-400">Lưu</button>}>
+  return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="button" onClick={() => (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit()} className="px-2 text-[15px] font-bold text-[#064e46] dark:text-[#facc15]">Lưu</button>}>
     <div className="min-h-full bg-[var(--app-background)] p-4 pb-28">
       {(!item?.id && allowTypeChange) && <div className="sticky top-0 z-10 mb-4 flex rounded-xl bg-slate-100 p-1.5 shadow-sm dark:bg-slate-800">
         <button type="button" onClick={() => setType("income")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "income" ? "bg-white text-emerald-500 shadow-sm dark:bg-slate-700" : "text-slate-500"}`}>Thu nhập</button>
@@ -6976,7 +6983,15 @@ function MobileHome({
     ["Công việc", <CheckListIcon />, () => go("tasks")], ["Thông báo", <BellIcon />, () => go("notifications")], ["Cài đặt", <SettingsIcon />, () => go("settings")],
   ] as const;
   
-  const metrics = [["Tổng thành viên", data.members.length], ["Công việc hôm nay", todayTasks], ["Sự kiện hôm nay", todayEvents], ["Thu tháng này", money(income)], ["Chi tháng này", money(expense)], ["Số dư tháng này", money(income - expense)]];
+  const currentMonthIdx = now.getMonth();
+  const currentYearIdx = now.getFullYear();
+  const chartData = [2, 1, 0].map(offset => {
+    const d = new Date(currentYearIdx, currentMonthIdx - offset, 1);
+    const isSameMonth = (dateStr: string) => { const pd = parseDate(dateStr, now); return pd && pd.getMonth() === d.getMonth() && pd.getFullYear() === d.getFullYear(); };
+    const mIncome = transactions.filter(t => t.type === "income" && isSameMonth(t.date)).reduce((s, t) => s + Number(t.amount || 0), 0);
+    const mExpense = transactions.filter(t => t.type === "expense" && isSameMonth(t.date)).reduce((s, t) => s + Number(t.amount || 0), 0);
+    return { name: `T${d.getMonth() + 1}`, thu: mIncome, chi: mExpense };
+  });
   
   const shortcuts = [
     { label: "Thêm chi tiêu", icon: icons.finance, color: "bg-rose-500", onClick: () => setEditor({ kind: "transactions", item: { type: "expense", date: new Date().toISOString().split('T')[0] } as any }) },
@@ -6995,16 +7010,16 @@ function MobileHome({
     : {};
   const heroClass = coverUrl
     ? "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden pointer-events-none"
-    : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-gradient-to-br from-[#0b5265] via-[#064d61] to-[#023a3a] pointer-events-none";
+    : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-gradient-to-br from-[#003f3a] to-[#012f2d] pointer-events-none";
 
   return (
-    <div className="min-h-[100dvh] overflow-x-hidden bg-[#062f3c] pb-24 font-[Arial,sans-serif] text-white">
+    <div className="min-h-[100dvh] overflow-x-hidden bg-[#003f3a] pb-24 font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif] text-white">
       <section style={heroStyle} className={heroClass}>
         {coverUrl && (
           <div className="absolute inset-0 bg-black/55 pointer-events-none z-0" />
         )}
         {!coverUrl && (
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/55 pointer-events-none z-0" />
+          <div className="absolute inset-0 bg-black/40 pointer-events-none z-0" />
         )}
         
         <div className="relative z-10 w-full h-full flex flex-col pointer-events-auto">
@@ -7014,17 +7029,16 @@ function MobileHome({
               <b className="text-sm tracking-wide text-white">Family Hub</b>
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={() => ui.toast("Tính năng đang phát triển")} className="grid size-9 place-items-center rounded-full bg-slate-950/25 text-white ring-1 ring-white/15" aria-label="Tìm kiếm"><SearchIcon /></button>
-              <button onClick={() => go("notifications")} className="relative grid size-9 place-items-center rounded-full bg-slate-950/25 text-white ring-1 ring-white/15" aria-label="Thông báo">
+              <button type="button" onClick={() => go("notifications")} className="grid relative size-9 place-items-center rounded-full bg-slate-950/25 text-white ring-1 ring-white/15" aria-label="Thông báo">
                 <BellIcon />
-                {unread > 0 && <span className="absolute right-0 top-0 min-w-4 rounded-full bg-amber-400 px-1 text-[9px] font-bold text-slate-950">{unread}</span>}
+                {unread > 0 && <span className="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{unread}</span>}
               </button>
             </div>
           </header>
 
           <div className="mt-2">
-            <p className="text-[13px] font-semibold text-cyan-100/90">{greeting}!</p>
-            <h1 className="mt-1 truncate text-[26px] font-black leading-tight text-white drop-shadow-sm">{user.displayName}</h1>
+            <p className="text-[12px] font-medium text-cyan-100/90">{greeting}!</p>
+            <h1 className="mt-1 truncate text-[24px] font-bold leading-tight text-white drop-shadow-sm">{user.displayName}</h1>
             <span className="mt-2 inline-flex rounded-full bg-black/30 px-2.5 py-0.5 text-[10px] font-bold text-white ring-1 ring-white/20">
               {user.role === "full_access" ? "Quản lý gia đình" : accessLabel(user.role)}
             </span>
@@ -7034,50 +7048,70 @@ function MobileHome({
             <button type="button" onClick={openProfile} className="flex h-16 w-full items-center gap-3 rounded-[20px] bg-black/25 px-3 text-left text-white ring-1 ring-white/15 backdrop-blur-md active:bg-black/40">
               <AccountAvatar user={user} size="size-11" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-semibold text-cyan-100/80">Tài khoản</span>
+                <span className="block text-[11px] font-semibold text-white/80">Tài khoản</span>
                 <b className="block truncate text-sm text-white">{user.displayName || user.username}</b>
                 <span className="block truncate text-[10px] text-white/70">@{user.username}</span>
               </span>
               <span className="text-xl font-light text-white">›</span>
             </button>
-            <div className="grid grid-cols-2 gap-3">
-              <button type="button" onClick={() => setShowMembers(true)} className="h-11 min-w-0 rounded-full bg-[#facc15] px-3 text-[13px] font-black text-slate-950 active:scale-[.99]">Thành viên</button>
-              <button type="button" onClick={() => go("finance")} className="h-11 min-w-0 rounded-full border border-white/30 bg-[#063f57]/70 px-3 text-[13px] font-black text-white active:scale-[.99]">Quản lý thu chi</button>
+            <div className="grid grid-cols-2 gap-3 pointer-events-auto">
+              <button type="button" onClick={() => setShowMembers(true)} className="h-11 min-w-0 rounded-full bg-[#facc15] px-3 text-[13px] font-bold text-[#003f3a] shadow-sm active:scale-[.99]">Thành viên</button>
+              <button type="button" onClick={() => go("finance")} className="h-11 min-w-0 rounded-full bg-[#064e46]/80 px-3 text-[13px] font-bold text-white shadow-sm ring-1 ring-white/50 backdrop-blur-sm active:scale-[.99]">Quản lý thu chi</button>
             </div>
           </div>
         </div>
       </section>
 
-      <div className="space-y-4 px-3 pt-4 pointer-events-auto">
-        <section className="rounded-[22px] bg-white/[.08] p-4 ring-1 ring-white/12 backdrop-blur">
+      <div className="space-y-3 px-3 pt-3 pointer-events-auto">
+        <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
           <h2 className="text-sm font-bold text-white mb-3">Tiện ích</h2>
           <div className="grid grid-cols-3 gap-3">
             {actions.map(([label, icon, action]) => (
-              <button key={label} onClick={action} className="flex h-[76px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-[16px] bg-white/[.07] px-1 text-center text-[11px] font-semibold text-white active:bg-white/15">
-                <span className="grid size-8 place-items-center rounded-xl bg-amber-400 text-slate-950">{icon}</span>
+              <button key={label} onClick={action} className="flex h-[76px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl bg-white/5 px-1 text-center text-[11px] font-semibold text-[#cbd5e1] active:bg-white/10">
+                <span className="grid size-8 place-items-center rounded-xl bg-white/10 text-[#facc15] shadow-sm ring-1 ring-white/10">{icon}</span>
                 <span className="w-full truncate">{label}</span>
               </button>
             ))}
           </div>
         </section>
 
-        <section>
-          <h2 className="mb-3 text-sm font-bold text-white">Tổng quan nhanh</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {metrics.map(([label, value]) => (
-              <div key={String(label)} className="min-w-0 rounded-[18px] bg-white p-3 shadow-sm dark:bg-slate-900 border border-slate-100 dark:border-white/5">
-                <p className="truncate text-[10px] text-slate-500 dark:text-slate-400 font-medium">{label}</p>
-                <b className="mt-1.5 block break-words text-sm text-slate-800 dark:text-slate-200">{value}</b>
+        <section onClick={() => go("finance")} className="cursor-pointer">
+          <div className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-[15px] font-bold text-white">Quản lý tài chính cá nhân</h2>
+              <span className="text-[13px] font-bold text-[#facc15]">Chi tiết</span>
+            </div>
+            <div className="flex gap-4">
+              <div className="flex-1 flex flex-col justify-center">
+                <p className="text-[12px] font-medium text-[#cbd5e1]">Tháng {now.getMonth() + 1}</p>
+                <div className="mt-1.5 space-y-0.5">
+                  <p className="text-[13px] font-semibold text-white">Thu: <span className="text-emerald-400">{money(income)}</span></p>
+                  <p className="text-[13px] font-semibold text-white">Chi: <span className="text-rose-400">{money(expense)}</span></p>
+                </div>
+                <p className="mt-2.5 text-[10px] text-[#cbd5e1]">Cập nhật đến ngày {now.getDate().toString().padStart(2, '0')}/{(now.getMonth() + 1).toString().padStart(2, '0')}/{now.getFullYear()}</p>
               </div>
-            ))}
+              <div className="w-[140px] h-28 shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} barSize={10}>
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#cbd5e1" }} dy={4} />
+                    <Bar dataKey="thu" radius={[2, 2, 0, 0]}>
+                      {chartData.map((entry, index) => <Cell key={`cell-thu-${index}`} fill={index === 2 ? "#10b981" : "#10b98160"} />)}
+                    </Bar>
+                    <Bar dataKey="chi" radius={[2, 2, 0, 0]}>
+                      {chartData.map((entry, index) => <Cell key={`cell-chi-${index}`} fill={index === 2 ? "#f43f5e" : "#f43f5e60"} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
         </section>
 
-        <section className="rounded-[22px] bg-white/[.08] p-4 ring-1 ring-white/12 backdrop-blur">
-          <h2 className="text-sm font-bold text-white mb-3">Lối tắt nhanh</h2>
+        <section className="rounded-2xl bg-[#FFFFFF] p-4 shadow-sm border border-slate-100 dark:border-white/5 dark:bg-slate-900">
+          <h2 className="text-sm font-bold text-[#1F2340] dark:text-white mb-3">Lối tắt nhanh</h2>
           <div className="grid grid-cols-2 gap-3">
             {shortcuts.map(item => (
-              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-white/[.07] text-left text-white active:bg-white/15">
+              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-[#F7F7FC] dark:bg-white/5 text-left text-[#1F2340] dark:text-slate-200 active:bg-slate-100">
                 <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.color} text-white`}>{item.icon}</span>
                 <span className="text-xs font-bold leading-tight">{item.label}</span>
               </button>
@@ -7085,19 +7119,31 @@ function MobileHome({
           </div>
         </section>
 
-        <section className="rounded-[24px] bg-white p-4 shadow-sm dark:bg-slate-900 border border-slate-100 dark:border-white/5">
-          <h2 className="font-bold text-slate-800 dark:text-white">Hoạt động gần đây</h2>
+        <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
+          <h2 className="text-sm font-bold text-white mb-3">Lối tắt nhanh</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {shortcuts.map(item => (
+              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 text-left text-white active:bg-white/10">
+                <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.color} text-white`}>{item.icon}</span>
+                <span className="text-xs font-bold leading-tight">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
+          <h2 className="font-bold text-white">Hoạt động gần đây</h2>
           {notifications.length ? (
             <div className="mt-3 space-y-3">
               {notifications.slice(0, 3).map(item => (
-                <button key={item.id} onClick={() => go("notifications")} className="block w-full rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3 text-left">
-                  <b className="block truncate text-sm text-slate-700 dark:text-slate-300">{item.actorName || "Family Hub"}</b>
-                  <p className="mt-1 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">{item.message}</p>
+                <button key={item.id} onClick={() => go("notifications")} className="block w-full rounded-2xl bg-white/5 p-3 text-left active:bg-white/10">
+                  <b className="block truncate text-sm text-white">{item.actorName || "Family Hub"}</b>
+                  <p className="mt-1 line-clamp-2 text-xs text-[#cbd5e1]">{item.message}</p>
                 </button>
               ))}
             </div>
           ) : (
-            <p className="py-6 text-center text-sm text-slate-400">Chưa có hoạt động gần đây</p>
+            <p className="py-6 text-center text-sm text-[#cbd5e1]">Chưa có hoạt động gần đây</p>
           )}
         </section>
       </div>
