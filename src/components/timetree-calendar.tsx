@@ -5,6 +5,7 @@ import type { Member } from "@/types";
 import { ListIcon, ChevronRightIcon, ChevronDownIcon, ClockIcon, TypeIcon, RefreshCwIcon, PaletteIcon, Trash2Icon, MoonIcon, AlertTriangleIcon, CheckCircle2Icon, SearchIcon, FilterIcon, TagIcon, PlusIcon, BellIcon, LinkIcon, CopyIcon, LayoutGridIcon, MenuIcon } from "lucide-react";
 import { getNotificationSettings, addLocalNotification, triggerSystemNotification } from "@/lib/notifications";
 import { Solar } from "lunar-javascript";
+import { getLunarDate } from "@/lib/vietnamese-lunar";
 
 type Actor = { id: string; role: "full_access" | "self_only"; displayName?: string; avatar?: string; memberId?: string };
 type Calendar = { id: string; name: string; color: string; visible: boolean; type: string; ownerUserId: string; viewerUserIds: string[] };
@@ -99,10 +100,7 @@ function todayIso() {
 function getLunarText(dateString: string): { text: string, important: boolean } {
   const parsed = localDate(dateString);
   if (!parsed) return { text: "", important: false };
-  const solar = Solar.fromYmd(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
-  const lunar = solar.getLunar();
-  const lDay = lunar.getDay();
-  const lMonth = lunar.getMonth();
+  const [lDay, lMonth, lYear, isLeap] = getLunarDate(parsed.getDate(), parsed.getMonth() + 1, parsed.getFullYear());
   const important = lDay === 1 || lDay === 15;
   return { text: lDay === 1 ? `${lDay}/${lMonth}` : `${lDay}`, important };
 }
@@ -701,7 +699,7 @@ export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user
       </div>
     </div>
 
-    <div className="block md:hidden h-[calc(100vh-64px)] w-full overflow-hidden bg-[#f8fafc]">
+    <div className="block md:hidden h-[calc(100dvh-64px-env(safe-area-inset-bottom,0px))] w-full overflow-hidden bg-[var(--app-background)]">
       <MobileCalendarView 
         mobileTab={mobileTab} setMobileTab={setMobileTab}
         anchor={anchor} setAnchor={setAnchor}
@@ -716,7 +714,7 @@ export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user
         setEvents={setEvents} goToday={goToday}
         openMenuId={openMenuId} setOpenMenuId={setOpenMenuId}
       />
-      {mobileTab !== "list" && <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-[72px] right-4 z-[45] grid size-12 place-items-center rounded-full bg-[#4f46e5] text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 active:scale-95" aria-label={t ? t("addEvent") : "Thêm sự kiện"}>+</button>}
+      {mobileTab !== "list" && <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-[calc(80px+env(safe-area-inset-bottom,0px))] right-4 z-[45] grid size-12 place-items-center rounded-full bg-[#4f46e5] text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 active:scale-95" aria-label={t ? t("addEvent") : "Thêm sự kiện"}>+</button>}
       {draft && <EventEditorSheet draft={draft} calendars={calendars} customLists={customLists} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
       {detail && <EventDetailSheet item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />}
     </div>
@@ -1369,7 +1367,7 @@ function MobileCalendarView({
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-950 pb-[72px]">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-950">
       {/* Top Tabs */}
       <div className="flex items-center justify-between bg-white border-b border-slate-100 dark:border-white/5 sticky top-0 z-10 dark:bg-slate-950">
         {tabs.map(tab => {
@@ -1390,12 +1388,12 @@ function MobileCalendarView({
         })}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-hidden flex flex-col">
         {mobileTab === "month" && (
-          <div className="flex flex-col">
+          <div className="flex flex-col flex-1 min-h-0">
 
             {/* Calendar Grid */}
-            <div className="w-full bg-white dark:bg-slate-950">
+            <div className="flex flex-col flex-1 min-h-0 bg-white dark:bg-slate-950">
               <div className="flex items-center px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-10">
                 <h2 className="text-sm font-bold text-slate-800 dark:text-white flex-1 flex items-center gap-2">
                   {t ? t("month") : "Tháng"} {anchor.getMonth() + 1} {anchor.getFullYear()}
@@ -1412,12 +1410,12 @@ function MobileCalendarView({
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-7 border-b border-slate-100 dark:border-white/5">
+              <div className="grid grid-cols-7 border-b border-slate-100 dark:border-white/5 shrink-0">
                 {["CN", "T2", "T3", "T4", "T5", "T6", "T7"].map((day, i) => (
                   <div key={day} className={`text-center text-[9px] py-1 font-bold uppercase tracking-wider ${i === 0 ? "text-red-500" : "text-slate-400"}`}>{day}</div>
                 ))}
               </div>
-              <div className="grid grid-cols-7">
+              <div className="grid grid-cols-7 grid-rows-6 flex-1 min-h-0">
                 {monthCells(anchor).map((date, index) => {
                   const dateIso = iso(date);
                   const isSelected = selectedDate === dateIso;
@@ -1430,14 +1428,14 @@ function MobileCalendarView({
                     <div 
                       key={dateIso} 
                       onClick={() => { pickDate(dateIso); setMobileTab("day"); }}
-                      className={`flex flex-col border-b border-slate-100 dark:border-white/5 h-[12vh] max-h-[80px] min-h-[50px] overflow-hidden cursor-pointer ${!isLastCol ? "border-r" : ""} ${!isCurrentMonth ? "bg-slate-50/50 dark:bg-white/[0.01]" : ""} ${isSelected ? "bg-indigo-50/20 dark:bg-indigo-500/10" : ""}`}
+                      className={`flex flex-col border-b border-slate-100 dark:border-white/5 overflow-hidden cursor-pointer ${!isLastCol ? "border-r" : ""} ${!isCurrentMonth ? "bg-slate-50/50 dark:bg-white/[0.01]" : ""} ${isSelected ? "bg-indigo-50/20 dark:bg-indigo-500/10" : ""}`}
                     >
                       <div className="flex items-center justify-between px-0.5 pt-0.5">
                         <span className={`text-[11px] font-semibold flex items-center justify-center size-[18px] rounded-full ${isSelected ? "bg-[#4f46e5] text-white" : isSunday ? "text-red-500" : "text-slate-700 dark:text-slate-300"}`}>
                           {date.getDate()}
                         </span>
                         {lunarInfo.text && (
-                          <span className={`text-[8px] -mt-0.5 leading-none ${lunarInfo.important ? "text-rose-500 font-bold" : "text-slate-400 dark:text-slate-500 hidden min-[360px]:block"}`}>{lunarInfo.text}</span>
+                          <span className={`text-[8px] -mt-0.5 leading-none ${lunarInfo.important ? "text-rose-500 font-bold" : "text-slate-400 dark:text-slate-500"}`}>{lunarInfo.text}</span>
                         )}
                       </div>
                       <div className="flex flex-col gap-[1px] mt-[1px] px-[1px] w-full">
@@ -1453,13 +1451,11 @@ function MobileCalendarView({
                 })}
               </div>
             </div>
-
-
           </div>
         )}
 
         {mobileTab === "week" && (
-          <div className="flex flex-col flex-1 h-full bg-white dark:bg-slate-950">
+          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto bg-white dark:bg-slate-950">
             <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-[52px]">
               <h2 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
                 Tháng {new Date(selectedDate).getMonth() + 1} {new Date(selectedDate).getFullYear()}
@@ -1513,7 +1509,7 @@ function MobileCalendarView({
         )}
 
         {mobileTab === "day" && (
-          <div className="flex flex-col flex-1 h-full bg-[#f8fafc] dark:bg-slate-950">
+          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto bg-[#f8fafc] dark:bg-slate-950">
             <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-[52px]">
               <h2 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
                 {formatDateVN(selectedDate)}
@@ -1611,7 +1607,7 @@ function MobileCalendarView({
         )}
 
         {mobileTab === "list" && (
-          <div className="min-h-full bg-[#f8fafc]">
+          <div className="flex-1 min-h-0 overflow-y-auto bg-[#f8fafc]">
             <div className="px-3 pb-6 pt-4 space-y-2">
               <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Danh sách hệ thống</h3>
               {[{ id: "birthday", label: "Sinh nhật", color: "#f43f5e" }, { id: "holiday", label: "Ngày lễ", color: "#22c55e" }].map((cal: any) => (

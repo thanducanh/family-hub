@@ -1,4 +1,4 @@
-const CACHE_NAME = "family-hub-v5";
+const CACHE_NAME = "family-hub-v6";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",

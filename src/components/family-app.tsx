@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -14,6 +15,7 @@ import { translator } from "@/lib/i18n";
 import { dataService, type SystemStatus } from "@/services/data-service";
 import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, CardReward, CardRewardType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberJob, MemberJobStatus, MemberSim, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
 import * as XLSX from "xlsx";
+import QRCode from "react-qr-code";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
 type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
@@ -409,6 +411,9 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
             setEditor={setEditor}
             showMembers={mobileShowMembers}
             setShowMembers={setMobileShowMembers}
+            openChangePassword={() => setChangePasswordOpen(true)}
+            savedUser={setUser}
+            refreshCurrentUser={refreshCurrentUser}
           />
         </div>
         <div className="hidden md:block">
@@ -424,10 +429,10 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     screen === "notifications" ? <NotificationsView user={user} notifications={notifications} setNotifications={setNotifications} /> :
     <Settings user={user} onLogout={logout} openProfile={() => setProfilePageOpen(true)} openChangePassword={() => setChangePasswordOpen(true)} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} updateData={setData} t={t} />;
 
-  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 pb-[100px] md:pb-0 ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
+  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" ? "pb-0" : "pb-[100px] md:pb-0"} ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
     <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} t={t} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
-    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" ? "hidden md:block" : "block"}`}>
+    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" ? "hidden md:block" : "block"}`}>
       <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
         <label className={`relative w-full max-w-md ${screen === "finance" ? "hidden md:block" : "block"}`}><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
         <div className="relative ml-auto flex items-center gap-1 md:gap-2">
@@ -441,7 +446,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       </div>
     </header>
     <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
-    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none px-2 md:px-4" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
+    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
     {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
@@ -1049,12 +1054,18 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
 
       <div className="space-y-3 px-3 pt-3 pointer-events-auto">
         <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
-          <h2 className="text-sm font-bold text-white mb-3">Tiện ích</h2>
-          <div className="grid grid-cols-3 gap-3">
-            {guestActions.map(([label, icon, action]) => (
-              <button key={label} onClick={action} className="flex h-[76px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl bg-white/5 px-1 text-center text-[11px] font-semibold text-[#cbd5e1] active:bg-white/10">
-                <span className="grid size-8 place-items-center rounded-xl bg-white/10 text-[#facc15] shadow-sm ring-1 ring-white/10">{icon}</span>
-                <span className="w-full truncate">{label}</span>
+          <h2 className="text-[14px] font-semibold text-white mb-3">Thông tin cá nhân</h2>
+          <div className="grid grid-cols-3 gap-y-4 gap-x-2">
+            {[
+              ["Thông tin", <UserIcon />, () => { sessionStorage.setItem("pendingProfileSheet", "info"); openGuestLogin(); }],
+              ["Tài khoản", <LockIcon />, () => { sessionStorage.setItem("pendingProfileSheet", "account"); openGuestLogin(); }],
+              ["Danh thiếp", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 18a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2"></path><rect width="18" height="18" x="3" y="4" rx="2"></rect><circle cx="12" cy="10" r="2"></circle><line x1="8" x2="8" y1="2" y2="4"></line><line x1="16" x2="16" y1="2" y2="4"></line></svg>, () => { sessionStorage.setItem("pendingProfileSheet", "card"); openGuestLogin(); }],
+              ["Thẻ NH", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="14" x="2" y="5" rx="2"></rect><line x1="2" x2="22" y1="10" y2="10"></line></svg>, () => { sessionStorage.setItem("pendingProfileSheet", "bank"); openGuestLogin(); }],
+              ["SIM", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect><path d="M12 18h.01"></path></svg>, () => { sessionStorage.setItem("pendingProfileSheet", "sim"); openGuestLogin(); }]
+            ].map(([label, icon, action]: any) => (
+              <button key={label as string} onClick={action} className="flex min-w-0 flex-col items-center justify-start gap-2 rounded-2xl text-center text-[11px] font-medium text-[#cbd5e1] active:opacity-70 transition-opacity">
+                <span className="grid size-[40px] shrink-0 place-items-center rounded-full bg-[#facc15]/15 text-[#facc15] shadow-sm ring-1 ring-[#facc15]/30 [&>svg]:size-[18px]">{icon}</span>
+                <span className="w-full whitespace-normal leading-tight line-clamp-2 px-0.5">{label}</span>
               </button>
             ))}
           </div>
@@ -3297,17 +3308,17 @@ function MobileFinance({ data, open, t, user, update, go }: FinanceProps) {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const back = () => tab === "transactions" ? go?.("dashboard") : setTab("transactions");
 
-  const activeTabClass = "flex-1 py-3 text-center text-[15px] font-bold text-white border-b-[3px] border-[#facc15] transition-all whitespace-nowrap";
+  const activeTabClass = "flex-1 py-3 text-center text-[15px] font-semibold text-white border-b-[3px] border-[#facc15] transition-all whitespace-nowrap";
   const inactiveTabClass = "flex-1 py-3 text-center text-[15px] font-medium text-white/60 border-b-[3px] border-transparent transition-all whitespace-nowrap";
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-[#f0f2f5] dark:bg-[var(--app-bg)] md:hidden font-sans">
+    <div className="flex flex-col h-[100dvh] bg-[#003f3a] dark:bg-[#064e46] md:hidden font-sans">
       <div className="bg-[#003f3a] pt-3 px-4 pb-0 shrink-0 shadow-md relative z-10">
         <div className="flex items-center justify-between mb-2">
           <button type="button" aria-label="Quay lại" onClick={back} className="text-white p-2 -ml-2 active:bg-white/10 rounded-full">
             <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <h1 className="text-[20px] font-bold text-white tracking-wide">Thu chi</h1>
+          <h1 className="text-[20px] font-semibold text-white tracking-wide">Thu chi</h1>
           <button onClick={() => setSettingsOpen(true)} className="text-white p-2 -mr-2 active:bg-white/10 rounded-full">
             <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
           </button>
@@ -3334,7 +3345,6 @@ function MobileFinance({ data, open, t, user, update, go }: FinanceProps) {
 }
 
 function MobileTransactionList({ data: appData, update, user, refreshTrigger, refresh }: any) {
-  const ui = useUI();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [subTab, setSubTab] = useState<"all" | "income" | "expense">("all");
   const [incomes, setIncomes] = useState<any[]>([]);
@@ -3344,7 +3354,6 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
   
   const [editor, setEditor] = useState<any>(null);
   const [detail, setDetail] = useState<any>(null);
-  const [menuItem, setMenuItem] = useState<any>(null);
 
   const year = selectedDate.getFullYear();
   const month = selectedDate.getMonth() + 1;
@@ -3414,24 +3423,10 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
     (groups[key] ||= []).push(item);
     return groups;
   }, {});
-  const editItem = (item: any) => { setEditor({ ...item, type: item._isIncome ? "income" : "expense" }); setMenuItem(null); setDetail(null); };
-  const deleteItem = async (item: any) => {
-    setMenuItem(null);
-    if (!await ui.confirm("Xóa giao dịch?", `Bạn có chắc muốn xóa "${item._displayName}"?`)) return;
-    const response = await fetch(item._isIncome ? `/api/incomes?id=${encodeURIComponent(item.id)}` : `/api/transactions?id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
-    if (!response.ok) { const result = await readJsonSafe<{ error?: string }>(response); ui.toast(result?.error || "Không thể xóa giao dịch.", "error"); return; }
-    if (!item._isIncome) update({ ...appData, transactions: toArray(appData?.transactions).filter((record: any) => record.id !== item.id) });
-    ui.toast("Đã xóa giao dịch.", "success");
-    refresh();
-  };
-
+  const editItem = (item: any) => { setEditor({ ...item, type: item._isIncome ? "income" : "expense" }); setDetail(null); };
   return <div className="px-4 pt-3 pb-32">
-    <div className="flex items-center justify-between mb-4">
-      <div className="bg-white/20 backdrop-blur-md px-3 py-1.5 rounded-full text-white text-[12px] font-semibold shadow-sm flex items-center gap-1">
-        <span>Việt Nam Đồng</span>
-        <svg className="size-3 opacity-70" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-      </div>
-      <div className="bg-white/20 backdrop-blur-md px-1 py-1 rounded-full text-white text-[13px] font-semibold shadow-sm flex items-center gap-2">
+    <div className="mb-4 flex items-center justify-end">
+      <div className="flex items-center gap-2 rounded-full bg-white/20 px-1 py-1 text-[13px] font-medium text-white shadow-sm backdrop-blur-md">
         <button onClick={prevMonth} className="p-1 hover:bg-white/20 active:bg-white/30 rounded-full transition-colors"><svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg></button>
         <span className="min-w-[90px] text-center">Tháng {month} {year}</span>
         <button onClick={nextMonth} className="p-1 hover:bg-white/20 active:bg-white/30 rounded-full transition-colors"><svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
@@ -3440,33 +3435,32 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
 
     <div className="bg-[#064e46] rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden border border-[rgba(250,204,21,0.25)]">
       <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
-      <p className="text-[14px] text-white/80 font-medium mb-1">Tiền hiện tại</p>
-      <b className="text-[clamp(24px,8vw,32px)] leading-tight font-bold block mb-5 tracking-tight whitespace-nowrap">{loadingOverview ? "..." : (overviewDataCache[year] ? money(currentCash) : "-")}</b>
+      <p className="mb-1 text-[14px] font-normal text-white/80">Tiền hiện tại</p>
+      <b className="mb-5 block whitespace-nowrap text-[clamp(24px,8vw,32px)] font-semibold leading-tight tracking-tight">{loadingOverview ? "..." : (overviewDataCache[year] ? money(currentCash) : "-")}</b>
       
       <div className="grid grid-cols-3 border-t border-white/20 pt-3 gap-1">
         {([['all', 'Chi tiết'], ['income', 'Thu nhập'], ['expense', 'Chi tiêu']] as const).map(([value, label]) => (
-          <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] font-bold transition-colors ${subTab === value ? "bg-[#facc15] text-[#003f3a] shadow-sm" : "text-[#cbd5e1] active:bg-white/10"}`}>{label}</button>
+          <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] transition-colors ${subTab === value ? "bg-[#facc15] font-semibold text-[#003f3a] shadow-sm" : "font-normal text-[#cbd5e1] active:bg-white/10"}`}>{label}</button>
         ))}
       </div>
     </div>
 
-    <div className="min-h-[300px] overflow-hidden rounded-[1.5rem] border border-[rgba(250,204,21,0.25)] bg-[#064e46] p-4 shadow-xl text-white">
-      {loadingIncomes ? <div className="py-10 text-center text-sm font-medium text-white/60">Đang tải...</div> : displayList.length === 0 ? <div className="py-12 text-center text-sm font-medium text-white/55">Chưa có giao dịch</div> : (
-        <div className="space-y-6">
+    <div className="-mx-4 min-h-[300px] bg-[#003f3a] px-4 pb-4 text-white">
+      {loadingIncomes ? <div className="py-10 text-center text-sm font-normal text-[#cbd5e1]">Đang tải...</div> : displayList.length === 0 ? <div className="py-12 text-center text-sm font-normal text-[#cbd5e1]">Chưa có giao dịch</div> : (
+        <div className="space-y-5">
           {Object.entries(groupedItems).map(([date, items]) => <section key={date}>
-            <h3 className="mb-2 text-[18px] font-bold tracking-tight text-white">{date}</h3>
-            <div className="divide-y divide-white/10">
-              {items.map((item: any) => <div key={`${item._isIncome ? 'income' : 'expense'}-${item.id}`} className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 py-1">
-                <button type="button" onClick={() => setDetail(item)} className="min-w-0 py-2 text-left active:opacity-70">
-                  <b className="block truncate text-[15px] leading-5 text-white">{item._displayName}</b>
-                  <span className="mt-1 block truncate text-[12px] text-[#cbd5e1]">{item.note || item._displayCategory || "Khác"}</span>
-                </button>
-                <button type="button" onClick={() => setDetail(item)} className="min-w-0 py-2 text-right active:opacity-70">
-                  <b className={`block whitespace-nowrap text-[14px] ${item._isIncome ? "text-[#22c55e]" : "text-[#fb923c]"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
-                  {item._displayTime && <span className="mt-1 block text-[12px] text-white/50">{String(item._displayTime).slice(0, 5)}</span>}
-                </button>
-                <button type="button" aria-label={`Tùy chọn ${item._displayName}`} onClick={(event) => { event.stopPropagation(); setMenuItem(item); }} className="grid size-9 place-items-center rounded-full text-xl font-bold text-white/70 active:bg-white/10">•••</button>
-              </div>)}
+            <h3 className="mb-1 text-[18px] font-medium tracking-tight text-white/95">{date}</h3>
+            <div className="ml-8 divide-y divide-white/15">
+              {items.map((item: any) => <button type="button" onClick={() => setDetail(item)} key={`${item._isIncome ? 'income' : 'expense'}-${item.id}`} className="flex w-full items-start justify-between gap-3 py-2.5 text-left active:opacity-70">
+                <div className="min-w-0 flex-1 text-left">
+                  <b className="block truncate text-[15px] font-medium text-white/95">{item._displayName}</b>
+                  <span className="mt-0.5 block truncate text-[13px] font-normal text-[#cbd5e1]">{item.note || item._displayCategory || "Khác"}</span>
+                </div>
+                <div className="shrink-0 text-right">
+                  <b className={`block text-[15px] font-medium ${item._isIncome ? "text-[#86efac]" : "text-[#fb923c]"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
+                  {item._displayTime && <span className="mt-0.5 block text-[13px] font-normal text-[#cbd5e1]">{String(item._displayTime).slice(0, 5)}</span>}
+                </div>
+              </button>)}
             </div>
           </section>)}
         </div>
@@ -3479,7 +3473,6 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
       </button>
     </div>
 
-    {menuItem && <ActionMenu isOpen close={() => setMenuItem(null)} actions={[{ label: "Xem chi tiết", onClick: () => { setDetail(menuItem); setMenuItem(null); } }, { label: "Sửa", onClick: () => editItem(menuItem) }, { label: "Xóa", onClick: () => void deleteItem(menuItem), textClass: "text-rose-500" }]} />}
     {detail && <MobileTransactionDetail item={detail} close={() => setDetail(null)} onEdit={() => editItem(detail)} onDeleted={() => { refresh(); setDetail(null); }} data={appData} update={update} />}
     {editor && <MobileTransactionEditor item={editor.isNew ? null : editor} defaultType={editor.type} allowTypeChange={editor.isNew && subTab === "all"} close={() => setEditor(null)} onSaved={() => { refresh(); }} user={user} data={appData} update={update} />}
   </div>;
@@ -3489,64 +3482,111 @@ function MobileTransactionDetail({ item, close, onEdit, onDeleted, data, update 
   const ui = useUI();
   const [loading, setLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [accountLabel, setAccountLabel] = useState("");
   const paymentMethod = String(item.paymentMethod || item.payment_method || "");
-  const paymentMethodLabel: Record<string, string> = { cash: "Tiền mặt", transfer: "Chuyển khoản", bank_account: "Tài khoản ngân hàng", card: "Thẻ", credit_card: "Thẻ tín dụng", momo: "MoMo", apple_pay: "Apple Pay", other: "Khác" };
+  const paymentMethodLabel: Record<string, string> = { cash: "Tiền mặt", transfer: "Chuyển khoản", bank_account: "Tài khoản ngân hàng", bank_card: "Thẻ ngân hàng", card: "Thẻ", credit_card: "Thẻ tín dụng", momo: "MoMo", apple_pay: "Apple Pay", other: "Khác" };
+  const accountId = String(item.paymentAccountId || item.payment_account_id || item.bankAccountId || item.bank_account_id || "");
+  const memberId = String(item.memberId || item.member_id || "");
+  const isIncome = Boolean(item._isIncome);
+  const grossAmount = Number(item.grossAmount ?? item.gross_amount ?? 0);
+  const discountAmount = Number(item.discountAmount ?? item.discount_amount ?? 0);
+  const statisticsValue = item.countsForPersonalExpense ?? item.counts_for_personal_expense ?? item.countsForStatistics ?? item.counts_for_statistics;
+  const createdAt = item.createdAt || item.created_at;
+  const updatedAt = item.updatedAt || item.updated_at;
+
+  useEffect(() => {
+    if (!accountId) return;
+    const query = memberId ? `?memberId=${encodeURIComponent(memberId)}` : "";
+    void fetch(`/api/bank-accounts${query}`, { cache: "no-store" }).then(async response => {
+      const result = await readJsonSafe<any>(response);
+      if (!response.ok) return;
+      const account = toArray<any>(result?.data || result).find(candidate => String(candidate.id) === accountId);
+      if (!account) return;
+      const cardDigits = String(account.cardNumber || account.card_number || "").replace(/\s/g, "");
+      setAccountLabel([
+        account.bankName || account.bank_name,
+        account.productName || account.product_name || account.accountHolder || account.account_holder,
+        cardDigits ? `•••• ${cardDigits.slice(-4)}` : "",
+      ].filter(Boolean).join(" · "));
+    }).catch(() => undefined);
+  }, [accountId, memberId]);
+
+  const formatTimestamp = (value: unknown) => {
+    if (!value) return "";
+    const date = new Date(String(value));
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("vi-VN");
+  };
+
+  const detailRows = isIncome ? [
+    ["Ngày nhận", formatDateVN(item._displayDate)],
+    ["Giờ", item._displayTime ? String(item._displayTime).slice(0, 5) : ""],
+    ["Nguồn thu", item.jobName || item.workName || item.sourceName || item.source_name || item._displayCategory],
+    ["Loại khoản thu", item.sourceType || item.source_type || item.category],
+    ["Phương thức", paymentMethod ? paymentMethodLabel[paymentMethod] || paymentMethod : ""],
+    ["Tài khoản / Thẻ", accountLabel || (accountId ? "Tài khoản/thẻ đã liên kết" : "")],
+    ["Tính vào thống kê", typeof statisticsValue === "boolean" ? (statisticsValue ? "Có" : "Không") : "Có"],
+    ["Ghi chú", item.note],
+    ["Ngày tạo", formatTimestamp(createdAt)],
+    ["Cập nhật", formatTimestamp(updatedAt)],
+  ] : [
+    ["Ngày giao dịch", formatDateVN(item._displayDate)],
+    ["Giờ", item._displayTime ? String(item._displayTime).slice(0, 5) : ""],
+    ["Khoản chi", item.category || item._displayCategory],
+    ["Loại chi tiết", item.subcategory || item.sub_category],
+    ["Giá gốc", grossAmount > 0 ? money(grossAmount) : ""],
+    ["Giảm giá", discountAmount > 0 ? money(discountAmount) : ""],
+    ["Thực trả", grossAmount > 0 || discountAmount > 0 ? money(Number(item.amount || 0)) : ""],
+    ["Phương thức", paymentMethod ? paymentMethodLabel[paymentMethod] || paymentMethod : ""],
+    ["Tài khoản / Thẻ", accountLabel || (accountId ? "Tài khoản/thẻ đã liên kết" : "")],
+    ["Tính vào thống kê", typeof statisticsValue === "boolean" ? (statisticsValue ? "Có" : "Không") : "Có"],
+    ["Ghi chú", item.note],
+    ["Ngày tạo", formatTimestamp(createdAt)],
+    ["Cập nhật", formatTimestamp(updatedAt)],
+  ];
 
   const remove = async () => {
     if (!item?.id || !await ui.confirm("Xóa giao dịch?", `Bạn có chắc muốn xóa "${item._displayName}"?`)) return;
     setLoading(true);
     try {
-      if (item._isIncome) {
-        const res = await fetch(`/api/incomes?id=${item.id}`, { method: "DELETE" });
-        if (!res.ok) throw new Error("Lỗi khi xóa");
-      } else {
-        const res = await fetch(`/api/transactions?id=${item.id}`, { method: "DELETE" });
-        if (!res.ok) throw new Error("Lỗi khi xóa");
+      const endpoint = item._isIncome ? "/api/incomes" : "/api/transactions";
+      const response = await fetch(`${endpoint}?id=${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      const result = await readJsonSafe<{ error?: string }>(response);
+      if (!response.ok) throw new Error(result?.error || "Không thể xóa giao dịch.");
+      if (!item._isIncome) {
         if (data && update) update({ ...data, transactions: toArray(data.transactions).filter((t:any) => t.id !== item.id) });
       }
-      ui.toast("Đã xóa", "success");
+      ui.toast("Đã xóa giao dịch.", "success");
       onDeleted();
     } catch (err: any) {
-      ui.toast(err.message, "error");
+      ui.toast(err.message || "Không thể xóa giao dịch.", "error");
       setLoading(false);
     }
   };
 
-  return <FullScreenMobileSheet title="Chi tiết giao dịch" close={close} headerRight={<button type="button" aria-label="Tùy chọn giao dịch" onClick={() => setMenuOpen(true)} className="grid size-10 place-items-center rounded-full text-xl font-bold text-slate-500 active:bg-slate-100 dark:text-slate-300 dark:active:bg-white/10">•••</button>}>
-    <div className="p-4 space-y-4 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-[100dvh] pb-32">
-      <div className="bg-white dark:bg-[var(--app-card)] px-4 py-6 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 space-y-5">
-        <div className="text-center pb-5 border-b border-slate-100 dark:border-white/5">
-          <p className="text-[13px] text-slate-500 font-medium mb-1.5 uppercase tracking-wider">{item._displayCategory || "Khác"}</p>
-          <h2 className="text-[20px] font-bold text-slate-800 dark:text-white mb-2">{item._displayName}</h2>
-          <b className={`text-[32px] block ${item._isIncome ? "text-emerald-500" : "text-rose-500"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
+  if (typeof document === "undefined") return null;
+  return createPortal(<div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#003f3a] min-[769px]:hidden">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#003f3a] px-3 text-white">
+      <button type="button" aria-label="Quay lại danh sách Thu chi" onClick={event => { event.preventDefault(); event.stopPropagation(); close(); }} className="grid size-10 place-items-center rounded-full active:bg-white/10"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+      <h2 className="min-w-0 flex-1 truncate px-2 text-center text-[17px] font-semibold">Chi tiết giao dịch</h2>
+      <button type="button" aria-label="Tùy chọn giao dịch" onClick={() => setMenuOpen(true)} className="grid size-10 place-items-center rounded-full text-xl font-semibold text-[#facc15] active:bg-white/10">•••</button>
+    </header>
+    <div className="min-h-0 flex-1 overflow-y-auto bg-[#f1f5f9] px-3 pb-[calc(24px+env(safe-area-inset-bottom))] pt-6">
+      <section className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-4 py-5 text-center">
+          <p className="mb-1 text-[13px] font-normal text-slate-500">{isIncome ? "Khoản thu" : item._displayCategory || "Khoản chi"}</p>
+          <h3 className="mx-auto max-w-full break-words text-[18px] font-medium leading-snug text-slate-800">{item._displayName}</h3>
+          <p className={`mt-2 text-[30px] font-semibold tracking-tight ${isIncome ? "text-emerald-600" : "text-orange-500"}`}>{isIncome ? "+" : "-"}{money(item.amount)}</p>
         </div>
-        <div className="space-y-4 pt-1">
-          <div className="flex justify-between items-center">
-            <span className="text-[14px] text-slate-500">Ngày giao dịch</span>
-            <span className="text-[15px] font-bold">{formatDateVN(item._displayDate)}</span>
-          </div>
-          {item._displayTime && <div className="flex justify-between items-center"><span className="text-[14px] text-slate-500">Giờ</span><span className="text-[15px] font-bold">{String(item._displayTime).slice(0, 5)}</span></div>}
-          {item.memberName && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Thành viên</span><span className="text-right text-[15px] font-bold">{item.memberName}</span></div>}
-          {(item.jobName || item.workName) && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Nguồn thu</span><span className="max-w-[65%] text-right text-[15px] font-bold">{item.jobName || item.workName}</span></div>}
-          {item.status && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Trạng thái</span><span className="text-right text-[15px] font-bold">{item.status}</span></div>}
-          {item.subcategory && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Loại chi tiết</span><span className="text-right text-[15px] font-bold">{item.subcategory}</span></div>}
-          {Number(item.grossAmount || 0) > 0 && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Giá gốc</span><span className="text-right text-[15px] font-bold">{money(Number(item.grossAmount))}</span></div>}
-          {Number(item.discountAmount || 0) > 0 && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Giảm giá</span><span className="text-right text-[15px] font-bold">{money(Number(item.discountAmount))}</span></div>}
-          {paymentMethod && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Phương thức</span><span className="text-right text-[15px] font-bold">{paymentMethodLabel[paymentMethod] || paymentMethod}</span></div>}
-          {(item.paymentAccountId || item.payment_account_id || item.bankAccountId || item.bank_account_id) && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Tài khoản / Thẻ</span><span className="max-w-[65%] break-all text-right text-[13px] font-medium">{item.paymentAccountId || item.payment_account_id || item.bankAccountId || item.bank_account_id}</span></div>}
-          {typeof item.countsForPersonalExpense === "boolean" && <div className="flex justify-between gap-4"><span className="text-[14px] text-slate-500">Tính vào thống kê</span><span className="text-right text-[15px] font-bold">{item.countsForPersonalExpense ? "Có" : "Không"}</span></div>}
-          {item.note && (
-            <div className="flex justify-between items-start">
-              <span className="text-[14px] text-slate-500">Ghi chú</span>
-              <span className="text-[15px] font-medium text-right break-words max-w-[65%]">{item.note}</span>
-            </div>
-          )}
+        <div className="divide-y divide-slate-100 px-4">
+          {detailRows.filter(([, value]) => value !== "" && value !== null && value !== undefined).map(([label, value]) => <div key={String(label)} className="grid grid-cols-[minmax(0,42%)_minmax(0,58%)] items-start gap-3 py-3.5 text-[14px] leading-snug">
+            <span className="font-normal text-slate-500">{label}</span>
+            <span className="min-w-0 break-words text-right font-medium text-slate-800">{String(value)}</span>
+          </div>)}
         </div>
-      </div>
-
-      {menuOpen && <ActionMenu isOpen close={() => setMenuOpen(false)} actions={[{ label: "Sửa", onClick: onEdit }, { label: "Xóa", onClick: () => void remove(), textClass: "text-rose-500" }]} />}
+      </section>
     </div>
-  </FullScreenMobileSheet>;
+    {menuOpen && <ActionMenu isOpen close={() => setMenuOpen(false)} actions={[{ label: "Sửa", onClick: onEdit }, { label: loading ? "Đang xóa..." : "Xóa", onClick: () => void remove(), textClass: "text-rose-500", hidden: loading }]} />}
+  </div>, document.body);
 }
 
 function MobileTransactionEditor({ item, defaultType, allowTypeChange = false, close, onSaved, user, data, update }: any) {
@@ -6812,7 +6852,7 @@ const formLabels: Record<EntityKind, string> = { members: "thành viên", tasks:
 const inputClass = "w-full min-w-0 max-w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-background)] px-3 py-3 text-sm outline-none focus:border-rose-400";
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   if (label === "Avatar URL" || label === "Avatar (URL ảnh)") return null;
-  return <label className="block"><span className="mb-1 block text-xs font-bold text-slate-500 dark:text-slate-300">{label}</span>{children}</label>;
+  return <label className="block"><span className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-300">{label}</span>{children}</label>;
 }
 function DateVNInput({ value, onChange, required = false }: { value: string; onChange: (value: string) => void; required?: boolean }) {
   return <input
@@ -6915,6 +6955,338 @@ function Settings({ user, onLogout, openProfile, openChangePassword, language, s
 
 function EmptyState() { return <div className="p-8 text-center text-sm text-slate-500">Không có dữ liệu</div>; }
 
+
+function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshCurrentUser }: any) {
+  const ui = useUI();
+  const activeMember = data?.members?.find((m: any) => m.id === user.memberId) || user.member;
+  
+  const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const [coverMenuOpen, setCoverMenuOpen] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  
+  const [formData, setFormData] = useState({
+    name: activeMember?.name || user.displayName || "",
+    nickname: activeMember?.nickname || "",
+    email: user.email || activeMember?.email || "",
+    phone: activeMember?.phone || "",
+    birthday: activeMember?.birthday || "",
+    gender: activeMember?.gender || "",
+    notes: activeMember?.notes || ""
+  });
+
+  useEffect(() => {
+    fetch("/api/auth/profile").then(async res => {
+      const data = await readJsonSafe<{ user?: { email?: string } }>(res);
+      if (res.ok && data?.user?.email && !isEditing) {
+        setFormData(prev => ({ ...prev, email: data.user!.email || "" }));
+      }
+    }).catch(console.error);
+  }, [isEditing]);
+
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const displayAvatar = activeMember?.avatarUrl || activeMember?.avatar || user.avatar;
+  const displayCover = getHomeCoverUrl({ ...user, member: activeMember });
+  const inputClass = "w-full min-w-0 max-w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-background)] px-3 py-3 text-sm outline-none focus:border-[#064e46]";
+
+  if (!activeMember) return <FullScreenMobileSheet title="Thông tin cá nhân" close={close}><div className="p-8 text-center text-slate-400">Không có dữ liệu thành viên.</div></FullScreenMobileSheet>;
+
+  async function compressImage(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = document.createElement("img");
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return reject("Canvas error");
+          let { width, height } = img;
+          const max = 500;
+          if (width > max || height > max) {
+            if (width > height) { height = Math.round((height * max) / width); width = max; }
+            else { width = Math.round((width * max) / height); height = max; }
+          }
+          canvas.width = width; canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.8));
+        };
+        img.onerror = () => reject("Image load error");
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject("File read error");
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleAvatarChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return ui.toast("Vui lòng chọn file hình ảnh", "error");
+    
+    try {
+      ui.toast("Đang xử lý ảnh...", "success");
+      const base64 = await compressImage(file);
+      const payload = {
+        avatar: base64, avatarUrl: base64,
+        displayName: formData.name || "Quản trị viên",
+        name: formData.name || "Quản trị viên",
+        nickname: formData.nickname,
+        phone: formData.phone,
+        birthday: formData.birthday || null,
+        gender: formData.gender,
+        notes: formData.notes
+      };
+      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await readJsonSafe<{ user?: AuthUser; member?: Member; error?: string }>(response);
+      
+      if (response.ok && result?.user) {
+        if (savedUser) savedUser(result.user);
+        if (update && result.member) update({ ...data, members: data.members.map((m: any) => m.id === result.member!.id ? result.member : m) });
+        if (refreshCurrentUser) await refreshCurrentUser();
+        ui.toast("Đã cập nhật ảnh đại diện", "success");
+      } else {
+        ui.toast(result?.error || "Lỗi khi cập nhật ảnh đại diện", "error");
+      }
+    } catch (e) { ui.toast("Lỗi xử lý ảnh", "error"); }
+  }
+
+  async function handleAvatarDelete() {
+    if (!await ui.confirm("Xóa ảnh đại diện?", "Bạn có chắc chắn muốn xóa ảnh đại diện hiện tại?")) return;
+    const response = await fetch("/api/auth/avatar", { method: "DELETE" });
+    if (response.ok) {
+      if (savedUser) savedUser({ ...user, avatar: "", member: activeMember ? { ...activeMember, avatar: "", avatarUrl: "" } : undefined });
+      if (update && activeMember) update({ ...data, members: data.members.map((m: any) => m.id === activeMember.id ? { ...activeMember, avatar: "", avatarUrl: "" } : m) });
+      if (refreshCurrentUser) await refreshCurrentUser();
+      ui.toast("Đã xóa ảnh đại diện", "success");
+    } else {
+      ui.toast("Lỗi khi xóa ảnh đại diện", "error");
+    }
+  }
+
+  async function handleCoverChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return ui.toast("Vui lòng chọn file hình ảnh", "error");
+    try {
+      ui.toast("Đang xử lý ảnh...", "success");
+      const base64 = await compressImage(file);
+      const payload = { coverUrl: base64, displayName: formData.name || "Quản trị viên", name: formData.name || "Quản trị viên", nickname: formData.nickname, phone: formData.phone, birthday: formData.birthday || null, gender: formData.gender, notes: formData.notes };
+      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await readJsonSafe<{ user?: AuthUser; member?: Member; error?: string }>(response);
+      if (response.ok && result?.user) {
+        const nextMember = result.member || activeMember;
+        const nextUser = { ...result.user, coverUrl: base64, member: nextMember ? { ...nextMember, coverUrl: base64 } : undefined };
+        if (savedUser) savedUser(nextUser);
+        if (update && result.member) update({ ...data, members: data.members.map((m: any) => m.id === result.member!.id ? result.member : m) });
+        if (refreshCurrentUser) await refreshCurrentUser();
+        ui.toast("Đã cập nhật ảnh bìa", "success");
+      } else {
+        ui.toast(result?.error || "Lỗi khi cập nhật ảnh bìa", "error");
+      }
+    } catch (e) { ui.toast("Lỗi xử lý ảnh", "error"); }
+  }
+
+  async function handleCoverDelete() {
+    if (!await ui.confirm("Xóa ảnh bìa?", "Bạn có chắc chắn muốn xóa ảnh bìa hiện tại?")) return;
+    const payload = { coverUrl: "", displayName: formData.name || "Quản trị viên", name: formData.name || "Quản trị viên", nickname: formData.nickname, phone: formData.phone, birthday: formData.birthday || null, gender: formData.gender, notes: formData.notes };
+    const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const result = await readJsonSafe<{ user?: AuthUser; member?: Member; error?: string }>(response);
+    if (response.ok && result?.user) {
+      const nextUser = { ...result.user, coverUrl: "", member: activeMember ? { ...activeMember, coverUrl: "" } : undefined };
+      if (savedUser) savedUser(nextUser);
+      if (update && result.member) update({ ...data, members: data.members.map((m: any) => m.id === result.member!.id ? { ...result.member, coverUrl: "" } : m) });
+      if (refreshCurrentUser) await refreshCurrentUser();
+      ui.toast("Đã xóa ảnh bìa", "success");
+    } else {
+      ui.toast("Lỗi khi xóa ảnh bìa", "error");
+    }
+  }
+
+  async function handleSave(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    setLoading(true);
+    try {
+      const payload = {
+        displayName: formData.name, name: formData.name,
+        nickname: formData.nickname, phone: formData.phone, email: formData.email,
+        birthday: formData.birthday || null, gender: formData.gender, notes: formData.notes
+      };
+      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await readJsonSafe<{ user?: AuthUser; profile?: any; member?: Member; error?: string }>(response);
+      if (response.ok && result?.user) {
+        if (result.profile && typeof result.profile.email === "string") {
+          setFormData(prev => ({ ...prev, email: result.profile.email }));
+        }
+        if (savedUser) savedUser(result.user);
+        if (update && result.member) update({ ...data, members: data.members.map((m: any) => m.id === result.member!.id ? result.member : m) });
+        if (refreshCurrentUser) await refreshCurrentUser();
+        ui.toast("Đã lưu thông tin", "success");
+        setIsEditing(false);
+      } else {
+        ui.toast(result?.error || "Lỗi khi lưu thông tin", "error");
+      }
+    } catch (err) {
+      ui.toast("Đã xảy ra lỗi", "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openAvatarMenu() {
+    setAvatarMenuOpen(true);
+  }
+
+  function openCoverMenu() {
+    setCoverMenuOpen(true);
+  }
+
+  return <FullScreenMobileSheet title="Thông tin cá nhân" close={isEditing ? () => setIsEditing(false) : close} headerRight={!isEditing ? <button onClick={() => setIsEditing(true)} className="text-sm font-bold text-[#facc15] px-2 py-1">Sửa</button> : <button onClick={handleSave} disabled={loading} className="text-sm font-bold text-[#facc15] px-2 py-1">{loading ? "..." : "Lưu"}</button>}>
+    <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
+    <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={handleCoverChange} />
+    
+    <div className="min-h-[100dvh] bg-[#f8fafc] dark:bg-[var(--app-bg)] pb-10">
+      <div className="relative text-center shadow-md min-h-[240px] flex flex-col justify-end pb-8">
+        <div onClick={openCoverMenu} className="absolute inset-0 cursor-pointer">
+          <div className="absolute inset-0 bg-gradient-to-b from-[#064e46] to-[#003f3a]" />
+          {displayCover && <img src={displayCover} className="absolute inset-0 w-full h-full object-cover" alt="Cover" />}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/10" />
+          {!displayCover && <div className="absolute top-4 right-4 text-white/40 text-xs font-medium bg-black/20 px-2 py-1 rounded-md backdrop-blur-sm">Ảnh bìa</div>}
+        </div>
+        <div className="relative z-10 px-4 pointer-events-none mt-12">
+          <div onClick={openAvatarMenu} className="relative inline-block cursor-pointer pointer-events-auto">
+            <AccountAvatar user={{ avatar: displayAvatar, displayName: activeMember.name || user.displayName }} size="size-24 mx-auto border-2 border-white/80 shadow-lg bg-[#003f3a] relative z-10" />
+            {!displayAvatar && <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-full bg-black/40 text-white opacity-0 active:opacity-100 transition-opacity"><span className="text-[10px] font-bold mt-2">Thêm</span></div>}
+          </div>
+          <h2 className="mt-3 text-[22px] font-semibold text-white drop-shadow-md tracking-tight leading-tight">{activeMember.name || user.displayName}</h2>
+        </div>
+      </div>
+      
+      <div className="px-4 py-6 space-y-5">
+        {!isEditing ? (
+          <>
+            <Field label="Họ tên / Tên hiển thị"><div className="text-sm font-medium">{formData.name}</div></Field>
+            <Field label="Email"><div className="text-sm font-medium">{formData.email || "-"}</div></Field>
+            <Field label="Số điện thoại"><div className="text-sm font-medium">{formData.phone || "-"}</div></Field>
+            <Field label="Ngày sinh"><div className="text-sm font-medium">{formData.birthday ? `${new Date(formData.birthday).getDate().toString().padStart(2, "0")}/${(new Date(formData.birthday).getMonth() + 1).toString().padStart(2, "0")}/${new Date(formData.birthday).getFullYear()}` : "-"}</div></Field>
+            <Field label="Giới tính"><div className="text-sm font-medium">{formData.gender === "nam" ? "Nam" : formData.gender === "nu" ? "Nữ" : "Khác"}</div></Field>
+            <Field label="Quyền hệ thống"><div className="text-sm font-medium">{user.role === "full_access" ? "Quản lý gia đình" : "Thành viên"}</div></Field>
+            <Field label="Trạng thái"><div className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Đang hoạt động</div></Field>
+          </>
+        ) : (
+          <form id="profile-form" onSubmit={handleSave} className="space-y-4">
+            <Field label="Họ tên"><input required className={inputClass} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Nhập họ tên" /></Field>
+            <Field label="Email"><input type="email" className={inputClass} value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="Email" /></Field>
+            <Field label="Số điện thoại"><input type="tel" className={inputClass} value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="Số điện thoại" /></Field>
+            <Field label="Ngày sinh"><input type="date" className={inputClass} value={formData.birthday ? formData.birthday.split("T")[0] : ""} onChange={e => setFormData({...formData, birthday: e.target.value})} /></Field>
+            <Field label="Giới tính">
+              <select className={inputClass} value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})}>
+                <option value="">Chưa xác định</option>
+                <option value="nam">Nam</option>
+                <option value="nu">Nữ</option>
+                <option value="khac">Khác</option>
+              </select>
+            </Field>
+          </form>
+        )}
+      </div>
+    </div>
+    
+    <ActionMenu 
+      isOpen={avatarMenuOpen} 
+      close={() => setAvatarMenuOpen(false)} 
+      actions={[
+        { label: "Xem ảnh đại diện", onClick: () => setPreviewImage(displayAvatar || null), hidden: !displayAvatar },
+        { label: "Thêm ảnh đại diện", onClick: () => avatarInputRef.current?.click(), hidden: !!displayAvatar },
+        { label: "Đổi ảnh đại diện", onClick: () => avatarInputRef.current?.click(), hidden: !displayAvatar },
+        { label: "Xóa ảnh đại diện", onClick: handleAvatarDelete, textClass: "text-rose-500", hidden: !displayAvatar }
+      ]} 
+    />
+    <ActionMenu 
+      isOpen={coverMenuOpen} 
+      close={() => setCoverMenuOpen(false)} 
+      actions={[
+        { label: "Xem ảnh bìa", onClick: () => setPreviewImage(displayCover || null), hidden: !displayCover },
+        { label: "Thêm ảnh bìa", onClick: () => coverInputRef.current?.click(), hidden: !!displayCover },
+        { label: "Đổi ảnh bìa", onClick: () => coverInputRef.current?.click(), hidden: !displayCover },
+        { label: "Xóa ảnh bìa", onClick: handleCoverDelete, textClass: "text-rose-500", hidden: !displayCover }
+      ]} 
+    />
+    {previewImage && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90" onClick={() => setPreviewImage(null)}><img src={previewImage} className="max-h-[90vh] max-w-[90vw] object-contain" alt="Preview" /><button className="absolute top-4 right-4 grid size-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20">✕</button></div>}
+  </FullScreenMobileSheet>;
+}
+
+function MobileProfileAccountSheet({ user, close, openChangePassword }: any) {
+  return <FullScreenMobileSheet title="Tài khoản" close={close}>
+    <div className="min-h-[100dvh] bg-[#f8fafc] dark:bg-[var(--app-bg)] pb-10">
+      <div className="p-4 space-y-4">
+        <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-[var(--app-card)] border border-slate-200 dark:border-white/5 space-y-4">
+          <Field label="Tên đăng nhập"><div className="text-sm font-bold">{user.username}</div></Field>
+          <Field label="Mật khẩu"><div className="text-sm font-bold tracking-widest text-slate-500">••••••••</div></Field>
+        </div>
+        <button onClick={openChangePassword} className="w-full rounded-2xl bg-[#003f3a] py-4 text-sm font-bold text-[#facc15] shadow-sm active:opacity-80">Đổi mật khẩu</button>
+      </div>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+function MobileProfileBusinessCardSheet({ user, data, close }: any) {
+  const member = data?.members?.find((m: any) => m.id === user.memberId) || user.member;
+  
+  const name = member?.name || user.displayName || "";
+  const phone = member?.phone || "";
+  const email = user.email || member?.email || "";
+  const role = member?.role || "Thành viên";
+  
+  const vCard = [
+    "BEGIN:VCARD",
+    "VERSION:3.0",
+    `FN:${name}`,
+    `TITLE:${role}`,
+    phone ? `TEL;TYPE=cell:${phone}` : "",
+    email ? `EMAIL;TYPE=work:${email}` : "",
+    `URL:${typeof window !== "undefined" ? window.location.origin : ""}`,
+    "END:VCARD"
+  ].filter(Boolean).join("\n");
+
+  return <FullScreenMobileSheet title="Danh thiếp" close={close}>
+    <div className="min-h-[100dvh] bg-[#f8fafc] dark:bg-[var(--app-bg)] pb-10 flex flex-col items-center pt-8 px-4">
+      <div className="w-full max-w-sm rounded-[2rem] bg-gradient-to-br from-[#003f3a] to-[#012f2d] p-6 text-white shadow-2xl ring-1 ring-white/10 relative overflow-hidden">
+        <div className="absolute -right-10 -top-10 size-40 rounded-full bg-white/5 blur-2xl" />
+        <div className="absolute -bottom-10 -left-10 size-40 rounded-full bg-[#facc15]/10 blur-2xl" />
+        <div className="relative z-10 flex flex-col items-center text-center">
+          <AccountAvatar user={{ avatar: member?.avatar || user.avatar, displayName: name }} size="size-24 border-4 border-white/20 shadow-xl" />
+          <h2 className="mt-5 text-2xl font-bold tracking-tight">{name}</h2>
+          <p className="mt-1 text-sm font-medium text-[#facc15]">{role}</p>
+          <div className="mt-8 w-full space-y-4 rounded-2xl bg-black/20 p-5 text-left backdrop-blur-md ring-1 ring-white/10">
+            {phone && <div className="flex items-center gap-3"><svg viewBox="0 0 24 24" className="size-5 text-[#cbd5e1]" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg><span className="text-sm font-semibold">{phone}</span></div>}
+            {email && <div className="flex items-center gap-3"><svg viewBox="0 0 24 24" className="size-5 text-[#cbd5e1]" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><span className="text-sm font-semibold">{email}</span></div>}
+          </div>
+          <div className="mt-8 bg-white p-3 rounded-2xl shadow-inner">
+             <QRCode value={vCard} size={160} bgColor="#ffffff" fgColor="#000000" level="M" />
+          </div>
+        </div>
+      </div>
+      <button onClick={() => {
+         if (navigator.share) {
+            navigator.share({
+               title: name,
+               text: `Liên hệ ${name} - ${role}`,
+               url: window.location.origin
+            }).catch(() => {});
+         }
+      }} className="mt-8 flex items-center gap-2 rounded-full bg-[#064e46] px-6 py-3 text-sm font-bold text-white shadow-lg active:scale-95 transition-transform border border-[#facc15]/30">
+        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"></line><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"></line></svg>
+        Chia sẻ danh thiếp
+      </button>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
 function MobileHome({
   data,
   user,
@@ -6925,6 +7297,9 @@ function MobileHome({
   setEditor,
   showMembers,
   setShowMembers,
+  openChangePassword,
+  savedUser,
+  refreshCurrentUser,
 }: {
   data: AppData;
   user: AuthUser;
@@ -6935,11 +7310,16 @@ function MobileHome({
   setEditor: (editor: Editor) => void;
   showMembers: boolean;
   setShowMembers: (show: boolean) => void;
+  openChangePassword?: () => void;
+  savedUser?: (user: AuthUser) => void;
+  refreshCurrentUser?: () => Promise<AuthUser | null>;
 }) {
   const ui = useUI();
   const [lastUser, setLastUser] = useState<any>(null);
   const [homeFinance, setHomeFinance] = useState<any>(null);
   const [homeFinanceStatus, setHomeFinanceStatus] = useState<"loading" | "ready" | "unauthorized" | "error">("loading");
+  const [profileSheet, setProfileSheet] = useState<"info" | "account" | "card" | "bank" | "sim" | null>(null);
+
   useEffect(() => {
     try {
       const legacy = JSON.parse(localStorage.getItem("familyHubLastUser") || "null");
@@ -6950,6 +7330,12 @@ function MobileHome({
         coverUrl: localStorage.getItem("lastUserCoverUrl") || localStorage.getItem("lastCoverUrl") || localStorage.getItem("lastBackgroundUrl") || legacy?.coverUrl || legacy?.cover_url || legacy?.coverImageUrl || legacy?.background_url || "",
       });
     } catch {}
+    
+    const pending = sessionStorage.getItem("pendingProfileSheet");
+    if (pending) {
+      sessionStorage.removeItem("pendingProfileSheet");
+      setProfileSheet(pending as any);
+    }
   }, []);
 
   useEffect(() => {
@@ -6975,6 +7361,12 @@ function MobileHome({
       });
     return () => { active = false; };
   }, [user.id]);
+
+  if (profileSheet === "info") return <MobileProfileInfoSheet user={user} data={data} close={() => setProfileSheet(null)} update={update} savedUser={savedUser} refreshCurrentUser={refreshCurrentUser} />;
+  if (profileSheet === "account") return <MobileProfileAccountSheet user={user} close={() => setProfileSheet(null)} openChangePassword={openChangePassword} />;
+  if (profileSheet === "card") return <MobileProfileBusinessCardSheet user={user} data={data} close={() => setProfileSheet(null)} />;
+  if (profileSheet === "bank") return <MobileBankSheet member={data.members?.find((m:any) => m.id === user.memberId) || user.member} user={user} close={() => setProfileSheet(null)} />;
+  if (profileSheet === "sim") return <MobileSimSheet member={data.members?.find((m:any) => m.id === user.memberId) || user.member} close={() => setProfileSheet(null)} />;
 
   if (showMembers) {
     return (
@@ -7091,12 +7483,18 @@ function MobileHome({
 
       <div className="space-y-3 px-3 pt-3 pointer-events-auto">
         <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
-          <h2 className="text-sm font-bold text-white mb-3">Tiện ích</h2>
-          <div className="grid grid-cols-3 gap-3">
-            {actions.map(([label, icon, action]) => (
-              <button key={label} onClick={action} className="flex h-[76px] min-w-0 flex-col items-center justify-center gap-1.5 rounded-2xl bg-white/5 px-1 text-center text-[11px] font-semibold text-[#cbd5e1] active:bg-white/10">
-                <span className="grid size-8 place-items-center rounded-xl bg-white/10 text-[#facc15] shadow-sm ring-1 ring-white/10">{icon}</span>
-                <span className="w-full truncate">{label}</span>
+          <h2 className="text-[14px] font-semibold text-white mb-3">Thông tin cá nhân</h2>
+          <div className="grid grid-cols-3 gap-y-4 gap-x-2">
+            {[
+              ["Thông tin", <UserIcon />, () => setProfileSheet("info")],
+              ["Tài khoản", <LockIcon />, () => setProfileSheet("account")],
+              ["Danh thiếp", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 18a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2"></path><rect width="18" height="18" x="3" y="4" rx="2"></rect><circle cx="12" cy="10" r="2"></circle><line x1="8" x2="8" y1="2" y2="4"></line><line x1="16" x2="16" y1="2" y2="4"></line></svg>, () => setProfileSheet("card")],
+              ["Thẻ NH", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="14" x="2" y="5" rx="2"></rect><line x1="2" x2="22" y1="10" y2="10"></line></svg>, () => setProfileSheet("bank")],
+              ["SIM", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect><path d="M12 18h.01"></path></svg>, () => setProfileSheet("sim")]
+            ].map(([label, icon, action]: any) => (
+              <button key={label as string} onClick={action} className="flex min-w-0 flex-col items-center justify-start gap-2 rounded-2xl text-center text-[11px] font-medium text-[#cbd5e1] active:opacity-70 transition-opacity">
+                <span className="grid size-[40px] shrink-0 place-items-center rounded-full bg-[#facc15]/15 text-[#facc15] shadow-sm ring-1 ring-[#facc15]/30 [&>svg]:size-[18px]">{icon}</span>
+                <span className="w-full whitespace-normal leading-tight line-clamp-2 px-0.5">{label}</span>
               </button>
             ))}
           </div>
