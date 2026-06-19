@@ -6938,6 +6938,8 @@ function MobileHome({
 }) {
   const ui = useUI();
   const [lastUser, setLastUser] = useState<any>(null);
+  const [homeFinance, setHomeFinance] = useState<any>(null);
+  const [homeFinanceStatus, setHomeFinanceStatus] = useState<"loading" | "ready" | "unauthorized" | "error">("loading");
   useEffect(() => {
     try {
       const legacy = JSON.parse(localStorage.getItem("familyHubLastUser") || "null");
@@ -6949,6 +6951,30 @@ function MobileHome({
       });
     } catch {}
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void fetch(`/api/finance-overview?year=${new Date().getFullYear()}`, { cache: "no-store" })
+      .then(async response => {
+        const result = await readJsonSafe<any>(response);
+        if (!active) return;
+        if (response.status === 401) {
+          setHomeFinance(null);
+          setHomeFinanceStatus("unauthorized");
+          return;
+        }
+        if (!response.ok) throw new Error(result?.error || "finance-overview");
+        setHomeFinance(result?.data || result || {});
+        setHomeFinanceStatus("ready");
+      })
+      .catch(() => {
+        if (active) {
+          setHomeFinance(null);
+          setHomeFinanceStatus("error");
+        }
+      });
+    return () => { active = false; };
+  }, [user.id]);
 
   if (showMembers) {
     return (
@@ -6971,9 +6997,6 @@ function MobileHome({
   const greeting = hour < 12 ? "Chào buổi sáng" : hour < 18 ? "Chào buổi chiều" : "Chào buổi tối";
   const sameDay = (value: string) => { const date = parseDate(value, now); return Boolean(date && date.toDateString() === now.toDateString()); };
   const sameMonth = (value: string) => { const date = parseDate(value, now); return Boolean(date && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()); };
-  const transactions = toArray<Transaction>(data.transactions);
-  const income = transactions.filter(item => item.type === "income" && sameMonth(item.date)).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const expense = transactions.filter(item => item.type === "expense" && sameMonth(item.date)).reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const todayTasks = toArray<Task>(data.tasks).filter(task => isDueToday(task, now)).length;
   const todayEvents = toArray<EventItem>(data.events).filter(event => sameDay(event.date)).length;
   const unread = notifications.filter(item => isCalendarNotificationUnread(item, user)).length;
@@ -6983,14 +7006,18 @@ function MobileHome({
     ["Công việc", <CheckListIcon />, () => go("tasks")], ["Thông báo", <BellIcon />, () => go("notifications")], ["Cài đặt", <SettingsIcon />, () => go("settings")],
   ] as const;
   
-  const currentMonthIdx = now.getMonth();
-  const currentYearIdx = now.getFullYear();
+  const monthlyFinance = toArray<any>(homeFinance?.monthlyData)
+    .filter(item => Number.isFinite(Number(item?.month)))
+    .sort((left, right) => Number(left.month) - Number(right.month));
+  const currentFinance = monthlyFinance.find(item => Number(item.month) === now.getMonth() + 1);
+  const income = Number(currentFinance?.income || 0);
+  const expense = Number(currentFinance?.expense || 0);
   const chartData = [2, 1, 0].map(offset => {
-    const d = new Date(currentYearIdx, currentMonthIdx - offset, 1);
-    const isSameMonth = (dateStr: string) => { const pd = parseDate(dateStr, now); return pd && pd.getMonth() === d.getMonth() && pd.getFullYear() === d.getFullYear(); };
-    const mIncome = transactions.filter(t => t.type === "income" && isSameMonth(t.date)).reduce((s, t) => s + Number(t.amount || 0), 0);
-    const mExpense = transactions.filter(t => t.type === "expense" && isSameMonth(t.date)).reduce((s, t) => s + Number(t.amount || 0), 0);
-    return { name: `T${d.getMonth() + 1}`, thu: mIncome, chi: mExpense };
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const item = date.getFullYear() === now.getFullYear()
+      ? monthlyFinance.find(entry => Number(entry.month) === date.getMonth() + 1)
+      : undefined;
+    return { name: `T${date.getMonth() + 1}`, thu: Number(item?.income || 0), chi: Number(item?.expense || 0) };
   });
   
   const shortcuts = [
@@ -7081,7 +7108,13 @@ function MobileHome({
               <h2 className="text-[15px] font-bold text-white">Quản lý tài chính cá nhân</h2>
               <span className="text-[13px] font-bold text-[#facc15]">Chi tiết</span>
             </div>
-            <div className="flex gap-4">
+            {homeFinanceStatus === "unauthorized" ? (
+              <p className="py-6 text-center text-sm font-semibold text-[#facc15]">Đăng nhập để xem tài chính</p>
+            ) : homeFinanceStatus === "loading" ? (
+              <p className="py-6 text-center text-sm text-[#cbd5e1]">Đang tải dữ liệu tài chính...</p>
+            ) : homeFinanceStatus === "error" ? (
+              <p className="py-6 text-center text-sm text-[#cbd5e1]">Không thể tải dữ liệu tài chính</p>
+            ) : <div className="flex gap-3">
               <div className="flex-1 flex flex-col justify-center">
                 <p className="text-[12px] font-medium text-[#cbd5e1]">Tháng {now.getMonth() + 1}</p>
                 <div className="mt-1.5 space-y-0.5">
@@ -7103,19 +7136,7 @@ function MobileHome({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-2xl bg-[#FFFFFF] p-4 shadow-sm border border-slate-100 dark:border-white/5 dark:bg-slate-900">
-          <h2 className="text-sm font-bold text-[#1F2340] dark:text-white mb-3">Lối tắt nhanh</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {shortcuts.map(item => (
-              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-[#F7F7FC] dark:bg-white/5 text-left text-[#1F2340] dark:text-slate-200 active:bg-slate-100">
-                <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.color} text-white`}>{item.icon}</span>
-                <span className="text-xs font-bold leading-tight">{item.label}</span>
-              </button>
-            ))}
+            </div>}
           </div>
         </section>
 

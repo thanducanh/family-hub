@@ -475,6 +475,10 @@ export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user
         d.calendarId = initList.id;
         d.type = "other";
       }
+      // Pre-fill memberIds from list assignment
+      if (initList.memberId && initList.memberId !== "all") {
+        d.memberIds = [initList.memberId];
+      }
     } else {
       d.calendarId = "uncategorized";
       d.type = "other";
@@ -1509,8 +1513,8 @@ function MobileCalendarView({
         )}
 
         {mobileTab === "day" && (
-          <div className="flex flex-col flex-1 h-full bg-white dark:bg-slate-950">
-            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-[52px]">
+          <div className="flex flex-col flex-1 h-full bg-[#f8fafc] dark:bg-slate-950">
+            <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-[52px]">
               <h2 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
                 {formatDateVN(selectedDate)}
                 <button onClick={goToday} className="flex size-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 active:scale-95" title="Hôm nay">
@@ -1526,16 +1530,77 @@ function MobileCalendarView({
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-               {selectedEvents.length > 0 ? selectedEvents.map((e: any) => (
-                 <div key={e.id} onClick={() => openEventDetail(e)} className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3 relative overflow-hidden active:scale-[0.98] transition-transform">
-                   <div className="absolute left-0 top-0 bottom-0 w-2" style={{ backgroundColor: e.color || "#4f46e5" }} />
-                   <div className="flex-1 pl-3 min-w-0">
-                     <p className="text-[15px] font-bold text-slate-900 dark:text-white truncate">{e.title}</p>
-                     <p className="text-xs text-slate-500 mt-1 truncate">{e.time || "Cả ngày"} • {e.location || eventTypeMeta(e.type).label}</p>
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 pb-20">
+               {selectedEvents.length > 0 ? selectedEvents.map((e: any) => {
+                 const evColor = e.labelColor || e.color || eventTypeMeta(e.type).color || "#4f46e5";
+                 const evMemberIds: string[] = e.memberIds || e.assignedMemberIds || e.relatedMemberIds || e.participants || e.assignees || [];
+                 const evMembers: Member[] = evMemberIds.map((id: string) => members.find((m: Member) => m.id === id)).filter(Boolean) as Member[];
+                 const creator = e.createdByUserId ? members.find((m: Member) => m.id === e.createdByUserId) : null;
+                 const calLabel = e.calendarId === "fixed-birthday" || e.calendarId === "birthday"
+                   ? "Sinh nhật"
+                   : e.calendarId === "fixed-holiday" || e.calendarId === "holiday"
+                   ? "Ngày lễ"
+                   : calendars.find((c: any) => c.id === e.calendarId)?.name || eventTypeMeta(e.type).label;
+                 const timeLabel = e.allDay
+                   ? "Cả ngày"
+                   : e.startTime && e.endTime
+                   ? `${e.startTime} – ${e.endTime}`
+                   : e.startTime || "";
+                 const repeatLabel = e.repeatRule && e.repeatRule !== "none"
+                   ? repeatOptions.find((o: any) => o.value === e.repeatRule)?.label
+                   : null;
+                 const note = e.note || e.description || "";
+                 return (
+                   <div key={e.id} onClick={() => openEventDetail(e)} className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 relative overflow-hidden active:scale-[0.98] transition-transform cursor-pointer">
+                     <div className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl" style={{ backgroundColor: evColor }} />
+                     <div className="pl-5 pr-4 pt-3 pb-3">
+                       <p className="text-[14px] font-bold text-slate-900 dark:text-white leading-snug mb-1.5" style={{ wordBreak: "break-word" }}>{e.title}</p>
+                       <div className="flex items-center gap-1.5 mb-1">
+                         <svg viewBox="0 0 24 24" className="size-3 shrink-0 stroke-slate-400 stroke-2 fill-none"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                         <span className="text-[11px] text-slate-500 font-medium">
+                           {timeLabel}{" · "}{formatDateVN(e.startDate)}
+                           {e.endDate && e.endDate !== e.startDate ? ` → ${formatDateVN(e.endDate)}` : ""}
+                         </span>
+                       </div>
+                       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                         <svg viewBox="0 0 24 24" className="size-3 shrink-0 stroke-slate-400 stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                         <span className="text-[11px] text-slate-500 font-medium">{calLabel}</span>
+                         {repeatLabel && (
+                           <span className="text-[10px] bg-slate-100 dark:bg-white/10 text-slate-500 rounded-full px-1.5 py-0.5 font-medium shrink-0">{repeatLabel}</span>
+                         )}
+                         {e.status === "done" && (
+                           <span className="text-[10px] bg-emerald-50 text-emerald-600 rounded-full px-1.5 py-0.5 font-semibold shrink-0">✓ Hoàn thành</span>
+                         )}
+                       </div>
+                       {evMembers.length > 0 && (
+                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                           <svg viewBox="0 0 24 24" className="size-3 shrink-0 stroke-slate-400 stroke-2 fill-none"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                           <div className="flex flex-wrap gap-1">
+                             {evMembers.map((m: Member) => (
+                               <span key={m.id} className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 rounded-full px-1.5 py-0.5 font-semibold">
+                                 <span className="size-3.5 shrink-0 rounded-full bg-indigo-200 dark:bg-indigo-700 flex items-center justify-center text-[8px] font-black">{(m.nickname || m.name || "?")[0]}</span>
+                                 {m.nickname || m.name}
+                               </span>
+                             ))}
+                           </div>
+                         </div>
+                       )}
+                       {creator && (
+                         <div className="flex items-center gap-1.5 mb-1">
+                           <svg viewBox="0 0 24 24" className="size-3 shrink-0 stroke-slate-400 stroke-2 fill-none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                           <span className="text-[11px] text-slate-400 font-medium">Tạo bởi: {creator.nickname || creator.name}</span>
+                         </div>
+                       )}
+                       {note && (
+                         <div className="flex items-start gap-1.5 mt-1.5">
+                           <svg viewBox="0 0 24 24" className="size-3 shrink-0 mt-0.5 stroke-slate-400 stroke-2 fill-none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                           <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">{note}</p>
+                         </div>
+                       )}
+                     </div>
                    </div>
-                 </div>
-               )) : (
+                 );
+               }) : (
                  <div className="py-12 flex flex-col items-center justify-center text-slate-400">
                     <svg viewBox="0 0 24 24" className="size-16 stroke-current stroke-[1.5] fill-none mb-4 opacity-20"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
                     <p className="text-sm font-medium">{t ? t("noEvents") : "Không có sự kiện nào"}</p>
@@ -1546,55 +1611,57 @@ function MobileCalendarView({
         )}
 
         {mobileTab === "list" && (
-          <div className="space-y-3 px-4 pt-4">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Danh sách hệ thống</h3>
-            {[{ id: "birthday", label: "Sinh nhật", color: "#f43f5e" }, { id: "holiday", label: "Ngày lễ", color: "#22c55e" }].map((cal: any) => (
-              <div key={cal.id} onClick={() => setDetailList(cal)} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3 active:scale-[0.98] transition-transform cursor-pointer">
-                <div className="size-4 rounded-full shrink-0" style={{ backgroundColor: cal.color }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{cal.label}</p>
-                  <p className="text-xs text-slate-500">{events.filter((e: any) => e.type === cal.id || e.calendarId === cal.id).length} sự kiện</p>
-                </div>
-                <button onClick={(e) => { e.stopPropagation(); toggleListVisibility(cal.id); }} className={`p-2 rounded-full shrink-0 ${!hiddenLists.includes(cal.id) ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/20" : "text-slate-400 bg-slate-50 dark:bg-white/5"}`}>
-                  {!hiddenLists.includes(cal.id) ? (
-                    <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-                  ) : (
-                    <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
-                  )}
-                </button>
-              </div>
-            ))}
-            
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6">Danh sách của tôi</h3>
-            {customLists.length > 0 ? (
-              customLists.map((cal: any) => (
-                <div key={cal.id} onClick={() => setDetailList(cal)} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3 active:scale-[0.98] transition-transform cursor-pointer">
-                  <div className="size-4 rounded-full shrink-0" style={{ backgroundColor: cal.color || "#4f46e5" }} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{cal.name}</p>
-                    <p className="text-xs text-slate-500">{events.filter((e: any) => e.calendarId === cal.id).length} sự kiện</p>
+          <div className="min-h-full bg-[#f8fafc]">
+            <div className="px-3 pb-6 pt-4 space-y-2">
+              <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Danh sách hệ thống</h3>
+              {[{ id: "birthday", label: "Sinh nhật", color: "#f43f5e" }, { id: "holiday", label: "Ngày lễ", color: "#22c55e" }].map((cal: any) => (
+                <div key={cal.id} onClick={() => setDetailList(cal)} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 shadow-sm transition-transform active:scale-[0.98]">
+                  <div className="size-9 rounded-xl shrink-0 flex items-center justify-center" style={{ backgroundColor: cal.color + "1a" }}>
+                    <div className="size-4 rounded-full" style={{ backgroundColor: cal.color }} />
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); setEditingList(cal); }} className="p-2 rounded-full shrink-0 text-slate-400 bg-slate-50 hover:bg-slate-100 dark:bg-white/5 dark:hover:bg-white/10">
-                    <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); toggleListVisibility(cal.id); }} className={`p-2 rounded-full shrink-0 ${!hiddenLists.includes(cal.id) ? "text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/20" : "text-slate-400 bg-slate-50 dark:bg-white/5"}`}>
-                    {!hiddenLists.includes(cal.id) ? (
-                      <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-                    ) : (
-                      <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
-                    )}
-                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-800">{cal.label}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{events.filter((e: any) => e.type === cal.id || e.calendarId === cal.id || e.calendarId === `fixed-${cal.id}`).length} sự kiện</p>
+                  </div>
+                  <svg viewBox="0 0 24 24" className="size-4 shrink-0 stroke-slate-300 stroke-2 fill-none"><polyline points="9 18 15 12 9 6"/></svg>
                 </div>
-              ))
-            ) : (
-              <div className="py-10 flex flex-col items-center justify-center text-slate-400">
-                <svg viewBox="0 0 24 24" className="size-12 stroke-current stroke-[1.5] fill-none mb-4 opacity-30"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
-                <p className="text-sm font-medium">Chưa có danh sách nào.</p>
-              </div>
-            )}
-            <button onClick={() => setIsAddingList(true)} className="w-full mt-4 bg-transparent border border-dashed border-slate-300 dark:border-slate-700 p-4 rounded-xl text-sm font-bold text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
-              {t ? t("addList") : "Thêm danh sách"}
-            </button>
+              ))}
+              <h3 className="mb-2 mt-5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Danh sách của tôi</h3>
+              {customLists.length > 0 ? (
+                customLists.map((cal: any) => (
+                  <div key={cal.id} onClick={() => setDetailList(cal)} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 shadow-sm transition-transform active:scale-[0.98]">
+                    <div className="size-9 rounded-xl shrink-0 flex items-center justify-center" style={{ backgroundColor: (cal.color || "#4f46e5") + "1a" }}>
+                      <div className="size-4 rounded-full" style={{ backgroundColor: cal.color || "#4f46e5" }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-800">{cal.name}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{events.filter((e: any) => e.calendarId === cal.id).length} sự kiện</p>
+                      {cal.memberId && cal.memberId !== "all" ? (
+                        <p className="text-xs text-indigo-500 font-medium mt-0.5 truncate">
+                          {members.find((m: Member) => m.id === cal.memberId)?.nickname ||
+                           members.find((m: Member) => m.id === cal.memberId)?.name ||
+                           "Thành viên"}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-400 mt-0.5">Cả gia đình</p>
+                      )}
+                    </div>
+                    <button onClick={(e) => { e.stopPropagation(); setEditingList(cal); }} className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 active:bg-slate-200" aria-label={`Sửa ${cal.name}`}>
+                      <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    </button>
+                    <svg viewBox="0 0 24 24" className="size-4 shrink-0 stroke-slate-300 stroke-2 fill-none"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+                ))
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                  <svg viewBox="0 0 24 24" className="size-12 stroke-current stroke-[1.5] fill-none mb-4 opacity-30"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+                  <p className="text-sm font-medium">Chưa có danh sách nào.</p>
+                </div>
+              )}
+              <button onClick={() => setIsAddingList(true)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-200 bg-indigo-50 p-4 text-sm font-bold text-indigo-600 transition-transform active:scale-[0.98]">
+                {t ? t("addList") : "+ Thêm danh sách"}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -1607,6 +1674,7 @@ function MobileCalendarView({
           saveCustomLists={saveCustomLists} 
           events={events}
           setEvents={setEvents}
+          members={members}
           t={t}
         />
       )}
@@ -1626,9 +1694,10 @@ function MobileCalendarView({
   );
 }
 
-function AddEditListSheet({ list, close, customLists, saveCustomLists, events, setEvents, t }: any) {
+function AddEditListSheet({ list, close, customLists, saveCustomLists, events, setEvents, members, t }: any) {
   const [name, setName] = useState(list ? list.name : "");
   const [color, setColor] = useState(list ? list.color : "#4f46e5");
+  const [memberId, setMemberId] = useState<string>(list?.memberId ?? "all");
   const [error, setError] = useState("");
 
   const save = () => {
@@ -1637,9 +1706,16 @@ function AddEditListSheet({ list, close, customLists, saveCustomLists, events, s
     
     let next;
     if (list) {
-      next = customLists.map((c: any) => c.id === list.id ? { ...c, name: name.trim(), color } : c);
+      next = customLists.map((c: any) => {
+        if (c.id !== list.id) return c;
+        const updated = { ...c, name: name.trim(), color };
+        if (memberId === "all") { delete updated.memberId; } else { updated.memberId = memberId; }
+        return updated;
+      });
     } else {
-      next = [...customLists, { id: "custom-" + Date.now(), name: name.trim(), color }];
+      const newEntry: any = { id: "custom-" + Date.now(), name: name.trim(), color };
+      if (memberId !== "all") newEntry.memberId = memberId;
+      next = [...customLists, newEntry];
     }
     saveCustomLists(next);
     close();
@@ -1660,10 +1736,11 @@ function AddEditListSheet({ list, close, customLists, saveCustomLists, events, s
   };
 
   const colors = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e", "#14b8a6", "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#d946ef", "#f43f5e", "#64748b"];
+  const memberOptions: Member[] = Array.isArray(members) ? members : [];
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/45" onMouseDown={close}>
-      <div onMouseDown={e => e.stopPropagation()} className="w-full bg-white dark:bg-slate-900 rounded-t-2xl p-5 pb-8 animate-in slide-in-from-bottom-full duration-300">
+      <div onMouseDown={e => e.stopPropagation()} className="w-full bg-white dark:bg-slate-900 rounded-t-2xl p-5 pb-8 animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-bold">{list ? "Sửa danh sách" : (t ? t("addList") : "Thêm danh sách")}</h3>
           <button onClick={close} className="grid size-8 place-items-center rounded-full bg-slate-100 font-bold text-slate-500 hover:bg-slate-200">×</button>
@@ -1681,8 +1758,33 @@ function AddEditListSheet({ list, close, customLists, saveCustomLists, events, s
             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Màu sắc</label>
             <div className="flex flex-wrap gap-3">
               {colors.map(c => (
-                <button key={c} onClick={() => setColor(c)} className={`size-8 rounded-full flex items-center justify-center transition-transform ${color === c ? "scale-125 ring-2 ring-offset-2 ring-indigo-500" : ""}`} style={{ backgroundColor: c }}>
+                <button key={c} onClick={() => setColor(c)} className={["size-8 rounded-full flex items-center justify-center transition-transform", color === c ? "scale-125 ring-2 ring-offset-2 ring-indigo-500" : ""].join(" ")} style={{ backgroundColor: c }}>
                   {color === c && <svg viewBox="0 0 24 24" className="size-4 stroke-white stroke-2 fill-none"><polyline points="20 6 9 17 4 12" /></svg>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Gán cho thành viên</label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setMemberId("all")}
+                className={["flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold border transition-all", memberId === "all" ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"].join(" ")}
+              >
+                <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none shrink-0"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                Cả gia đình
+              </button>
+              {memberOptions.map((m: Member) => (
+                <button
+                  key={m.id}
+                  onClick={() => setMemberId(m.id)}
+                  className={["flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold border transition-all", memberId === m.id ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"].join(" ")}
+                >
+                  <span className={["size-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-black", memberId === m.id ? "bg-white/30 text-white" : "bg-slate-100 text-slate-600"].join(" ")}>
+                    {(m.nickname || m.name || "?")[0]}
+                  </span>
+                  {m.nickname || m.name}
                 </button>
               ))}
             </div>
@@ -1703,7 +1805,6 @@ function AddEditListSheet({ list, close, customLists, saveCustomLists, events, s
     </div>
   );
 }
-
 function ListDetailSheet({ list, close, events, openEventDetail, openNewEvent, isCustom, t }: any) {
   const listEvents = events.filter((e: any) => e.calendarId === list.id || e.type === list.id);
   
