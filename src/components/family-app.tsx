@@ -17,23 +17,55 @@ import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCard
 import * as XLSX from "xlsx";
 import QRCode from "react-qr-code";
 
-type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications";
+type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications" | "system";
 type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
 type EntityItem = Member | Task | Transaction | EventItem | Note;
 type Editor = { kind: EntityKind; item?: EntityItem } | null;
 type UserRole = "full_access" | "self_only";
 export interface AuthUser { id: string; username: string; displayName: string; avatar: string; coverUrl?: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; email?: string; passwordPlain?: string | null; }
+
+export type AppLogType = "ERROR" | "WARN" | "INFO" | "ACTION" | "API";
+export interface AppLog {
+  id: string;
+  type: AppLogType;
+  message: string;
+  time: string;
+  screen?: string;
+  api?: { method?: string; url?: string; status?: number };
+}
+
+export function addAppLog(type: AppLogType, message: string, meta?: { screen?: string; api?: { method?: string; url?: string; status?: number } }) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = localStorage.getItem("familyHubAppLogs");
+    let logs: AppLog[] = raw ? JSON.parse(raw) : [];
+    let safeMessage = message;
+    if (typeof safeMessage === "string") {
+      safeMessage = safeMessage.replace(/(password|token|cookie|Authorization)["\s:=]+[^\s,}"\]]+/gi, "$1=***");
+    }
+    const newLog: AppLog = {
+      id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+      type,
+      message: safeMessage,
+      time: new Date().toISOString(),
+      screen: meta?.screen,
+      api: meta?.api
+    };
+    logs = [newLog, ...logs].slice(0, 100);
+    localStorage.setItem("familyHubAppLogs", JSON.stringify(logs));
+  } catch (err) {}
+}
 type ManagedUser = AuthUser & { email: string; active: boolean; isSystem: boolean; createdAt: string; updatedAt: string };
 type ProfileUser = ManagedUser & { member?: Member };
 type PasswordResetRequest = { id: string; userId: string; usernameOrEmail: string; status: string; requestedAt: string; username: string; displayName: string; role: UserRole };
 type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }> };
-const icons: Record<Screen | "plus" | "check", React.ReactNode> = { dashboard: <HomeIcon />, members: <UsersIcon />, tasks: <CheckListIcon />, finance: <WalletIcon />, chat: <ChatIcon />, calendar: <CalendarIcon />, notes: <NotesIcon />, settings: <SettingsIcon />, notifications: <BellIcon />, plus: "+", check: "✓" };
+const icons: Record<Screen | "plus" | "check", React.ReactNode> = { dashboard: <HomeIcon />, members: <UsersIcon />, tasks: <CheckListIcon />, finance: <WalletIcon />, chat: <ChatIcon />, calendar: <CalendarIcon />, notes: <NotesIcon />, settings: <SettingsIcon />, notifications: <BellIcon />, system: <SettingsIcon />, plus: "+", check: "✓" };
 const vnDateFormatter = new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 const vnMoneyFormatter = new Intl.NumberFormat("vi-VN");
 const money = (value: number) => `${vnMoneyFormatter.format(Number.isFinite(value) ? value : 0)} đ`;
 const formatVndInput = (value: number | string) => `${vnMoneyFormatter.format(Number(String(value).replace(/\D/g, "")) || 0)} đ`;
 const parseVndInput = (value: string) => Number(String(value).replace(/\D/g, "")) || 0;
-const titleKey: Record<Screen, Parameters<ReturnType<typeof translator>>[0]> = { dashboard: "dashboard", members: "members", tasks: "tasks", finance: "finance", chat: "chat", calendar: "calendar", notes: "notes", settings: "settings", notifications: "notifications" };
+const titleKey: Record<Screen, Parameters<ReturnType<typeof translator>>[0]> = { dashboard: "dashboard", members: "members", tasks: "tasks", finance: "finance", chat: "chat", calendar: "calendar", notes: "notes", settings: "settings", notifications: "notifications", system: "settings" };
 const accessLabel = (role: UserRole) => role === "full_access" ? "Toàn quyền" : "Chỉ xem chính mình";
 const bankCardsByMemberCache = new Map<string, BankAccount[]>();
 async function readJsonSafe<T>(response: Response): Promise<T | null> {
@@ -249,6 +281,21 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     }
   }, [unreadNotificationsCount]);
 
+  useEffect(() => {
+    const handleGlobalError = (event: ErrorEvent) => {
+      addAppLog("ERROR", event.message, { screen: "global" });
+    };
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      addAppLog("ERROR", `Unhandled rejection: ${event.reason?.message || event.reason || "Unknown reason"}`, { screen: "global" });
+    };
+    window.addEventListener("error", handleGlobalError);
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
+    return () => {
+      window.removeEventListener("error", handleGlobalError);
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+    };
+  }, []);
+
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [profilePageOpen, setProfilePageOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -381,8 +428,9 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     ui.toast("Đã xóa thành công");
   }
   async function logout() {
+    addAppLog("ACTION", "User logged out", { screen: "global" });
     await fetch("/api/auth/logout", { method: "POST" });
-    const keysToPreserve = ["familyHubLastUser", "lastUserName", "lastUsername", "lastAvatarUrl", "lastUserCoverUrl", "lastCoverUrl", "lastBackgroundUrl"];
+    const keysToPreserve = ["familyHubLastUser", "lastUserName", "lastUsername", "lastAvatarUrl", "lastUserCoverUrl", "lastCoverUrl", "lastBackgroundUrl", "familyHubAppLogs"];
     const saved: [string, string][] = [];
     keysToPreserve.forEach(k => {
       const val = localStorage.getItem(k);
@@ -451,6 +499,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     screen === "calendar" ? <Calendar data={data} user={user} /> :
     screen === "notes" ? <Notes data={data} open={setEditor} t={t} /> :
     screen === "notifications" ? <NotificationsView user={user} notifications={notifications} setNotifications={setNotifications} /> :
+    screen === "system" ? <MobileSystemScreen go={go} /> :
     (
       <>
         <style dangerouslySetInnerHTML={{ __html: `
@@ -500,10 +549,10 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       </>
     );
 
-  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" || screen === "settings" ? "pb-0" : "pb-[100px] md:pb-0"} ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
+  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" || screen === "settings" || screen === "system" ? "pb-0" : "pb-[100px] md:pb-0"} ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
     <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} language={language} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
-    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}>
+    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" || screen === "system" ? "hidden md:block" : "block"}`}>
       <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
         <label className={`relative w-full max-w-md ${screen === "finance" ? "hidden md:block" : "block"}`}><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
         <div className="relative ml-auto flex items-center gap-1 md:gap-2">
@@ -517,7 +566,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       </div>
     </header>
     <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
-    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" || screen === "settings" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
+    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" || screen === "settings" || screen === "system" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && screen !== "system" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
     {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
@@ -999,7 +1048,10 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
     try {
       const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, remember }) });
       const result = await readJsonSafe<{ error?: string; user?: AuthUser; member?: Member }>(response);
-      if (!response.ok || !result?.user) throw new Error(result?.error || "Không thể đăng nhập. Vui lòng thử lại.");
+      if (!response.ok || !result?.user) {
+        addAppLog("ERROR", `Login failed: ${result?.error || "Unknown Error"}`, { screen: "login" });
+        throw new Error(result?.error || "Không thể đăng nhập. Vui lòng thử lại.");
+      }
       const nextUser = { ...result.user, member: result.member };
       const nextDisplayName = result.member?.nickname || result.member?.name || result.user.displayName;
       const nextAvatar = result.member?.avatarUrl || result.member?.avatar || result.user.avatar || "";
@@ -1018,6 +1070,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
         localStorage.removeItem("lastBackgroundUrl");
       }
       setMobileLoginOpen(false);
+      addAppLog("ACTION", `User ${result.user.username} logged in successfully`, { screen: "login" });
       onLogin(nextUser, pendingScreen || "members", pendingScreen === "members");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Không thể đăng nhập."); }
     finally { setLoading(false); }
@@ -6976,6 +7029,128 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
   </div>;
 }
 
+function MobileSystemScreen({ go }: { go: (s: Screen) => void }) {
+  const [activeSystemTab, setActiveSystemTab] = useState<"log">("log");
+  const [logs, setLogs] = useState<AppLog[]>([]);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+
+  const loadLogs = useCallback(() => {
+    try {
+      const raw = localStorage.getItem("familyHubAppLogs");
+      setLogs(raw ? JSON.parse(raw) : []);
+    } catch {
+      setLogs([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    addAppLog("ACTION", "Opened system screen", { screen: "system" });
+    loadLogs();
+  }, [loadLogs]);
+
+  const handleClearLogs = () => {
+    localStorage.removeItem("familyHubAppLogs");
+    loadLogs();
+    setClearConfirmOpen(false);
+  };
+
+  const getTypeColor = (type: AppLogType) => {
+    if (type === "ERROR") return "text-[#E11D48] bg-[#E11D48]/10";
+    if (type === "WARN") return "text-[#D4AF37] bg-[#D4AF37]/10";
+    if (type === "INFO" || type === "ACTION") return "text-[#059669] bg-[#059669]/10";
+    if (type === "API") return "text-[#800020] bg-[#F8E7EC]";
+    return "text-[#6B5E64] bg-[#E8DCD5]";
+  };
+
+  const getTypeLabel = (type: AppLogType) => {
+    if (type === "ERROR") return "LỖI";
+    if (type === "WARN") return "CẢNH BÁO";
+    if (type === "INFO") return "THÔNG TIN";
+    if (type === "ACTION") return "THAO TÁC";
+    return type;
+  };
+
+  const translateMessage = (msg: string) => {
+    if (msg === "Opened system screen") return "Đã mở màn Hệ thống";
+    if (msg.startsWith("User ") && msg.endsWith(" logged in successfully")) {
+      return `Đăng nhập thành công: ${msg.substring(5, msg.length - 23)}`;
+    }
+    return msg;
+  };
+
+  const translateScreen = (screenName: string) => {
+    if (screenName === "system") return "Hệ thống";
+    if (screenName === "login") return "Đăng nhập";
+    return screenName;
+  };
+
+  return (
+    <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[100px]">
+      <div className="sticky top-0 z-30 bg-[#800020] text-white shadow-md">
+        <div className="flex h-14 items-center px-4">
+          <button onClick={() => go("dashboard")} className="grid size-10 place-items-center rounded-full hover:bg-white/10 -ml-2 mr-2">
+            <ArrowLeft className="size-5" />
+          </button>
+          <h1 className="text-lg font-bold">Hệ thống</h1>
+        </div>
+        <div className="flex px-4 gap-6 text-sm font-semibold border-b border-white/20">
+          <button className={`pb-3 border-b-2 transition-colors ${activeSystemTab === "log" ? "border-[#D4AF37] text-[#D4AF37]" : "border-transparent text-white/70"}`} onClick={() => setActiveSystemTab("log")}>
+            Nhật ký lỗi
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4">
+        {activeSystemTab === "log" && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-[13px] font-bold text-[#171018] truncate mr-2">Danh sách nhật ký ({logs.length})</h2>
+              <div className="flex gap-2 items-center shrink-0">
+                <button onClick={loadLogs} className="flex h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-lg bg-[#FFFFFF] border border-[#E8DCD5] px-2.5 text-[12px] font-bold text-[#800020] shadow-sm">Làm mới</button>
+                {logs.length > 0 && <button onClick={() => setClearConfirmOpen(true)} className="flex h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-lg bg-[#F8E7EC] border border-[#E8DCD5] px-2.5 text-[12px] font-bold text-[#E11D48] shadow-sm">Xóa log</button>}
+              </div>
+            </div>
+
+            {logs.length === 0 ? (
+              <div className="text-center py-10 bg-[#FFFFFF] rounded-2xl border border-[#E8DCD5]">
+                <p className="text-[#6B5E64] text-sm font-medium">Chưa có log</p>
+              </div>
+            ) : (
+              logs.map((log) => (
+                <div key={log.id} className="bg-[#FFFFFF] p-3 rounded-xl border border-[#E8DCD5] shadow-sm text-[13px] break-words">
+                  <div className="flex justify-between items-start mb-2 gap-2">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${getTypeColor(log.type)}`}>{getTypeLabel(log.type)}</span>
+                    <span className="text-[#6B5E64] text-[11px] font-medium whitespace-nowrap">{new Date(log.time).toLocaleString('vi-VN')}</span>
+                  </div>
+                  <p className="text-[#171018] font-medium mb-2 leading-relaxed">{translateMessage(log.message)}</p>
+                  {(log.screen || log.api) && (
+                    <div className="mt-2 pt-2 border-t border-[#E8DCD5] text-[11px] text-[#6B5E64] flex flex-wrap gap-x-4 gap-y-1">
+                      {log.screen && <span>Màn hình: <strong>{translateScreen(log.screen)}</strong></span>}
+                      {log.api && <span>API: <strong>{log.api.method} {log.api.url}</strong> {log.api.status ? `(${log.api.status})` : ""}</span>}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {clearConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 pointer-events-auto" onClick={() => setClearConfirmOpen(false)}>
+          <div className="w-full max-w-sm rounded-[24px] bg-[#FFFFFF] p-6 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-[#171018]">Xóa nhật ký lỗi</h3>
+            <p className="mt-2 text-sm text-[#6B5E64]">Bạn có chắc chắn muốn xóa toàn bộ danh sách log hệ thống không? Hành động này không thể hoàn tác.</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setClearConfirmOpen(false)} className="rounded-xl border border-[#E8DCD5] px-4 py-2 text-sm font-bold text-[#171018] hover:bg-[#F8F5F2]">Hủy</button>
+              <button onClick={handleClearLogs} className="rounded-xl bg-[#E11D48] px-4 py-2 text-sm font-bold text-white hover:bg-[#BE123C]">Xóa log</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 function MobileSettings({ user, onLogout, openChangePassword, language, setLanguage, theme, setTheme, t }: { user: AuthUser; onLogout: () => void; openChangePassword: () => void; language: Language; setLanguage: (x: Language) => void; theme: Theme; setTheme: (x: Theme) => void; t: ReturnType<typeof translator> }) {
   const ui = useUI();
   const [activeSheet, setActiveSheet] = useState<"theme" | "language" | null>(null);
@@ -7658,7 +7833,7 @@ function MobileHome({
             </button>
             <div className="grid grid-cols-2 gap-3 pointer-events-auto">
               <button type="button" onClick={() => setShowMembers(true)} className="h-11 min-w-0 rounded-full bg-[#800020] px-3 text-[13px] font-bold text-white shadow-sm active:scale-[.99]">Thành viên</button>
-              <button type="button" onClick={() => go("settings")} className="h-11 min-w-0 rounded-full bg-[#FFFFFF] border border-[#800020] px-3 text-[13px] font-bold text-[#800020] shadow-sm active:scale-[.99]">Hệ thống</button>
+              <button type="button" onClick={() => go("system")} className="h-11 min-w-0 rounded-full bg-[#FFFFFF] border border-[#800020] px-3 text-[13px] font-bold text-[#800020] shadow-sm active:scale-[.99]">Hệ thống</button>
             </div>
           </div>
         </div>
