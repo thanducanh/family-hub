@@ -3380,10 +3380,10 @@ function MobileFinance({ data, open, t, user, update, go }: FinanceProps) {
   const back = () => tab === "transactions" ? go?.("dashboard") : setTab("transactions");
 
   const activeTabClass = "flex-1 py-3 text-center text-[15px] font-semibold text-white border-b-[3px] border-[#D4AF37] transition-all whitespace-nowrap";
-  const inactiveTabClass = "flex-1 py-3 text-center text-[15px] font-medium text-white/60 border-b-[3px] border-transparent transition-all whitespace-nowrap";
+  const inactiveTabClass = "flex-1 py-3 text-center text-[15px] font-medium text-[#F8E7EC] opacity-80 border-b-[3px] border-transparent transition-all whitespace-nowrap";
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-[#800020] dark:bg-[#4A0012] md:hidden font-sans">
+    <div className="flex flex-col h-[100dvh] bg-[var(--mobile-bg)] md:hidden font-sans">
       <div className="bg-[#800020] dark:bg-[#4A0012] pt-3 px-4 pb-0 shrink-0 shadow-md relative z-10">
         <div className="flex items-center justify-between mb-2">
           <button type="button" aria-label="Quay lại" onClick={back} className="text-white p-2 -ml-2 active:bg-white/10 rounded-full">
@@ -3403,7 +3403,6 @@ function MobileFinance({ data, open, t, user, update, go }: FinanceProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto relative z-0 bg-[var(--mobile-bg)]">
-        <div className="absolute top-0 inset-x-0 h-40 bg-[#800020] dark:bg-[#4A0012] rounded-b-[2rem] shadow-sm pointer-events-none -z-10" />
         
         {tab === "transactions" && <MobileTransactionList data={data} update={update} user={user} refreshTrigger={refreshTrigger} refresh={() => setRefreshTrigger(r => r + 1)} />}
         {tab === "savings" && <MobileSavingsList data={data} update={update} user={user} refreshTrigger={refreshTrigger} refresh={() => setRefreshTrigger(r => r + 1)} />}
@@ -3496,40 +3495,39 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
   }, {});
   const editItem = (item: any) => { setEditor({ ...item, type: item._isIncome ? "income" : "expense" }); setDetail(null); };
   return <div className="px-4 pt-3 pb-32">
-    <div className="mb-4 flex items-center justify-end">
-      <div className="flex items-center gap-2 rounded-full bg-white/20 px-1 py-1 text-[13px] font-medium text-white shadow-sm backdrop-blur-md">
-        <button onClick={prevMonth} className="p-1 hover:bg-white/20 active:bg-white/30 rounded-full transition-colors"><svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg></button>
+    <div className="mb-4 flex items-center justify-center">
+      <div className="flex items-center gap-2 rounded-full bg-[#FFFFFF] px-1 py-1 text-[13px] font-medium text-[#171018] shadow-[0_4px_12px_rgba(128,0,32,0.04)] border border-[#E8DCD5]">
+        <button onClick={prevMonth} className="p-1 hover:bg-black/5 active:opacity-70 rounded-full transition-colors text-[#800020]"><svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" /></svg></button>
         <span className="min-w-[90px] text-center">Tháng {month} {year}</span>
-        <button onClick={nextMonth} className="p-1 hover:bg-white/20 active:bg-white/30 rounded-full transition-colors"><svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
+        <button onClick={nextMonth} className="p-1 hover:bg-black/5 active:opacity-70 rounded-full transition-colors text-[#800020]"><svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" /></svg></button>
       </div>
     </div>
 
-    <div className="bg-[#4A0012] rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden border border-[rgba(212,175,55,0.25)]">
-      <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
-      <p className="mb-1 text-[14px] font-normal text-white/80">Tiền hiện tại</p>
-      <b className="mb-5 block whitespace-nowrap text-[clamp(24px,8vw,32px)] font-semibold leading-tight tracking-tight">{loadingOverview ? "..." : (overviewDataCache[year] ? money(currentCash) : "-")}</b>
+    <div className="bg-[var(--mobile-card)] rounded-[24px] p-5 shadow-[0_8px_24px_rgba(128,0,32,0.08)] text-[#171018] mb-5 relative overflow-hidden border border-[#E8DCD5]">
+      <p className="mb-1 text-[14px] font-normal text-[#6B5E64]">Tiền hiện tại</p>
+      <b className="mb-5 block whitespace-nowrap text-[clamp(24px,8vw,32px)] font-bold leading-tight tracking-tight text-[#800020]">{loadingOverview ? "..." : (overviewDataCache[year] ? money(currentCash) : "-")}</b>
       
-      <div className="grid grid-cols-3 border-t border-white/20 pt-3 gap-1">
+      <div className="grid grid-cols-3 border-t border-[#E8DCD5] pt-3 gap-1">
         {([['all', 'Chi tiết'], ['income', 'Thu nhập'], ['expense', 'Chi tiêu']] as const).map(([value, label]) => (
-          <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] transition-colors ${subTab === value ? "bg-[#D4AF37] font-semibold text-[#171018] shadow-sm" : "font-normal text-[#cbd5e1] active:bg-white/10"}`}>{label}</button>
+          <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] transition-colors ${subTab === value ? "bg-[#800020] border border-transparent font-semibold text-white shadow-sm" : "bg-[#F8E7EC] border border-[#E8DCD5] font-medium text-[#800020] active:opacity-70"}`}>{label}</button>
         ))}
       </div>
     </div>
 
-    <div className="-mx-4 min-h-[300px] bg-[var(--mobile-bg)] px-4 pb-4 text-[var(--mobile-text)]">
+    <div className="min-h-[300px] pb-4">
       {loadingIncomes ? <div className="py-10 text-center text-sm font-normal text-[var(--mobile-muted)]">Đang tải...</div> : displayList.length === 0 ? <div className="py-12 text-center text-sm font-normal text-[var(--mobile-muted)]">Chưa có giao dịch</div> : (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {Object.entries(groupedItems).map(([date, items]) => <section key={date}>
-            <h3 className="mb-1 text-[18px] font-medium tracking-tight text-[var(--mobile-text)]">{date}</h3>
-            <div className="ml-8 divide-y divide-[var(--mobile-border)]">
-              {items.map((item: any) => <button type="button" onClick={() => setDetail(item)} key={`${item._isIncome ? 'income' : 'expense'}-${item.id}`} className="flex w-full items-start justify-between gap-3 py-2.5 text-left active:opacity-70">
+            <h3 className="mb-2 text-[14px] font-semibold tracking-tight text-[#800020]">{date}</h3>
+            <div className="bg-[var(--mobile-card)] rounded-[16px] shadow-[0_4px_12px_rgba(128,0,32,0.04)] border border-[#E8DCD5] overflow-hidden divide-y divide-[#E8DCD5]">
+              {items.map((item: any) => <button type="button" onClick={() => setDetail(item)} key={`${item._isIncome ? 'income' : 'expense'}-${item.id}`} className="flex w-full items-start justify-between gap-3 px-3 py-3 text-left active:bg-black/5 dark:active:bg-white/5 transition-colors">
                 <div className="min-w-0 flex-1 text-left">
-                  <b className="block truncate text-[15px] font-medium text-[var(--mobile-text)]">{item._displayName}</b>
-                  <span className="mt-0.5 block truncate text-[13px] font-normal text-[var(--mobile-muted)]">{item.note || item._displayCategory || "Khác"}</span>
+                  <b className="block truncate text-[14px] font-medium text-[#171018]">{item._displayName}</b>
+                  <span className="mt-0.5 block truncate text-[13px] font-normal text-[#6B5E64]">{item.note || item._displayCategory || "Khác"}</span>
                 </div>
                 <div className="shrink-0 text-right">
-                  <b className={`block text-[15px] font-medium ${item._isIncome ? "text-[var(--app-success)]" : "text-[var(--app-danger)]"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
-                  {item._displayTime && <span className="mt-0.5 block text-[13px] font-normal text-[var(--mobile-muted)]">{String(item._displayTime).slice(0, 5)}</span>}
+                  <b className={`block text-[15px] font-bold ${item._isIncome ? "text-[#059669]" : "text-[#E11D48]"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
+                  {item._displayTime && <span className="mt-0.5 block text-[13px] font-normal text-[#6B5E64]">{String(item._displayTime).slice(0, 5)}</span>}
                 </div>
               </button>)}
             </div>
@@ -3538,8 +3536,8 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
       )}
     </div>
 
-    <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-12">
-      <button type="button" aria-label={subTab === "all" ? "Thêm giao dịch" : subTab === "income" ? "Thêm thu" : "Thêm chi"} onClick={() => setEditor({ type: subTab === "all" ? "expense" : subTab, isNew: true })} className={`grid size-12 place-items-center rounded-full shadow-xl active:scale-95 transition-transform ${subTab === "income" ? "bg-[#22c55e] text-white" : subTab === "expense" ? "bg-[#fb923c] text-white" : "bg-[#D4AF37] text-[#171018]"}`}>
+    <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-14">
+      <button type="button" aria-label={subTab === "all" ? "Thêm giao dịch" : subTab === "income" ? "Thêm thu" : "Thêm chi"} onClick={() => setEditor({ type: subTab === "all" ? "expense" : subTab, isNew: true })} className={`grid size-14 place-items-center rounded-full shadow-[0_8px_16px_rgba(128,0,32,0.24)] active:scale-95 transition-transform bg-[#800020] text-white`}>
         <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
       </button>
     </div>
@@ -3635,23 +3633,23 @@ function MobileTransactionDetail({ item, close, onEdit, onDeleted, data, update 
   };
 
   if (typeof document === "undefined") return null;
-  return createPortal(<div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#003f3a] min-[769px]:hidden">
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#003f3a] px-3 text-white">
+  return createPortal(<div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#800020] min-[769px]:hidden">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#800020] px-3 text-white">
       <button type="button" aria-label="Quay lại danh sách Thu chi" onClick={event => { event.preventDefault(); event.stopPropagation(); close(); }} className="grid size-10 place-items-center rounded-full active:bg-white/10"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
       <h2 className="min-w-0 flex-1 truncate px-2 text-center text-[17px] font-semibold">Chi tiết giao dịch</h2>
-      <button type="button" aria-label="Tùy chọn giao dịch" onClick={() => setMenuOpen(true)} className="grid size-10 place-items-center rounded-full text-xl font-semibold text-[#facc15] active:bg-white/10">•••</button>
+      <button type="button" aria-label="Tùy chọn giao dịch" onClick={() => setMenuOpen(true)} className="grid size-10 place-items-center rounded-full text-xl font-semibold text-[#D4AF37] active:bg-white/10">•••</button>
     </header>
-    <div className="min-h-0 flex-1 overflow-y-auto bg-[#f1f5f9] px-3 pb-[calc(24px+env(safe-area-inset-bottom))] pt-6">
-      <section className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-4 py-5 text-center">
-          <p className="mb-1 text-[13px] font-normal text-slate-500">{isIncome ? "Khoản thu" : item._displayCategory || "Khoản chi"}</p>
-          <h3 className="mx-auto max-w-full break-words text-[18px] font-medium leading-snug text-slate-800">{item._displayName}</h3>
-          <p className={`mt-2 text-[30px] font-semibold tracking-tight ${isIncome ? "text-emerald-600" : "text-orange-500"}`}>{isIncome ? "+" : "-"}{money(item.amount)}</p>
+    <div className="min-h-0 flex-1 overflow-y-auto bg-[#F8F5F2] px-3 pb-[calc(24px+env(safe-area-inset-bottom))] pt-6">
+      <section className="mt-2 overflow-hidden rounded-2xl border border-[#E8DCD5] bg-[#FFFFFF] shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+        <div className="border-b border-[#E8DCD5] px-4 py-5 text-center">
+          <p className="mb-1 text-[13px] font-normal text-[#6B5E64]">{isIncome ? "Khoản thu" : item._displayCategory || "Khoản chi"}</p>
+          <h3 className="mx-auto max-w-full break-words text-[18px] font-medium leading-snug text-[#171018]">{item._displayName}</h3>
+          <p className={`mt-2 text-[30px] font-semibold tracking-tight ${isIncome ? "text-[#059669]" : "text-[#E11D48]"}`}>{isIncome ? "+" : "-"}{money(item.amount)}</p>
         </div>
-        <div className="divide-y divide-slate-100 px-4">
+        <div className="divide-y divide-[#E8DCD5] px-4">
           {detailRows.filter(([, value]) => value !== "" && value !== null && value !== undefined).map(([label, value]) => <div key={String(label)} className="grid grid-cols-[minmax(0,42%)_minmax(0,58%)] items-start gap-3 py-3.5 text-[14px] leading-snug">
-            <span className="font-normal text-slate-500">{label}</span>
-            <span className="min-w-0 break-words text-right font-medium text-slate-800">{String(value)}</span>
+            <span className="font-normal text-[#6B5E64]">{label}</span>
+            <span className="min-w-0 break-words text-right font-medium text-[#171018]">{String(value)}</span>
           </div>)}
         </div>
       </section>
@@ -3706,28 +3704,27 @@ function MobileSavingsList({ data: appData, update, user, refreshTrigger, refres
   const totalSavings = savings.reduce((sum, item) => sum + (item.type === "withdraw" ? -Number(item.amount || 0) : Number(item.amount || 0)), 0);
 
   return <div className="px-4 pt-3 pb-32">
-    <div className="bg-[#4A0012] rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden mt-2 border border-[rgba(212,175,55,0.25)]">
-      <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
-      <p className="text-[14px] text-white/80 font-medium mb-1">Tiết kiệm hiện có</p>
-      <b className="text-[32px] font-bold block mb-1 tracking-tight truncate">{money(totalSavings)}</b>
+    <div className="bg-[var(--mobile-card)] rounded-[24px] p-5 shadow-[0_8px_24px_rgba(128,0,32,0.08)] text-[#171018] mb-5 relative overflow-hidden mt-2 border border-[#E8DCD5]">
+      <p className="text-[14px] text-[#6B5E64] font-medium mb-1">Tiết kiệm hiện có</p>
+      <b className="text-[32px] font-bold block mb-1 tracking-tight truncate text-[#800020]">{money(totalSavings)}</b>
     </div>
 
-    <div className="bg-[var(--mobile-card)] rounded-[1.5rem] shadow-sm p-4 border border-[var(--mobile-border)] min-h-[300px]">
-      <h3 className="font-bold text-[var(--mobile-text)] mb-4 text-[16px] px-1">Danh sách tiết kiệm</h3>
-      {savings.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-[var(--mobile-muted)]"><svg className="size-12 mb-3 text-[var(--mobile-border)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có tiết kiệm</p></div> : (
+    <div className="bg-[var(--mobile-card)] rounded-[24px] shadow-[0_4px_12px_rgba(128,0,32,0.04)] p-4 border border-[#E8DCD5] min-h-[300px]">
+      <h3 className="font-bold text-[#171018] mb-4 text-[16px] px-1">Danh sách tiết kiệm</h3>
+      {savings.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-[#6B5E64]"><svg className="size-12 mb-3 text-[#E8DCD5]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có tiết kiệm</p></div> : (
         <div className="space-y-4">
           {savings.map(item => (
             <div key={item.id} onClick={() => setDetail(item)} className="flex justify-between items-center active:opacity-60 transition-opacity">
               <div className="flex gap-3 items-center min-w-0 pr-3">
-                <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-[var(--mobile-bg)] text-[var(--mobile-accent)]">
+                <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-[#F8F5F2] text-[#D4AF37]">
                    <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
                 <div className="min-w-0">
-                  <b className="text-[var(--mobile-text)] text-[15px] font-bold block truncate leading-tight">{item.description || "Tiết kiệm"}</b>
-                  <p className="text-[13px] text-[var(--mobile-muted)] mt-0.5 truncate">Tháng {item.month}/{item.year} • {item.holder || "Không rõ"}</p>
+                  <b className="text-[#171018] text-[14px] font-medium block truncate leading-tight">{item.description || "Tiết kiệm"}</b>
+                  <p className="text-[13px] text-[#6B5E64] font-normal mt-0.5 truncate">Tháng {item.month}/{item.year} • {item.holder || "Không rõ"}</p>
                 </div>
               </div>
-              <b className="shrink-0 text-right text-[15px] font-bold text-[var(--app-success)]">{money(item.amount)}</b>
+              <b className="shrink-0 text-right text-[15px] font-bold text-[#059669]">{money(item.amount)}</b>
             </div>
           ))}
         </div>
@@ -3735,7 +3732,7 @@ function MobileSavingsList({ data: appData, update, user, refreshTrigger, refres
     </div>
     
     <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-14">
-      <button type="button" aria-label="Thêm tiết kiệm" onClick={() => setEditor({ isNew: true })} className="grid size-14 place-items-center rounded-full bg-blue-500 text-white shadow-xl active:scale-95 transition-transform">
+      <button type="button" aria-label="Thêm tiết kiệm" onClick={() => setEditor({ isNew: true })} className="grid size-14 place-items-center rounded-full bg-[#800020] text-white shadow-[0_8px_16px_rgba(128,0,32,0.24)] active:scale-95 transition-transform">
         <svg className="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
       </button>
     </div>
@@ -3890,28 +3887,27 @@ function MobileInvestmentList({ data: appData, update, user, refreshTrigger, ref
   const totalInvestments = investments.reduce((sum, item) => sum + (item.action === "sell" ? -1 : 1) * (Number(item.quantity || 0) * Number(item.price || 0) + (item.action === "buy" ? Number(item.fee || 0) : -Number(item.fee || 0))), 0);
 
   return <div className="px-4 pt-3 pb-32">
-    <div className="bg-[#4A0012] rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden mt-2 border border-[rgba(212,175,55,0.25)]">
-      <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
-      <p className="text-[14px] text-white/80 font-medium mb-1">Đầu tư hiện có</p>
-      <b className="text-[32px] font-bold block mb-1 tracking-tight truncate">{money(totalInvestments)}</b>
+    <div className="bg-[var(--mobile-card)] rounded-[24px] p-5 shadow-[0_8px_24px_rgba(128,0,32,0.08)] text-[#171018] mb-5 relative overflow-hidden mt-2 border border-[#E8DCD5]">
+      <p className="text-[14px] text-[#6B5E64] font-medium mb-1">Đầu tư hiện có</p>
+      <b className="text-[32px] font-bold block mb-1 tracking-tight truncate text-[#800020]">{money(totalInvestments)}</b>
     </div>
 
-    <div className="bg-[var(--mobile-card)] rounded-[1.5rem] shadow-sm p-4 border border-[var(--mobile-border)] min-h-[300px]">
-      <h3 className="font-bold text-[var(--mobile-text)] mb-4 text-[16px] px-1">Danh sách đầu tư</h3>
-      {investments.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-[var(--mobile-muted)]"><svg className="size-12 mb-3 text-[var(--mobile-border)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có đầu tư</p></div> : (
+    <div className="bg-[var(--mobile-card)] rounded-[24px] shadow-[0_4px_12px_rgba(128,0,32,0.04)] p-4 border border-[#E8DCD5] min-h-[300px]">
+      <h3 className="font-bold text-[#171018] mb-4 text-[16px] px-1">Danh sách đầu tư</h3>
+      {investments.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-[#6B5E64]"><svg className="size-12 mb-3 text-[#E8DCD5]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có đầu tư</p></div> : (
         <div className="space-y-4">
           {investments.map(item => (
             <div key={item.id} onClick={() => setDetail(item)} className="flex justify-between items-center active:opacity-60 transition-opacity">
               <div className="flex gap-3 items-center min-w-0 pr-3">
-                <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-[var(--mobile-bg)] text-[var(--mobile-accent)]">
+                <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-[#F8F5F2] text-[#D4AF37]">
                    <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
                 </div>
                 <div className="min-w-0">
-                  <b className="text-[var(--mobile-text)] text-[15px] font-bold block truncate leading-tight">{item.stockCode || "Đầu tư"}</b>
-                  <p className="text-[13px] text-[var(--mobile-muted)] mt-0.5 truncate">{formatDateVN(item.tradeDate || item.createdAt)} • {item.action === "sell" ? "Bán" : "Mua"}</p>
+                  <b className="text-[#171018] text-[14px] font-medium block truncate leading-tight">{item.stockCode || "Đầu tư"}</b>
+                  <p className="text-[13px] text-[#6B5E64] font-normal mt-0.5 truncate">{formatDateVN(item.tradeDate || item.createdAt)} • {item.action === "sell" ? "Bán" : "Mua"}</p>
                 </div>
               </div>
-              <b className="shrink-0 text-right text-[15px] font-bold text-[var(--mobile-accent)]">{money(Number(item.quantity || 0) * Number(item.price || 0))}</b>
+              <b className="shrink-0 text-right text-[15px] font-bold text-[#D4AF37]">{money(Number(item.quantity || 0) * Number(item.price || 0))}</b>
             </div>
           ))}
         </div>
@@ -3919,7 +3915,7 @@ function MobileInvestmentList({ data: appData, update, user, refreshTrigger, ref
     </div>
     
     <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-14">
-      <button type="button" aria-label="Thêm đầu tư" onClick={() => setEditor({ isNew: true })} className="grid size-14 place-items-center rounded-full bg-[#D4AF37] text-[#171018] shadow-xl active:scale-95 transition-transform">
+      <button type="button" aria-label="Thêm đầu tư" onClick={() => setEditor({ isNew: true })} className="grid size-14 place-items-center rounded-full bg-[#800020] text-white shadow-[0_8px_16px_rgba(128,0,32,0.24)] active:scale-95 transition-transform">
         <svg className="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
       </button>
     </div>
