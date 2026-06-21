@@ -500,7 +500,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       </>
     );
 
-  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" ? "pb-0" : "pb-[100px] md:pb-0"} ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
+  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" || screen === "settings" ? "pb-0" : "pb-[100px] md:pb-0"} ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
     <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} language={language} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
     <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}>
@@ -7002,10 +7002,10 @@ function MobileSettings({ user, onLogout, openChangePassword, language, setLangu
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif] flex flex-col min-h-[calc(100dvh-64px)] bg-[var(--mobile-bg)] px-3 pt-3 pb-4">
-      <div className="space-y-4 flex-1">
+    <div className="mx-auto w-full max-w-2xl font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif] flex flex-col h-[calc(100dvh-64px)] overflow-hidden bg-[var(--mobile-bg)] px-3 pt-3 pb-2">
+      <div className="space-y-3 flex-1 overflow-hidden">
         <section>
-          <h2 className="text-[11px] font-bold text-[var(--mobile-primary)] mb-1.5 ml-1 uppercase tracking-wider">{mobileT(language, "set.sec")}</h2>
+          <h2 className="text-[11px] font-bold text-[var(--mobile-primary)] mb-1 ml-1 uppercase tracking-wider">{mobileT(language, "set.sec")}</h2>
           <div className="rounded-[16px] bg-[var(--mobile-card)] shadow-sm border border-[var(--mobile-border)] overflow-hidden">
             <ItemRow icon={<LockIcon />} label={mobileT(language, "set.pass")} onClick={openChangePassword}>
               <span className="text-[var(--mobile-accent)] text-lg leading-none">›</span>
@@ -7014,7 +7014,7 @@ function MobileSettings({ user, onLogout, openChangePassword, language, setLangu
         </section>
 
         <section>
-          <h2 className="text-[11px] font-bold text-[var(--mobile-primary)] mb-1.5 ml-1 uppercase tracking-wider">{mobileT(language, "set.app")}</h2>
+          <h2 className="text-[11px] font-bold text-[var(--mobile-primary)] mb-1 ml-1 uppercase tracking-wider">{mobileT(language, "set.app")}</h2>
           <div className="rounded-[16px] bg-[var(--mobile-card)] shadow-sm border border-[var(--mobile-border)] overflow-hidden">
             <ItemRow icon={<ThemeIcon dark={theme==="dark"} />} label={mobileT(language, "set.theme")} value={t(theme)} onClick={() => setActiveSheet("theme")}>
               <span className="text-[var(--mobile-accent)] text-lg leading-none">›</span>
@@ -7025,7 +7025,7 @@ function MobileSettings({ user, onLogout, openChangePassword, language, setLangu
           </div>
         </section>
 
-        <div className="pt-2">
+        <div>
           <div className="rounded-[16px] bg-[var(--mobile-card)] shadow-sm border border-[var(--mobile-border)] overflow-hidden">
             <ItemRow icon={<LogoutIcon />} label={mobileT(language, "set.logout")} onClick={handleLogout} />
           </div>
