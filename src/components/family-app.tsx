@@ -1448,7 +1448,8 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
 }
 
 function FullScreenMobileSheet({ close, children, title, onSubmit, loading, headerLeft, headerRight }: { close: () => void; children: React.ReactNode; title?: string; onSubmit?: (e: React.FormEvent | React.MouseEvent) => void; loading?: boolean; headerLeft?: React.ReactNode; headerRight?: React.ReactNode }) {
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 md:items-center md:p-6" onMouseDown={close}>
+  if (typeof document === "undefined") return null;
+  return createPortal(<div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 md:items-center md:p-6" onMouseDown={close}>
     <div onMouseDown={e => e.stopPropagation()} className="flex h-[100dvh] md:h-auto w-full flex-col overflow-hidden bg-[var(--app-background)] md:max-h-[90vh] md:max-w-lg md:rounded-3xl">
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 dark:border-[var(--app-border)] bg-white dark:bg-[var(--app-card)] px-4">
         {headerLeft ? headerLeft : <button type="button" aria-label="Quay lại" onClick={close} className="grid size-10 place-items-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg></button>}
@@ -1459,7 +1460,7 @@ function FullScreenMobileSheet({ close, children, title, onSubmit, loading, head
         {children}
       </div>
     </div>
-  </div>;
+  </div>, document.body);
 }
 
 // --- Mobile Profile Sheets ---
@@ -3667,11 +3668,11 @@ function MobileTransactionEditor({ item, defaultType, allowTypeChange = false, c
 
   const shortTitle = `${item?.id ? "Sửa" : "Thêm"} ${type === "income" ? "thu" : "chi"}`;
   const formId = type === "income" ? "mobile-income-transaction-form" : "mobile-expense-transaction-form";
-  return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="button" onClick={() => (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit()} className="px-2 text-[15px] font-bold text-[#064e46] dark:text-[#facc15]">Lưu</button>}>
-    <div className="min-h-full bg-[var(--app-background)] p-4 pb-28">
-      {(!item?.id && allowTypeChange) && <div className="sticky top-0 z-10 mb-4 flex rounded-xl bg-slate-100 p-1.5 shadow-sm dark:bg-slate-800">
-        <button type="button" onClick={() => setType("income")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "income" ? "bg-white text-emerald-500 shadow-sm dark:bg-slate-700" : "text-slate-500"}`}>Thu nhập</button>
-        <button type="button" onClick={() => setType("expense")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "expense" ? "bg-white text-rose-500 shadow-sm dark:bg-slate-700" : "text-slate-500"}`}>Chi tiêu</button>
+  return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="button" onClick={() => (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit()} className="px-2 text-[15px] font-bold text-[#800020]">Lưu</button>}>
+    <div className="p-4 pt-6 bg-[#F8F5F2] min-h-0 pb-[calc(104px+env(safe-area-inset-bottom))]">
+      {(!item?.id && allowTypeChange) && <div className="sticky top-0 z-10 mb-4 flex rounded-xl bg-[#FFFFFF] p-1.5 shadow-sm border border-[#E8DCD5]">
+        <button type="button" onClick={() => setType("income")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "income" ? "bg-[#F8F5F2] text-[#059669] shadow-sm" : "text-[#6B5E64]"}`}>Thu nhập</button>
+        <button type="button" onClick={() => setType("expense")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "expense" ? "bg-[#F8F5F2] text-[#E11D48] shadow-sm" : "text-[#6B5E64]"}`}>Chi tiêu</button>
       </div>}
       {type === "income" ? <IncomeRecordForm record={incomeRecord} members={toArray(data?.members).map((member: Member) => ({ id: member.id, name: member.name }))} templates={incomeTemplates} user={user} back={close} saved={finish} notify={(message, toastType) => ui.toast(message, toastType)} compactMobile /> : <ExpenseForm record={expenseRecord} members={toArray(data?.members)} user={user} close={close} compactMobile saved={(record) => {
         const transactions = toArray<Transaction>(data?.transactions);
@@ -3850,22 +3851,22 @@ function MobileSavingsEditor({ item, close, onSaved, user, data, update }: any) 
     }
   };
 
-  const inputClass = "h-[50px] w-full min-w-0 max-w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 px-4 text-[15px] outline-none focus:border-blue-400 focus:bg-white dark:focus:bg-black/40 transition-colors";
+  const inputClass = "h-[50px] w-full min-w-0 max-w-full rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] px-4 text-[15px] text-[#171018] outline-none focus:border-[#800020] transition-colors";
   const title = item?.id ? "Sửa tiết kiệm" : "Thêm tiết kiệm";
 
-  return <FullScreenMobileSheet title={title} close={close} onSubmit={save} loading={loading}>
-    <div className="p-4 space-y-4 bg-white dark:bg-[var(--app-card)] min-h-[100dvh] pb-32">
+  return <FullScreenMobileSheet title={title} close={close} headerRight={<button type="button" onClick={save} disabled={loading} className="px-2 text-[15px] font-bold text-[#800020]">Lưu</button>}>
+    <div className="p-4 pt-6 space-y-4 bg-[#F8F5F2] min-h-0 pb-[calc(104px+env(safe-area-inset-bottom))]">
         <Field label="Nội dung">
           <input className={inputClass} value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="VD: Gửi tiết kiệm ACB" />
         </Field>
         <Field label="Số tiền (VND)">
-          <input type="text" inputMode="numeric" className={`${inputClass} text-lg font-bold text-blue-500`} value={formatVndInput(form.amount)} onChange={e => setForm({...form, amount: e.target.value})} placeholder="0" />
+          <input type="text" inputMode="numeric" className={`${inputClass} text-lg font-bold text-[#800020]`} value={formatVndInput(form.amount)} onChange={e => setForm({...form, amount: e.target.value})} placeholder="0" />
         </Field>
         <div className="grid grid-cols-2 gap-3"><Field label="Tháng"><select className={inputClass} value={form.month} onChange={e => setForm({...form, month: e.target.value})}>{Array.from({length: 12}, (_, i) => <option key={i + 1} value={i + 1}>Tháng {i + 1}</option>)}</select></Field><Field label="Năm"><input type="number" className={inputClass} value={form.year} onChange={e => setForm({...form, year: e.target.value})} /></Field></div>
         <Field label="Loại"><select className={inputClass} value={form.type} onChange={e => setForm({...form, type: e.target.value})}><option value="monthly">Gửi tiết kiệm</option><option value="extra">Gửi thêm</option><option value="bonus">Tiền thưởng</option><option value="interest">Tiền lãi</option><option value="withdraw">Rút tiết kiệm</option><option value="adjustment">Điều chỉnh</option></select></Field>
         <Field label="Nơi giữ"><input className={inputClass} value={form.holder} onChange={e => setForm({...form, holder: e.target.value})} placeholder="Ngân hàng / Người giữ" /></Field>
         <Field label="Ghi chú (không bắt buộc)">
-          <textarea className="w-full min-w-0 max-w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 p-4 text-[15px] outline-none focus:border-blue-400 focus:bg-white dark:focus:bg-black/40 min-h-[100px] transition-colors" value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
+          <textarea className="w-full min-w-0 max-w-full rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] p-4 text-[15px] text-[#171018] outline-none focus:border-[#800020] min-h-[100px] transition-colors" value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
         </Field>
     </div>
   </FullScreenMobileSheet>;
@@ -4036,21 +4037,21 @@ function MobileInvestmentEditor({ item, close, onSaved, user, data, update }: an
     }
   };
 
-  const inputClass = "h-[50px] w-full min-w-0 max-w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 px-4 text-[15px] outline-none focus:border-purple-400 focus:bg-white dark:focus:bg-black/40 transition-colors";
+  const inputClass = "h-[50px] w-full min-w-0 max-w-full rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] px-4 text-[15px] text-[#171018] outline-none focus:border-[#800020] transition-colors";
   const title = item?.id ? "Sửa đầu tư" : "Thêm đầu tư";
 
-  return <FullScreenMobileSheet title={title} close={close} onSubmit={save} loading={loading}>
-    <div className="p-4 space-y-4 bg-white dark:bg-[var(--app-card)] min-h-[100dvh] pb-32">
+  return <FullScreenMobileSheet title={title} close={close} headerRight={<button type="button" onClick={save} disabled={loading} className="px-2 text-[15px] font-bold text-[#800020]">Lưu</button>}>
+    <div className="p-4 pt-6 space-y-4 bg-[#F8F5F2] min-h-0 pb-[calc(104px+env(safe-area-inset-bottom))]">
         <Field label="Mã đầu tư / cổ phiếu">
           <input className={inputClass} value={form.stockCode} onChange={e => setForm({...form, stockCode: e.target.value.toUpperCase()})} placeholder="VD: VNM" />
         </Field>
         <Field label="Loại giao dịch"><select className={inputClass} value={form.action} onChange={e => setForm({...form, action: e.target.value})}><option value="buy">Mua</option><option value="sell">Bán</option></select></Field>
         <Field label="Ngày giao dịch"><input type="date" className={inputClass} value={form.tradeDate} onChange={e => setForm({...form, tradeDate: e.target.value})} /></Field>
         <Field label="Số lượng"><input type="number" min="0" step="any" className={inputClass} value={form.quantity} onChange={e => setForm({...form, quantity: e.target.value})} /></Field>
-        <Field label="Đơn giá (VND)"><input type="text" inputMode="numeric" className={`${inputClass} font-bold text-purple-500`} value={formatVndInput(form.price)} onChange={e => setForm({...form, price: e.target.value})} /></Field>
+        <Field label="Đơn giá (VND)"><input type="text" inputMode="numeric" className={`${inputClass} font-bold text-[#800020]`} value={formatVndInput(form.price)} onChange={e => setForm({...form, price: e.target.value})} /></Field>
         <Field label="Phí (VND)"><input type="text" inputMode="numeric" className={inputClass} value={formatVndInput(form.fee)} onChange={e => setForm({...form, fee: e.target.value})} /></Field>
         <Field label="Ghi chú (không bắt buộc)">
-          <textarea className="w-full min-w-0 max-w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-black/20 p-4 text-[15px] outline-none focus:border-purple-400 focus:bg-white dark:focus:bg-black/40 min-h-[100px] transition-colors" value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
+          <textarea className="w-full min-w-0 max-w-full rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] p-4 text-[15px] text-[#171018] outline-none focus:border-[#800020] min-h-[100px] transition-colors" value={form.note} onChange={e => setForm({...form, note: e.target.value})} />
         </Field>
     </div>
   </FullScreenMobileSheet>;
