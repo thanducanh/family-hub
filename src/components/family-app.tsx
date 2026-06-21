@@ -4,8 +4,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from "recharts";
+import { ArrowLeft, PieChart, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, PieChart as RechartsPie, Pie } from "recharts";
 import { TimeTreeCalendar } from "@/components/timetree-calendar";
 import { MemberSimsPanel } from "@/components/member-sims-panel";
 import { useUI } from "@/components/ui-context";
@@ -469,7 +469,12 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   const currentMember = data.members.find(member => member.id === user.memberId) || user.member;
   const headerUser = user.member ? user : currentMember ? { ...user, member: currentMember } : user;
   const content = children ? <>{children}</> : profilePageOpen ? <ProfilePage user={headerUser} member={currentMember} data={data} update={update} openChangePassword={() => setChangePasswordOpen(true)} logout={logout} savedUser={setUser} refreshCurrentUser={refreshCurrentUser} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} t={t} /> :
-    screen === "dashboard" ? <Dashboard data={data} go={go} notifications={notifications} user={user} /> :
+    screen === "dashboard" ? (
+      <>
+        <div className="md:hidden"><MobileStats data={data} user={user} /></div>
+        <div className="hidden md:block"><Dashboard data={data} go={go} notifications={notifications} user={user} /></div>
+      </>
+    ) :
     screen === "members" ? (
       <>
         <div className="md:hidden">
@@ -552,7 +557,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" || screen === "settings" || screen === "system" ? "pb-0" : "pb-[100px] md:pb-0"} ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
     <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} language={language} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
-    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" || screen === "system" ? "hidden md:block" : "block"}`}>
+    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" || screen === "system" || screen === "dashboard" ? "hidden md:block" : "block"}`}>
       <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
         <label className={`relative w-full max-w-md ${screen === "finance" ? "hidden md:block" : "block"}`}><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
         <div className="relative ml-auto flex items-center gap-1 md:gap-2">
@@ -566,7 +571,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       </div>
     </header>
     <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
-    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" || screen === "settings" || screen === "system" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && screen !== "system" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
+    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" || screen === "settings" || screen === "system" || screen === "dashboard" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && screen !== "system" && screen !== "dashboard" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
     {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
@@ -2259,7 +2264,7 @@ function MobileNav({ screen, profileOpen, go, openProfile, language }: { screen:
       </button>
 
       <button onClick={() => go("dashboard")} className={`${navItemClass} ${screen === "dashboard" && !profileOpen ? activeColor : inactiveColor}`}>
-        <span className="text-lg leading-none"><HomeIcon /></span>
+        <span className="text-lg leading-none"><BarChart3 className="size-[18px]" /></span>
         <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{mobileT(language, "nav.stats")}</span>
       </button>
 
@@ -7029,6 +7034,178 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
   </div>;
 }
 
+const STATS_COLORS = ["#E11D48", "#D4AF37", "#059669", "#800020", "#3B82F6", "#F59E0B", "#8B5CF6", "#14B8A6"];
+
+function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
+  const [filterMemberId, setFilterMemberId] = useState<string>("all");
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const currentMonthTransactions = data.transactions.filter(t => {
+    const d = new Date(t.date);
+    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+  });
+
+  const memberFilter = (t: Transaction) => filterMemberId === "all" || t.memberId === filterMemberId;
+
+  const expensesByCategory = currentMonthTransactions
+    .filter(t => t.type === "expense" && memberFilter(t))
+    .reduce((acc, t) => {
+      acc[t.category] = (acc[t.category] || 0) + Math.abs(t.amount);
+      return acc;
+    }, {} as Record<string, number>);
+
+  const sortedCategories = Object.entries(expensesByCategory).sort((a, b) => b[1] - a[1]);
+  const totalExpense = sortedCategories.reduce((sum, [, amount]) => sum + amount, 0);
+
+  const pieData = sortedCategories.map(([name, value], idx) => ({
+    name, value, color: STATS_COLORS[idx % STATS_COLORS.length]
+  }));
+
+  const incomeByMember = currentMonthTransactions
+    .filter(t => t.type === "income" && memberFilter(t))
+    .reduce((acc, t) => {
+      const mid = t.memberId || "unknown";
+      acc[mid] = (acc[mid] || 0) + Math.abs(t.amount);
+      return acc;
+    }, {} as Record<string, number>);
+  const totalIncome = Object.values(incomeByMember).reduce((sum, val) => sum + val, 0);
+
+  const expenseByMember = currentMonthTransactions
+    .filter(t => t.type === "expense" && memberFilter(t))
+    .reduce((acc, t) => {
+      const mid = t.memberId || "unknown";
+      acc[mid] = (acc[mid] || 0) + Math.abs(t.amount);
+      return acc;
+    }, {} as Record<string, number>);
+
+  const getMemberName = (id: string) => {
+    if (id === "unknown") return "Chung";
+    return data.members.find(m => m.id === id)?.nickname || data.members.find(m => m.id === id)?.name || "Không rõ";
+  };
+
+  const money = (val: number) => val.toLocaleString('vi-VN') + ' ₫';
+
+  return (
+    <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[100px]">
+      <div className="sticky top-0 z-30 bg-[#800020] px-4 py-3 border-b border-[#E8DCD5] shadow-sm flex items-center justify-between">
+        <h1 className="text-lg font-bold text-white">Thống kê</h1>
+        {data.members.length > 0 && (
+          <select 
+            value={filterMemberId} 
+            onChange={e => setFilterMemberId(e.target.value)}
+            className="bg-[#FFFFFF] text-[#800020] border border-[#E8DCD5] rounded-lg px-2 py-1 text-sm outline-none font-medium shadow-sm"
+          >
+            <option value="all">Tất cả thành viên</option>
+            {data.members.map(m => (
+              <option key={m.id} value={m.id}>{m.nickname || m.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      <div className="p-4 space-y-4">
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="bg-[#F8E7EC] text-[#800020] p-1.5 rounded-lg"><PieChart className="size-5" /></div>
+            <h2 className="font-bold text-[#171018]">Chi tiêu theo danh mục</h2>
+          </div>
+          
+          {sortedCategories.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-6 text-center">
+              <PieChart className="size-10 text-[#E8DCD5] mb-2" />
+              <p className="text-[#6B5E64] text-[13px]">Chưa có chi tiêu trong tháng</p>
+            </div>
+          ) : (
+            <>
+              <div className="h-40 w-full relative mb-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsPie>
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2} dataKey="value" stroke="none">
+                      {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                    </Pie>
+                  </RechartsPie>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-[10px] text-[#6B5E64] font-medium">Tổng chi</span>
+                  <span className="text-[12px] font-bold text-[#E11D48]">{money(totalExpense)}</span>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {pieData.map((entry) => (
+                  <div key={entry.name}>
+                    <div className="flex justify-between text-[13px] mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }}></span>
+                        <span className="text-[#171018] font-medium">{entry.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[#E11D48] font-bold">{money(entry.value)}</span>
+                        <span className="text-[#6B5E64] text-[11px] w-8 text-right">{Math.round((entry.value / totalExpense) * 100)}%</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="bg-[#F8E7EC] text-[#800020] p-1.5 rounded-lg"><TrendingUp className="size-5" /></div>
+              <h2 className="font-bold text-[#171018]">Thu nhập {filterMemberId !== "all" ? "" : ""}</h2>
+            </div>
+            <p className="text-[16px] font-bold text-[#059669]">+{money(totalIncome)}</p>
+          </div>
+          
+          {Object.keys(incomeByMember).length === 0 ? (
+            <p className="text-[#6B5E64] text-[13px] text-center py-2">Chưa có thu nhập</p>
+          ) : (
+            filterMemberId === "all" && (
+              <div className="space-y-3 border-t border-[#E8DCD5] pt-3">
+                {Object.entries(incomeByMember).map(([mid, amount]) => (
+                  <div key={mid} className="flex justify-between items-center text-[13px]">
+                    <span className="text-[#6B5E64] font-medium">{getMemberName(mid)}</span>
+                    <span className="text-[#059669] font-bold">+{money(amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="bg-[#F8E7EC] text-[#800020] p-1.5 rounded-lg"><TrendingDown className="size-5" /></div>
+              <h2 className="font-bold text-[#171018]">Chi tiêu {filterMemberId !== "all" ? "" : ""}</h2>
+            </div>
+            <p className="text-[16px] font-bold text-[#E11D48]">-{money(totalExpense)}</p>
+          </div>
+
+          {Object.keys(expenseByMember).length === 0 ? (
+            <p className="text-[#6B5E64] text-[13px] text-center py-2">Chưa có chi tiêu</p>
+          ) : (
+            filterMemberId === "all" && (
+              <div className="space-y-3 border-t border-[#E8DCD5] pt-3">
+                {Object.entries(expenseByMember).map(([mid, amount]) => (
+                  <div key={mid} className="flex justify-between items-center text-[13px]">
+                    <span className="text-[#6B5E64] font-medium">{getMemberName(mid)}</span>
+                    <span className="text-[#E11D48] font-bold">-{money(amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MobileSystemScreen({ go }: { go: (s: Screen) => void }) {
   const [activeSystemTab, setActiveSystemTab] = useState<"log">("log");
   const [logs, setLogs] = useState<AppLog[]>([]);
@@ -7088,7 +7265,7 @@ function MobileSystemScreen({ go }: { go: (s: Screen) => void }) {
     <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[100px]">
       <div className="sticky top-0 z-30 bg-[#800020] text-white shadow-md">
         <div className="flex h-14 items-center px-4">
-          <button onClick={() => go("dashboard")} className="grid size-10 place-items-center rounded-full hover:bg-white/10 -ml-2 mr-2">
+          <button onClick={() => go("members")} className="grid size-10 place-items-center rounded-full hover:bg-white/10 -ml-2 mr-2">
             <ArrowLeft className="size-5" />
           </button>
           <h1 className="text-lg font-bold">Hệ thống</h1>
