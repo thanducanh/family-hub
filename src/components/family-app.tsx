@@ -427,12 +427,21 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     screen === "calendar" ? <Calendar data={data} user={user} /> :
     screen === "notes" ? <Notes data={data} open={setEditor} t={t} /> :
     screen === "notifications" ? <NotificationsView user={user} notifications={notifications} setNotifications={setNotifications} /> :
-    <Settings user={user} onLogout={logout} openProfile={() => setProfilePageOpen(true)} openChangePassword={() => setChangePasswordOpen(true)} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} updateData={setData} t={t} />;
+    (
+      <>
+        <div className="md:hidden">
+          <MobileSettings user={user} onLogout={logout} openChangePassword={() => setChangePasswordOpen(true)} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} t={t} />
+        </div>
+        <div className="hidden md:block">
+          <Settings user={user} onLogout={logout} openProfile={() => setProfilePageOpen(true)} openChangePassword={() => setChangePasswordOpen(true)} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} updateData={setData} t={t} />
+        </div>
+      </>
+    );
 
   return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" ? "pb-0" : "pb-[100px] md:pb-0"} ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
     <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} t={t} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
-    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" ? "hidden md:block" : "block"}`}>
+    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}>
       <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
         <label className={`relative w-full max-w-md ${screen === "finance" ? "hidden md:block" : "block"}`}><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
         <div className="relative ml-auto flex items-center gap-1 md:gap-2">
@@ -446,7 +455,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       </div>
     </header>
     <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
-    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
+    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" || screen === "settings" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
     {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
@@ -2143,9 +2152,9 @@ function MobileNav({ screen, profileOpen, go, openProfile, t }: { screen: Screen
         <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Thu chi</span>
       </button>
 
-      <button onClick={openProfile} className={`${navItemClass} ${profileOpen ? activeColor : inactiveColor}`}>
-        <span className="text-lg leading-none"><UserIcon /></span>
-        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Cá nhân</span>
+      <button onClick={() => go("settings")} className={`${navItemClass} ${screen === "settings" && !profileOpen ? activeColor : inactiveColor}`}>
+        <span className="text-lg leading-none"><SettingsIcon /></span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Cài đặt</span>
       </button>
     </nav>
   );
@@ -6900,6 +6909,102 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
       <div className="mt-6 flex gap-3">{existing && actor.role === "full_access" && editor.kind !== "members" && <button type="button" onClick={() => remove(editor.kind, existing.id)} className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-bold text-rose-500">Xóa</button>}<button className="flex-1 rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white">Lưu</button></div>
     </form>
   </div>;
+}
+
+function MobileSettings({ user, onLogout, openChangePassword, language, setLanguage, theme, setTheme, t }: { user: AuthUser; onLogout: () => void; openChangePassword: () => void; language: Language; setLanguage: (x: Language) => void; theme: Theme; setTheme: (x: Theme) => void; t: ReturnType<typeof translator> }) {
+  const ui = useUI();
+  const [activeSheet, setActiveSheet] = useState<"theme" | "language" | null>(null);
+
+  async function handleLogout() {
+    if (!await ui.confirm("Đăng xuất?", "Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng?")) return;
+    onLogout();
+  }
+
+  const GlobeIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>;
+
+  function ItemRow({ icon, label, value, onClick, children }: any) {
+    return (
+      <div className="relative flex items-center justify-between py-2.5 px-3 active:bg-[#F8E7EC] transition-colors border-b border-[#E8DCD5] last:border-0 cursor-pointer" onClick={onClick}>
+        <div className="flex items-center gap-2.5">
+          <span className="grid size-[28px] shrink-0 place-items-center rounded-full bg-[#F8E7EC] text-[#800020] shadow-sm border border-[#D4AF37] [&>svg]:size-[14px]">
+            {icon}
+          </span>
+          <span className="text-[13px] font-bold text-[#171018]">{label}</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#6B5E64] pointer-events-none">
+          {value && <span>{value}</span>}
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-2xl font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif] flex flex-col min-h-[calc(100dvh-64px)] bg-[#F8F5F2] px-3 pt-3 pb-4">
+      <div className="space-y-4 flex-1">
+        <section>
+          <h2 className="text-[11px] font-bold text-[#800020] mb-1.5 ml-1 uppercase tracking-wider">Cài đặt An toàn - Bảo mật</h2>
+          <div className="rounded-[16px] bg-[#FFFFFF] shadow-sm border border-[#E8DCD5] overflow-hidden">
+            <ItemRow icon={<LockIcon />} label="Đổi mật khẩu" onClick={openChangePassword}>
+              <span className="text-[#D4AF37] text-lg leading-none">›</span>
+            </ItemRow>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-[11px] font-bold text-[#800020] mb-1.5 ml-1 uppercase tracking-wider">Cài đặt Ứng dụng</h2>
+          <div className="rounded-[16px] bg-[#FFFFFF] shadow-sm border border-[#E8DCD5] overflow-hidden">
+            <ItemRow icon={<ThemeIcon dark={theme==="dark"} />} label="Đổi giao diện" value={theme === "light" ? "Sáng" : theme === "dark" ? "Tối" : "Theo hệ thống"} onClick={() => setActiveSheet("theme")}>
+              <span className="text-[#D4AF37] text-lg leading-none">›</span>
+            </ItemRow>
+            <ItemRow icon={<GlobeIcon />} label="Ngôn ngữ" value={language === "vi" ? "Tiếng Việt" : language === "en" ? "English" : "日本語"} onClick={() => setActiveSheet("language")}>
+              <span className="text-[#D4AF37] text-lg leading-none">›</span>
+            </ItemRow>
+          </div>
+        </section>
+
+        <div className="pt-2">
+          <div className="rounded-[16px] bg-[#FFFFFF] shadow-sm border border-[#E8DCD5] overflow-hidden">
+            <ItemRow icon={<LogoutIcon />} label="Đăng xuất" onClick={handleLogout} />
+          </div>
+        </div>
+      </div>
+
+      {activeSheet === "theme" && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={() => setActiveSheet(null)}>
+          <div className="bg-[#FFFFFF] rounded-t-[20px] p-4 animate-in slide-in-from-bottom duration-200" onClick={e => e.stopPropagation()}>
+            <h3 className="text-[14px] font-bold text-[#800020] mb-4 text-center">Chọn giao diện</h3>
+            <div className="space-y-2">
+              {(["light", "dark", "system"] as Theme[]).map(x => (
+                <button key={x} onClick={() => { setTheme(x); setActiveSheet(null); }} className={`w-full flex items-center justify-between p-3 rounded-[12px] border ${theme === x ? "border-[#800020] bg-[#F8E7EC] text-[#800020]" : "border-[#E8DCD5] bg-[#F8F5F2] text-[#171018]"} text-[13px] font-bold transition-colors`}>
+                  <span>{t(x)}</span>
+                  {theme === x && <span className="text-[#D4AF37] text-lg leading-none font-bold">✓</span>}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setActiveSheet(null)} className="w-full mt-4 p-3 rounded-[12px] bg-[#F8F5F2] border border-[#E8DCD5] text-[#6B5E64] font-bold text-[13px]">Hủy</button>
+          </div>
+        </div>
+      )}
+
+      {activeSheet === "language" && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={() => setActiveSheet(null)}>
+          <div className="bg-[#FFFFFF] rounded-t-[20px] p-4 animate-in slide-in-from-bottom duration-200" onClick={e => e.stopPropagation()}>
+            <h3 className="text-[14px] font-bold text-[#800020] mb-4 text-center">Chọn ngôn ngữ</h3>
+            <div className="space-y-2">
+              {[{ id: "vi", label: "Tiếng Việt" }, { id: "en", label: "English" }, { id: "ja", label: "日本語" }].map(x => (
+                <button key={x.id} onClick={() => { setLanguage(x.id as Language); setActiveSheet(null); }} className={`w-full flex items-center justify-between p-3 rounded-[12px] border ${language === x.id ? "border-[#800020] bg-[#F8E7EC] text-[#800020]" : "border-[#E8DCD5] bg-[#F8F5F2] text-[#171018]"} text-[13px] font-bold transition-colors`}>
+                  <span>{x.label}</span>
+                  {language === x.id && <span className="text-[#D4AF37] text-lg leading-none font-bold">✓</span>}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setActiveSheet(null)} className="w-full mt-4 p-3 rounded-[12px] bg-[#F8F5F2] border border-[#E8DCD5] text-[#6B5E64] font-bold text-[13px]">Hủy</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Settings({ user, onLogout, openProfile, openChangePassword, language, setLanguage, theme, setTheme, updateData, t }: { user: AuthUser; onLogout: () => void; openProfile: () => void; openChangePassword: () => void; language: Language; setLanguage: (x: Language) => void; theme: Theme; setTheme: (x: Theme) => void; updateData: (data: AppData) => void; t: ReturnType<typeof translator> }) {
