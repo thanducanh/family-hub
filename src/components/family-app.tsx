@@ -2118,11 +2118,11 @@ function LoadingSkeleton() {
 
 function MobileNav({ screen, profileOpen, go, openProfile, t }: { screen: Screen; profileOpen: boolean; go: (s: Screen) => void; openProfile: () => void; t: ReturnType<typeof translator> }) {
   const navItemClass = "flex w-full h-full flex-col items-center justify-center gap-1.5 transition-all px-0";
-  const activeColor = "text-[#facc15]";
-  const inactiveColor = "text-[#cbd5e1]";
+  const activeColor = "text-[#D4AF37]";
+  const inactiveColor = "text-white/70";
   
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-5 h-16 w-full items-center border-t border-white/10 bg-[#012f2d]/92 pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,.25)] backdrop-blur-xl min-[769px]:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-5 h-16 w-full items-center border-t border-[#800020] bg-[#800020] pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,.25)] backdrop-blur-xl min-[769px]:hidden">
       <button onClick={() => go("members")} className={`${navItemClass} ${screen === "members" && !profileOpen ? activeColor : inactiveColor}`}>
         <span className="text-lg leading-none"><HomeIcon /></span>
         <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Trang chủ</span>
@@ -7429,16 +7429,16 @@ function MobileHome({
     : {};
   const heroClass = coverUrl
     ? "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden pointer-events-none"
-    : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-gradient-to-br from-[#003f3a] to-[#012f2d] pointer-events-none";
+    : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-[#800020] pointer-events-none";
 
   return (
-    <div className="min-h-[100dvh] overflow-x-hidden bg-[#003f3a] pb-24 font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif] text-white">
+    <div className="min-h-[100dvh] overflow-x-hidden bg-[#F8F5F2] pb-24 font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif]">
       <section style={heroStyle} className={heroClass}>
         {coverUrl && (
-          <div className="absolute inset-0 bg-black/55 pointer-events-none z-0" />
+          <div className="absolute inset-0 bg-black/30 pointer-events-none z-0" />
         )}
         {!coverUrl && (
-          <div className="absolute inset-0 bg-black/40 pointer-events-none z-0" />
+          <div className="absolute inset-0 bg-black/25 pointer-events-none z-0" />
         )}
         
         <div className="relative z-10 w-full h-full flex flex-col pointer-events-auto">
@@ -7456,7 +7456,7 @@ function MobileHome({
           </header>
 
           <div className="mt-2">
-            <p className="text-[12px] font-medium text-cyan-100/90">{greeting}!</p>
+            <p className="text-[12px] font-medium text-white/90">{greeting}!</p>
             <h1 className="mt-1 truncate text-[24px] font-bold leading-tight text-white drop-shadow-sm">{user.displayName}</h1>
             <span className="mt-2 inline-flex rounded-full bg-black/30 px-2.5 py-0.5 text-[10px] font-bold text-white ring-1 ring-white/20">
               {user.role === "full_access" ? "Quản lý gia đình" : accessLabel(user.role)}
@@ -7474,16 +7474,16 @@ function MobileHome({
               <span className="text-xl font-light text-white">›</span>
             </button>
             <div className="grid grid-cols-2 gap-3 pointer-events-auto">
-              <button type="button" onClick={() => setShowMembers(true)} className="h-11 min-w-0 rounded-full bg-[#facc15] px-3 text-[13px] font-bold text-[#003f3a] shadow-sm active:scale-[.99]">Thành viên</button>
-              <button type="button" onClick={() => go("finance")} className="h-11 min-w-0 rounded-full bg-[#064e46]/80 px-3 text-[13px] font-bold text-white shadow-sm ring-1 ring-white/50 backdrop-blur-sm active:scale-[.99]">Quản lý thu chi</button>
+              <button type="button" onClick={() => setShowMembers(true)} className="h-11 min-w-0 rounded-full bg-[#800020] px-3 text-[13px] font-bold text-white shadow-sm active:scale-[.99]">Thành viên</button>
+              <button type="button" onClick={() => go("settings")} className="h-11 min-w-0 rounded-full bg-[#F8E7EC] border border-[#800020] px-3 text-[13px] font-bold text-[#800020] shadow-sm active:scale-[.99]">Hệ thống</button>
             </div>
           </div>
         </div>
       </section>
 
       <div className="space-y-3 px-3 pt-3 pointer-events-auto">
-        <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
-          <h2 className="text-[14px] font-semibold text-white mb-3">Thông tin cá nhân</h2>
+        <section className="rounded-[20px] bg-[#FFFFFF] p-4 shadow-sm border border-[#E8DCD5]">
+          <h2 className="text-[14px] font-semibold text-[#171018] mb-3">Thông tin cá nhân</h2>
           <div className="grid grid-cols-3 gap-y-4 gap-x-2">
             {[
               ["Thông tin", <UserIcon />, () => setProfileSheet("info")],
@@ -7492,8 +7492,8 @@ function MobileHome({
               ["Thẻ NH", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="14" x="2" y="5" rx="2"></rect><line x1="2" x2="22" y1="10" y2="10"></line></svg>, () => setProfileSheet("bank")],
               ["SIM", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect><path d="M12 18h.01"></path></svg>, () => setProfileSheet("sim")]
             ].map(([label, icon, action]: any) => (
-              <button key={label as string} onClick={action} className="flex min-w-0 flex-col items-center justify-start gap-2 rounded-2xl text-center text-[11px] font-medium text-[#cbd5e1] active:opacity-70 transition-opacity">
-                <span className="grid size-[40px] shrink-0 place-items-center rounded-full bg-[#facc15]/15 text-[#facc15] shadow-sm ring-1 ring-[#facc15]/30 [&>svg]:size-[18px]">{icon}</span>
+              <button key={label as string} onClick={action} className="flex min-w-0 flex-col items-center justify-start gap-2 rounded-2xl text-center text-[11px] font-medium text-[#6B5E64] active:opacity-70 transition-opacity">
+                <span className="grid size-[40px] shrink-0 place-items-center rounded-full bg-[#F8E7EC] text-[#800020] shadow-sm border border-[#D4AF37] [&>svg]:size-[18px]">{icon}</span>
                 <span className="w-full whitespace-normal leading-tight line-clamp-2 px-0.5">{label}</span>
               </button>
             ))}
@@ -7501,30 +7501,30 @@ function MobileHome({
         </section>
 
         <section onClick={() => go("finance")} className="cursor-pointer">
-          <div className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
+          <div className="rounded-[20px] bg-[#FFFFFF] p-4 shadow-sm border border-[#E8DCD5]">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-[15px] font-bold text-white">Quản lý tài chính cá nhân</h2>
-              <span className="text-[13px] font-bold text-[#facc15]">Chi tiết</span>
+              <h2 className="text-[15px] font-bold text-[#171018]">Quản lý tài chính cá nhân</h2>
+              <span className="text-[13px] font-bold text-[#D4AF37]">Chi tiết</span>
             </div>
             {homeFinanceStatus === "unauthorized" ? (
-              <p className="py-6 text-center text-sm font-semibold text-[#facc15]">Đăng nhập để xem tài chính</p>
+              <p className="py-6 text-center text-sm font-semibold text-[#D4AF37]">Đăng nhập để xem tài chính</p>
             ) : homeFinanceStatus === "loading" ? (
-              <p className="py-6 text-center text-sm text-[#cbd5e1]">Đang tải dữ liệu tài chính...</p>
+              <p className="py-6 text-center text-sm text-[#6B5E64]">Đang tải dữ liệu tài chính...</p>
             ) : homeFinanceStatus === "error" ? (
-              <p className="py-6 text-center text-sm text-[#cbd5e1]">Không thể tải dữ liệu tài chính</p>
+              <p className="py-6 text-center text-sm text-[#6B5E64]">Không thể tải dữ liệu tài chính</p>
             ) : <div className="flex gap-3">
               <div className="flex-1 flex flex-col justify-center">
-                <p className="text-[12px] font-medium text-[#cbd5e1]">Tháng {now.getMonth() + 1}</p>
+                <p className="text-[12px] font-medium text-[#6B5E64]">Tháng {now.getMonth() + 1}</p>
                 <div className="mt-1.5 space-y-0.5">
-                  <p className="text-[13px] font-semibold text-white">Thu: <span className="text-emerald-400">{money(income)}</span></p>
-                  <p className="text-[13px] font-semibold text-white">Chi: <span className="text-rose-400">{money(expense)}</span></p>
+                  <p className="text-[13px] font-semibold text-[#171018]">Thu: <span className="text-emerald-500">{money(income)}</span></p>
+                  <p className="text-[13px] font-semibold text-[#171018]">Chi: <span className="text-rose-500">{money(expense)}</span></p>
                 </div>
-                <p className="mt-2.5 text-[10px] text-[#cbd5e1]">Cập nhật đến ngày {now.getDate().toString().padStart(2, '0')}/{(now.getMonth() + 1).toString().padStart(2, '0')}/{now.getFullYear()}</p>
+                <p className="mt-2.5 text-[10px] text-[#6B5E64]">Cập nhật đến ngày {now.getDate().toString().padStart(2, '0')}/{(now.getMonth() + 1).toString().padStart(2, '0')}/{now.getFullYear()}</p>
               </div>
               <div className="w-[140px] h-28 shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} barSize={10}>
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#cbd5e1" }} dy={4} />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6B5E64" }} dy={4} />
                     <Bar dataKey="thu" radius={[2, 2, 0, 0]}>
                       {chartData.map((entry, index) => <Cell key={`cell-thu-${index}`} fill={index === 2 ? "#10b981" : "#10b98160"} />)}
                     </Bar>
@@ -7538,11 +7538,11 @@ function MobileHome({
           </div>
         </section>
 
-        <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
-          <h2 className="text-sm font-bold text-white mb-3">Lối tắt nhanh</h2>
+        <section className="rounded-[20px] bg-[#FFFFFF] p-4 shadow-sm border border-[#E8DCD5]">
+          <h2 className="text-sm font-bold text-[#171018] mb-3">Lối tắt nhanh</h2>
           <div className="grid grid-cols-2 gap-3">
             {shortcuts.map(item => (
-              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 text-left text-white active:bg-white/10">
+              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-[#F8F5F2] text-left text-[#171018] active:bg-[#E8DCD5]">
                 <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.color} text-white`}>{item.icon}</span>
                 <span className="text-xs font-bold leading-tight">{item.label}</span>
               </button>
@@ -7550,19 +7550,19 @@ function MobileHome({
           </div>
         </section>
 
-        <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
-          <h2 className="font-bold text-white">Hoạt động gần đây</h2>
+        <section className="rounded-[20px] bg-[#FFFFFF] p-4 shadow-sm border border-[#E8DCD5]">
+          <h2 className="font-bold text-[#171018]">Hoạt động gần đây</h2>
           {notifications.length ? (
             <div className="mt-3 space-y-3">
               {notifications.slice(0, 3).map(item => (
-                <button key={item.id} onClick={() => go("notifications")} className="block w-full rounded-2xl bg-white/5 p-3 text-left active:bg-white/10">
-                  <b className="block truncate text-sm text-white">{item.actorName || "Family Hub"}</b>
-                  <p className="mt-1 line-clamp-2 text-xs text-[#cbd5e1]">{item.message}</p>
+                <button key={item.id} onClick={() => go("notifications")} className="block w-full rounded-2xl bg-[#F8F5F2] p-3 text-left active:bg-[#E8DCD5]">
+                  <b className="block truncate text-sm text-[#171018]">{item.actorName || "Family Hub"}</b>
+                  <p className="mt-1 line-clamp-2 text-xs text-[#6B5E64]">{item.message}</p>
                 </button>
               ))}
             </div>
           ) : (
-            <p className="py-6 text-center text-sm text-[#cbd5e1]">Chưa có hoạt động gần đây</p>
+            <p className="py-6 text-center text-sm text-[#6B5E64]">Chưa có hoạt động gần đây</p>
           )}
         </section>
       </div>
