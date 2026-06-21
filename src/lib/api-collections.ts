@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireSession, getSessionUser, buildDataFilter } from "@/lib/auth";
 import { ensureMemberSimsTable } from "@/lib/member-sims";
 
 export type Collection = "members" | "tasks" | "transactions" | "events" | "notes";
@@ -271,10 +271,26 @@ export function collectionHandlers(collection: Collection) {
   const fields = columns[collection];
   return {
     GET: async () => {
-      if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      const user = await getSessionUser();
+      if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
       await ensureCollectionSchema(collection);
       const selectFields = collection === "transactions" ? [...fields, "created_at"] : fields;
-      const result = await pool.query(`SELECT ${selectFields.join(", ")} FROM ${collection} ORDER BY id`);
+      
+      let where = '1=1';
+      let params: any[] = [];
+      if (collection !== 'members') {
+         const filter = buildDataFilter(user, '', 1, 'member_id');
+         where = filter.where;
+         params = filter.params;
+         
+         if (where !== '1=1') {
+            if (collection === 'tasks') {
+               where = `(member_id = $1 OR assignee = $1)`;
+            }
+         }
+      }
+      
+      const result = await pool.query(`SELECT ${selectFields.join(", ")} FROM ${collection} WHERE ${where} ORDER BY id`, params);
       return NextResponse.json(result.rows.map(row => fromDb(collection, row)));
     },
     POST: async (request: NextRequest) => {

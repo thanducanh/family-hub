@@ -12,7 +12,7 @@ import { useUI } from "@/components/ui-context";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { requestNotificationPermission } from "@/lib/notifications";
 import { translator } from "@/lib/i18n";
-import { dataService, type SystemStatus } from "@/services/data-service";
+import { dataService, setCacheUserId, type SystemStatus } from "@/services/data-service";
 import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, CardReward, CardRewardType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberJob, MemberJobStatus, MemberSim, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
 import * as XLSX from "xlsx";
 import QRCode from "react-qr-code";
@@ -331,6 +331,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   }, []);
   useEffect(() => {
     if (!user) return;
+    setCacheUserId(user.id);
     const startedAt = performance.now();
     queueMicrotask(() => {
       setData(visibleDataFor(user, dataService.loadCache()));
@@ -3489,27 +3490,29 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
 
   const overviewData = overviewDataCache[year] || {};
   const currentCash = Number(overviewData.currentCash || 0);
+
   const monthItems = useMemo(() => {
-    const exps = toArray(appData?.transactions).filter((t: any) => String(t.type).toLowerCase() === "expense").map((t: any) => ({
+    const summary = getMonthlyFinanceSummary(toArray(appData?.transactions), toArray(incomes), month, year, "all");
+    
+    const exps = summary.expenseRecords.map((t: any) => ({
       ...t, _isExpense: true, _displayDate: t.date || t.createdAt || t.created_at, _displayName: t.title || t.name || "Chi tiêu", _displayCategory: t.category || "Khác",
       _displayTime: t.transactionTime || t.transaction_time || (String(t.date || "").includes("T") ? String(t.date).slice(11, 16) : "")
     }));
-    const incs = toArray(incomes).map(t => ({
+    
+    const incs = summary.incomeRecords.map((t: any) => ({
       ...t, _isIncome: true, _displayDate: t.receivedDate || t.incomeDate || t.date || t.createdAt, _displayName: t.name || t.title || "Thu nhập", _displayCategory: t.category || "Khác",
       _displayTime: t.transactionTime || t.transaction_time || (String(t.date || "").includes("T") ? String(t.date).slice(11, 16) : "")
     }));
     
-    const all = [...exps, ...incs].filter(item => {
-      const d = new Date(item._displayDate || 0);
-      return d.getMonth() + 1 === month && d.getFullYear() === year;
-    });
-    
-    return [...all].sort((a, b) => {
+    return [...exps, ...incs].sort((a, b) => {
       const dateDiff = new Date(b._displayDate || 0).getTime() - new Date(a._displayDate || 0).getTime();
       if (dateDiff) return dateDiff;
       return String(b._displayTime || "").localeCompare(String(a._displayTime || ""));
     });
   }, [appData?.transactions, incomes, month, year]);
+
+  const monthIncsTotal = monthItems.filter(i => i._isIncome).reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
+  const monthExpsTotal = monthItems.filter(i => !i._isIncome).reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
 
   const displayList = monthItems.filter(item => subTab === "all" || (subTab === "income" ? item._isIncome : !item._isIncome));
   const groupedItems = displayList.reduce((groups: Record<string, any[]>, item: any) => {
@@ -3537,6 +3540,35 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
           <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] transition-colors ${subTab === value ? "bg-[#800020] border border-transparent font-semibold text-white shadow-sm" : "bg-[#F8E7EC] border border-[#E8DCD5] font-medium text-[#800020] active:opacity-70"}`}>{label}</button>
         ))}
       </div>
+
+      {subTab === "all" && (
+        <div className="flex justify-between items-center bg-[#F8F5F2] rounded-lg p-2 mb-1 mt-3 text-[12px] font-medium border border-[#E8DCD5]">
+          <div className="text-center flex-1 border-r border-[#E8DCD5]">
+            <p className="text-[#6B5E64]">Thu tháng</p>
+            <p className="text-[#059669] font-bold">{money(monthIncsTotal)}</p>
+          </div>
+          <div className="text-center flex-1 border-r border-[#E8DCD5]">
+            <p className="text-[#6B5E64]">Chi tháng</p>
+            <p className="text-[#E11D48] font-bold">{money(monthExpsTotal)}</p>
+          </div>
+          <div className="text-center flex-1">
+            <p className="text-[#6B5E64]">Còn lại</p>
+            <p className={`font-bold ${monthIncsTotal - monthExpsTotal >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{money(monthIncsTotal - monthExpsTotal)}</p>
+          </div>
+        </div>
+      )}
+      {subTab === "income" && (
+        <div className="bg-[#F8F5F2] rounded-lg p-2.5 mb-1 mt-3 flex justify-between items-center text-[13px] font-medium border border-[#E8DCD5]">
+          <span className="text-[#6B5E64]">Tổng thu tháng:</span>
+          <span className="text-[#059669] font-bold text-[15px]">{money(monthIncsTotal)}</span>
+        </div>
+      )}
+      {subTab === "expense" && (
+        <div className="bg-[#F8F5F2] rounded-lg p-2.5 mb-1 mt-3 flex justify-between items-center text-[13px] font-medium border border-[#E8DCD5]">
+          <span className="text-[#6B5E64]">Tổng chi tháng:</span>
+          <span className="text-[#E11D48] font-bold text-[15px]">{money(monthExpsTotal)}</span>
+        </div>
+      )}
     </div>
 
     <div className="min-h-[300px] pb-4">
@@ -3561,9 +3593,9 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
       )}
     </div>
 
-    <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-14">
-      <button type="button" aria-label={subTab === "all" ? "Thêm giao dịch" : subTab === "income" ? "Thêm thu" : "Thêm chi"} onClick={() => setEditor({ type: subTab === "all" ? "expense" : subTab, isNew: true })} className={`grid size-14 place-items-center rounded-full shadow-[0_8px_16px_rgba(128,0,32,0.24)] active:scale-95 transition-transform bg-[#800020] text-white`}>
-        <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
+    <div className="fixed bottom-[calc(88px+env(safe-area-inset-bottom))] right-[18px] z-40">
+      <button type="button" aria-label={subTab === "all" ? "Thêm giao dịch" : subTab === "income" ? "Thêm thu" : "Thêm chi"} onClick={() => setEditor({ type: subTab === "all" ? "expense" : subTab, isNew: true })} className={`grid w-[52px] h-[52px] place-items-center rounded-full shadow-[0_8px_16px_rgba(128,0,32,0.24)] active:scale-95 transition-transform bg-[#800020] text-white`}>
+        <svg className="w-[24px] h-[24px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
       </button>
     </div>
 
@@ -3756,9 +3788,9 @@ function MobileSavingsList({ data: appData, update, user, refreshTrigger, refres
       )}
     </div>
     
-    <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-14">
-      <button type="button" aria-label="Thêm tiết kiệm" onClick={() => setEditor({ isNew: true })} className="grid size-14 place-items-center rounded-full bg-[#800020] text-white shadow-[0_8px_16px_rgba(128,0,32,0.24)] active:scale-95 transition-transform">
-        <svg className="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
+    <div className="fixed bottom-[calc(88px+env(safe-area-inset-bottom))] right-[18px] z-40">
+      <button type="button" aria-label="Thêm tiết kiệm" onClick={() => setEditor({ isNew: true })} className="grid w-[52px] h-[52px] place-items-center rounded-full bg-[#800020] text-white shadow-[0_8px_16px_rgba(128,0,32,0.24)] active:scale-95 transition-transform">
+        <svg className="w-[24px] h-[24px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
       </button>
     </div>
 
@@ -3945,9 +3977,9 @@ function MobileInvestmentList({ data: appData, update, user, refreshTrigger, ref
       )}
     </div>
     
-    <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-14">
-      <button type="button" aria-label="Thêm đầu tư" onClick={() => setEditor({ isNew: true })} className="grid size-14 place-items-center rounded-full bg-[#800020] text-white shadow-[0_8px_16px_rgba(128,0,32,0.24)] active:scale-95 transition-transform">
-        <svg className="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
+    <div className="fixed bottom-[calc(88px+env(safe-area-inset-bottom))] right-[18px] z-40">
+      <button type="button" aria-label="Thêm đầu tư" onClick={() => setEditor({ isNew: true })} className="grid w-[52px] h-[52px] place-items-center rounded-full bg-[#800020] text-white shadow-[0_8px_16px_rgba(128,0,32,0.24)] active:scale-95 transition-transform">
+        <svg className="w-[24px] h-[24px]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
       </button>
     </div>
 
@@ -7002,171 +7034,431 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
 
 const STATS_COLORS = ["#E11D48", "#D4AF37", "#059669", "#800020", "#3B82F6", "#F59E0B", "#8B5CF6", "#14B8A6"];
 
+export function getMonthlyFinanceSummary(
+  transactions: any[],
+  incomes: any[],
+  month: number,
+  year: number,
+  memberFilterId: string = "all"
+) {
+  const getDate = (t: any) => {
+    const dStr = t.date || t.createdAt || t.created_at || t.receivedDate || t.incomeDate || t.occurred_at || t.start_date || 0;
+    return new Date(dStr);
+  };
+
+  const filterByMonth = (t: any) => {
+    const d = getDate(t);
+    return !Number.isNaN(d.getTime()) && d.getMonth() === month - 1 && d.getFullYear() === year;
+  };
+
+  const memberFilter = (t: any) => {
+    if (memberFilterId === "all") return true;
+    const mid = t.memberId || t.member_id || t.userId || t.user_id;
+    if (mid) return mid === memberFilterId;
+    return true;
+  };
+
+  const isSaving = (t: any) => {
+    const catStr = String(t.category || "").toLowerCase();
+    const typeStr = String(t.type || "").toLowerCase();
+    const titleStr = String(t.name || t.title || "").toLowerCase();
+    return catStr.includes('tiết kiệm') || titleStr.includes('tiết kiệm') || typeStr.includes('tiết kiệm') || t.savingsApplied || t.savings_applied;
+  };
+
+  const monthExps = transactions
+    .filter(t => String(t.type).toLowerCase() === "expense" || Number(t.amount) < 0)
+    .filter(filterByMonth)
+    .filter(memberFilter)
+    .filter(t => !isSaving(t));
+
+  const monthIncs = incomes
+    .filter(filterByMonth)
+    .filter(memberFilter);
+
+  const incomeTotal = monthIncs.reduce((sum, t) => sum + Math.abs(Number(t.amount || t.netAmount || 0)), 0);
+  const expenseTotal = monthExps.reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+  const netTotal = incomeTotal - expenseTotal;
+
+  const expenseByCategory = monthExps.reduce((acc, t) => {
+    const cat = t.category || "Khác";
+    acc[cat] = (acc[cat] || 0) + Math.abs(Number(t.amount) || 0);
+    return acc;
+  }, {} as Record<string, number>);
+
+  return {
+    incomeRecords: monthIncs,
+    expenseRecords: monthExps,
+    incomeTotal,
+    expenseTotal,
+    netTotal,
+    expenseByCategory
+  };
+}
+
 function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
   const [filterMemberId, setFilterMemberId] = useState<string>("all");
+  const [savingsRecords, setSavingsRecords] = useState<any[]>([]);
+  const [incomesRecords, setIncomesRecords] = useState<any[]>([]);
+  const [loadingIncomes, setLoadingIncomes] = useState(true);
+
   const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
-  const currentMonthTransactions = data.transactions.filter(t => {
-    const d = new Date(t.date);
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-  });
+  useEffect(() => {
+    fetch("/api/savings-records", { cache: "no-store" }).then(async response => {
+      const text = await response.text();
+      if (!text) return;
+      const result = JSON.parse(text);
+      if (!response.ok) return;
+      const arr = Array.isArray(result) ? result : Array.isArray(result.data) ? result.data : Array.isArray(result.items) ? result.items : Array.isArray(result.records) ? result.records : [];
+      setSavingsRecords(arr);
+    }).catch(() => setSavingsRecords([]));
+  }, []);
 
-  const memberFilter = (t: Transaction) => filterMemberId === "all" || t.memberId === filterMemberId;
+  useEffect(() => {
+    setLoadingIncomes(true);
+    Promise.all([
+      fetch(`/api/incomes?year=${selectedYear}`).then(r => r.json()),
+      fetch(`/api/incomes?year=${selectedYear - 1}`).then(r => r.json())
+    ]).then(([res1, res2]) => {
+      const p1 = res1?.data || res1;
+      const p2 = res2?.data || res2;
+      const a1 = toArray(p1?.allRecords?.length ? p1.allRecords : p1?.records || p1);
+      const a2 = toArray(p2?.allRecords?.length ? p2.allRecords : p2?.records || p2);
+      
+      const all = [...a1, ...a2];
+      const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
+      setIncomesRecords(unique);
+      setLoadingIncomes(false);
+    }).catch(() => { setIncomesRecords([]); setLoadingIncomes(false); });
+  }, [selectedYear]);
 
-  const expensesByCategory = currentMonthTransactions
-    .filter(t => t.type === "expense" && memberFilter(t))
-    .reduce((acc, t) => {
-      acc[t.category] = (acc[t.category] || 0) + Math.abs(t.amount);
-      return acc;
-    }, {} as Record<string, number>);
+  const totalCurrentSavings = savingsRecords.reduce((sum, item) => sum + (item.type === "withdraw" ? -Number(item.amount || 0) : Number(item.amount || 0)), 0);
 
-  const sortedCategories = Object.entries(expensesByCategory).sort((a, b) => b[1] - a[1]);
-  const totalExpense = sortedCategories.reduce((sum, [, amount]) => sum + amount, 0);
+  const summary = getMonthlyFinanceSummary(data.transactions || [], incomesRecords, selectedMonth, selectedYear, filterMemberId);
+  const totalIncome = summary.incomeTotal;
+  const totalExpense = summary.expenseTotal;
+  const netBalance = summary.netTotal;
+  
+  const incomes = summary.incomeRecords;
+  const expenses = summary.expenseRecords;
+  const sortedCategories: [string, number][] = Object.entries(summary.expenseByCategory).sort((a, b) => (b[1] as number) - (a[1] as number)) as [string, number][];
 
-  const pieData = sortedCategories.map(([name, value], idx) => ({
-    name, value, color: STATS_COLORS[idx % STATS_COLORS.length]
-  }));
+  const incomeByMember = incomes.reduce((acc, t) => {
+    const mid = t.memberId || t.member_id || "unknown";
+    acc[mid] = (acc[mid] || 0) + Math.abs(Number(t.amount || t.netAmount || 0));
+    return acc;
+  }, {} as Record<string, number>);
 
-  const incomeByMember = currentMonthTransactions
-    .filter(t => t.type === "income" && memberFilter(t))
-    .reduce((acc, t) => {
-      const mid = t.memberId || "unknown";
-      acc[mid] = (acc[mid] || 0) + Math.abs(t.amount);
-      return acc;
-    }, {} as Record<string, number>);
-  const totalIncome = Object.values(incomeByMember).reduce((sum, val) => sum + val, 0);
+  const expenseByMember = expenses.reduce((acc, t) => {
+    const mid = t.memberId || t.member_id || "unknown";
+    acc[mid] = (acc[mid] || 0) + Math.abs(Number(t.amount || 0));
+    return acc;
+  }, {} as Record<string, number>);
 
-  const expenseByMember = currentMonthTransactions
-    .filter(t => t.type === "expense" && memberFilter(t))
-    .reduce((acc, t) => {
-      const mid = t.memberId || "unknown";
-      acc[mid] = (acc[mid] || 0) + Math.abs(t.amount);
-      return acc;
-    }, {} as Record<string, number>);
+  const memberFilter = (t: any) => {
+    if (filterMemberId === "all") return true;
+    const mid = t.memberId || t.member_id || t.userId || t.user_id;
+    if (mid) return mid === filterMemberId;
+    return true;
+  };
 
   const getMemberName = (id: string) => {
     if (id === "unknown") return "Chung";
     return data.members.find(m => m.id === id)?.nickname || data.members.find(m => m.id === id)?.name || "Không rõ";
   };
 
-  const money = (val: number) => val.toLocaleString('vi-VN') + ' ₫';
+  const money = (val: number) => Math.round(val).toLocaleString('vi-VN') + 'đ';
+
+  // Events & Reminders in next 7 days
+  const upcomingEvents = (data.events || []).filter(e => {
+    if (!memberFilter(e)) return false;
+    const d = new Date(e.date);
+    const diff = Math.ceil((d.getTime() - now.getTime()) / (1000 * 3600 * 24));
+    return diff >= 0 && diff <= 7;
+  }).map(e => ({ date: e.date, title: e.title, type: "Lịch", color: "#3B82F6" }));
+
+  const upcomingTasks = (data.tasks || []).filter(t => {
+    if (t.status === "done") return false;
+    if (!memberFilter(t)) return false;
+    const d = new Date(t.dueDate);
+    const diff = Math.ceil((d.getTime() - now.getTime()) / (1000 * 3600 * 24));
+    return diff >= -30 && diff <= 7;
+  }).map(t => {
+    const d = new Date(t.dueDate);
+    const isOverdue = d.getTime() < new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return { 
+      date: t.dueDate, 
+      title: t.title, 
+      type: isOverdue ? "Quá hạn" : "Công việc", 
+      color: isOverdue ? "#E11D48" : "#F59E0B" 
+    };
+  });
+
+  const reminders = [...upcomingEvents, ...upcomingTasks].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).slice(0, 5);
+
+  const alerts = [];
+  if (totalExpense > totalIncome && totalIncome > 0) alerts.push("Chi tiêu tháng này đang cao hơn thu nhập.");
+  const hasOverdue = upcomingTasks.some(t => t.type === "Quá hạn");
+  if (hasOverdue) alerts.push("Có công việc đã quá hạn chưa hoàn thành.");
+  if (alerts.length === 0) alerts.push("Không có cảnh báo.");
+
+  const chartData = [];
+  for (let i = 5; i >= 0; i--) {
+    let m = selectedMonth - i;
+    let y = selectedYear;
+    if (m <= 0) {
+      m += 12;
+      y -= 1;
+    }
+    const mSum = getMonthlyFinanceSummary(data.transactions || [], incomesRecords, m, y, filterMemberId);
+    chartData.push({
+      name: `T${m}`,
+      Thu: mSum.incomeTotal,
+      Chi: mSum.expenseTotal
+    });
+  }
 
   return (
-    <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[100px]">
+    <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[100px] text-[#171018]">
       <div className="sticky top-0 z-30 bg-[#800020] px-4 py-3 border-b border-[#E8DCD5] shadow-sm flex items-center justify-between">
         <h1 className="text-lg font-bold text-white">Thống kê</h1>
-        {data.members.length > 0 && (
+        <div className="flex gap-2">
+          {loadingIncomes && <span className="text-white text-xs mr-2 self-center">Đang tải...</span>}
+          <select 
+            value={selectedMonth} 
+            onChange={e => setSelectedMonth(Number(e.target.value))}
+            className="bg-[#FFFFFF] text-[#800020] border border-[#E8DCD5] rounded-lg px-2 py-1 text-sm outline-none font-medium shadow-sm"
+          >
+            {Array.from({length: 12}).map((_, i) => <option key={i} value={i+1}>Tháng {i+1}</option>)}
+          </select>
+          <select 
+            value={selectedYear} 
+            onChange={e => setSelectedYear(Number(e.target.value))}
+            className="bg-[#FFFFFF] text-[#800020] border border-[#E8DCD5] rounded-lg px-2 py-1 text-sm outline-none font-medium shadow-sm"
+          >
+            {[selectedYear - 1, selectedYear, selectedYear + 1].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+      </div>
+      
+      {data.members.length > 0 && (
+        <div className="px-4 pt-4">
           <select 
             value={filterMemberId} 
             onChange={e => setFilterMemberId(e.target.value)}
-            className="bg-[#FFFFFF] text-[#800020] border border-[#E8DCD5] rounded-lg px-2 py-1 text-sm outline-none font-medium shadow-sm"
+            className="w-full bg-[#FFFFFF] text-[#171018] border border-[#E8DCD5] rounded-lg px-3 py-2 text-sm outline-none font-medium shadow-[0_8px_24px_rgba(128,0,32,0.08)]"
           >
             <option value="all">Tất cả thành viên</option>
             {data.members.map(m => (
               <option key={m.id} value={m.id}>{m.nickname || m.name}</option>
             ))}
           </select>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="p-4 space-y-4">
-        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="bg-[#F8E7EC] text-[#800020] p-1.5 rounded-lg"><PieChart className="size-5" /></div>
-            <h2 className="font-bold text-[#171018]">Chi tiêu theo danh mục</h2>
+        {/* Card Tổng quan */}
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Tổng thu</p>
+            <p className="text-[16px] font-bold text-[#059669]">{money(totalIncome)}</p>
           </div>
-          
+          <div>
+            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Tổng chi</p>
+            <p className="text-[16px] font-bold text-[#E11D48]">{money(totalExpense)}</p>
+          </div>
+          <div>
+            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Tiết kiệm</p>
+            <p className="text-[16px] font-bold text-[#800020]">{money(totalCurrentSavings)}</p>
+          </div>
+          <div>
+            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Còn lại</p>
+            <p className={`text-[16px] font-bold ${netBalance >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{money(netBalance)}</p>
+          </div>
+        </div>
+
+        {/* Biểu đồ cột tổng quan tháng */}
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+          <h2 className="font-bold text-[15px] mb-4 text-[#171018]">Tổng quan tháng</h2>
+          <div className="h-48 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 20, right: 0, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E8DCD5" />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fill: "#6B5E64", fontWeight: 500 }} axisLine={false} tickLine={false} />
+                <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '8px', border: '1px solid #E8DCD5', boxShadow: '0 4px 12px rgba(128,0,32,0.1)' }} formatter={(val: any) => money(Number(val) || 0)} />
+                <Bar dataKey="Thu" fill="#059669" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                <Bar dataKey="Chi" fill="#E11D48" radius={[4, 4, 0, 0]} maxBarSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Card Chi tiêu theo danh mục */}
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+          <h2 className="font-bold text-[15px] mb-3">Chi tiêu theo danh mục</h2>
           {sortedCategories.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-6 text-center">
-              <PieChart className="size-10 text-[#E8DCD5] mb-2" />
-              <p className="text-[#6B5E64] text-[13px]">Chưa có chi tiêu trong tháng</p>
-            </div>
+            <p className="text-[#6B5E64] text-[13px]">Chưa có chi tiêu trong tháng.</p>
           ) : (
-            <>
-              <div className="h-40 w-full relative mb-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsPie>
-                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2} dataKey="value" stroke="none">
-                      {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                    </Pie>
-                  </RechartsPie>
-                </ResponsiveContainer>
-                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <span className="text-[10px] text-[#6B5E64] font-medium">Tổng chi</span>
-                  <span className="text-[12px] font-bold text-[#E11D48]">{money(totalExpense)}</span>
-                </div>
-              </div>
-              <div className="space-y-3">
-                {pieData.map((entry) => (
-                  <div key={entry.name}>
-                    <div className="flex justify-between text-[13px] mb-1">
+            <div className="space-y-3">
+              {sortedCategories.map(([name, val], idx) => {
+                const pct = totalExpense > 0 ? Math.round((val / totalExpense) * 100) : 0;
+                const color = STATS_COLORS[idx % STATS_COLORS.length];
+                return (
+                  <div key={name}>
+                    <div className="flex justify-between items-center text-[13px] mb-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }}></span>
-                        <span className="text-[#171018] font-medium">{entry.name}</span>
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }}></span>
+                        <span className="font-medium">{name}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[#E11D48] font-bold">{money(entry.value)}</span>
-                        <span className="text-[#6B5E64] text-[11px] w-8 text-right">{Math.round((entry.value / totalExpense) * 100)}%</span>
+                        <span className="font-bold">{money(val)}</span>
+                        <span className="text-[#6B5E64] text-[11px] w-8 text-right">{pct}%</span>
                       </div>
                     </div>
+                    <div className="h-1.5 w-full bg-[#F8E7EC] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }}></div>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </>
+                );
+              })}
+            </div>
           )}
         </div>
 
-        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="bg-[#F8E7EC] text-[#800020] p-1.5 rounded-lg"><TrendingUp className="size-5" /></div>
-              <h2 className="font-bold text-[#171018]">Thu nhập {filterMemberId !== "all" ? "" : ""}</h2>
+        {/* Card Thu nhập */}
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+          <h2 className="font-bold text-[15px] mb-3">Thu nhập</h2>
+          {incomes.length === 0 ? (
+            <p className="text-[#6B5E64] text-[13px]">Chưa có thu nhập.</p>
+          ) : filterMemberId === "all" ? (
+            <div className="space-y-3">
+              <p className="text-[14px] font-bold text-[#059669] mb-2">Tổng thu: {money(totalIncome)}</p>
+              {(Object.entries(incomeByMember) as [string, number][]).sort((a, b) => b[1] - a[1]).map(([mid, val]) => {
+                const pct = totalIncome > 0 ? Math.round((val / totalIncome) * 100) : 0;
+                return (
+                  <div key={mid}>
+                    <div className="flex justify-between items-center text-[13px] mb-1">
+                      <span className="font-medium">{getMemberName(mid)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[#059669]">{money(val)}</span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 w-full bg-[#F8E7EC] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: "#059669" }}></div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <p className="text-[16px] font-bold text-[#059669]">+{money(totalIncome)}</p>
-          </div>
-          
-          {Object.keys(incomeByMember).length === 0 ? (
-            <p className="text-[#6B5E64] text-[13px] text-center py-2">Chưa có thu nhập</p>
           ) : (
-            filterMemberId === "all" && (
-              <div className="space-y-3 border-t border-[#E8DCD5] pt-3">
-                {Object.entries(incomeByMember).map(([mid, amount]) => (
-                  <div key={mid} className="flex justify-between items-center text-[13px]">
-                    <span className="text-[#6B5E64] font-medium">{getMemberName(mid)}</span>
-                    <span className="text-[#059669] font-bold">+{money(amount)}</span>
-                  </div>
-                ))}
-              </div>
-            )
+            <div className="space-y-2">
+              <p className="text-[14px] font-bold text-[#059669]">Tổng thu: {money(incomeByMember[filterMemberId] || 0)}</p>
+              <p className="text-[12px] text-[#6B5E64] mb-2 mt-2">Gần đây:</p>
+              {incomes.sort((a, b) => new Date(b.receivedDate || b.incomeDate || b.date || b.createdAt || 0).getTime() - new Date(a.receivedDate || a.incomeDate || a.date || a.createdAt || 0).getTime()).slice(0, 3).map((t, idx) => (
+                <div key={t.id || idx} className="flex justify-between text-[13px] border-b border-[#F8E7EC] pb-2 last:border-0 last:pb-0">
+                  <span className="truncate max-w-[60%]">{t.title || t.name || t.category || "Khoản thu"}</span>
+                  <span className="font-bold text-[#059669]">{money(Math.abs(Number(t.amount || t.netAmount || 0)))}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
-        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="bg-[#F8E7EC] text-[#800020] p-1.5 rounded-lg"><TrendingDown className="size-5" /></div>
-              <h2 className="font-bold text-[#171018]">Chi tiêu {filterMemberId !== "all" ? "" : ""}</h2>
-            </div>
-            <p className="text-[16px] font-bold text-[#E11D48]">-{money(totalExpense)}</p>
-          </div>
-
+        {/* Card Chi tiêu theo thành viên */}
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+          <h2 className="font-bold text-[15px] mb-3">Chi tiêu theo thành viên</h2>
+          <p className="text-[11px] text-[#6B5E64] italic mb-3">Dữ liệu theo thành viên sẽ hoàn thiện sau nếu chưa map đủ, nhưng tổng vẫn khớp theo tháng.</p>
           {Object.keys(expenseByMember).length === 0 ? (
-            <p className="text-[#6B5E64] text-[13px] text-center py-2">Chưa có chi tiêu</p>
-          ) : (
-            filterMemberId === "all" && (
-              <div className="space-y-3 border-t border-[#E8DCD5] pt-3">
-                {Object.entries(expenseByMember).map(([mid, amount]) => (
-                  <div key={mid} className="flex justify-between items-center text-[13px]">
-                    <span className="text-[#6B5E64] font-medium">{getMemberName(mid)}</span>
-                    <span className="text-[#E11D48] font-bold">-{money(amount)}</span>
+            <p className="text-[#6B5E64] text-[13px]">Chưa có dữ liệu chi.</p>
+          ) : filterMemberId === "all" ? (
+            <div className="space-y-3">
+              {(Object.entries(expenseByMember) as [string, number][]).sort((a, b) => b[1] - a[1]).map(([mid, val], idx) => {
+                const pct = totalExpense > 0 ? Math.round((val / totalExpense) * 100) : 0;
+                const color = STATS_COLORS[(idx + 2) % STATS_COLORS.length];
+                return (
+                  <div key={mid}>
+                    <div className="flex justify-between items-center text-[13px] mb-1">
+                      <span className="font-medium">{getMemberName(mid)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[#E11D48]">{money(val)}</span>
+                        <span className="text-[#6B5E64] text-[11px] w-8 text-right">{pct}%</span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 w-full bg-[#F8E7EC] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }}></div>
+                    </div>
                   </div>
-                ))}
-              </div>
-            )
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[14px] font-bold text-[#E11D48]">Tổng chi: {money(expenseByMember[filterMemberId] || 0)}</p>
+              <p className="text-[12px] text-[#6B5E64] mb-2 mt-2">Top danh mục chi:</p>
+              {sortedCategories.slice(0, 3).map(([name, val]) => (
+                <div key={name} className="flex justify-between text-[13px]">
+                  <span>{name}</span>
+                  <span className="font-bold text-[#E11D48]">{money(val)}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
+
+        {/* Card Tiết kiệm */}
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+          <div className="flex justify-between items-center">
+            <h2 className="font-bold text-[15px]">Tiết kiệm</h2>
+            <div className="text-right">
+              <p className="text-[12px] text-[#6B5E64] font-medium">Tiết kiệm hiện có</p>
+              <p className="text-[15px] font-bold text-[#800020]">{money(totalCurrentSavings)}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Nhắc nhở sắp tới */}
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+          <h2 className="font-bold text-[15px] mb-3">Nhắc nhở sắp tới</h2>
+          {reminders.length === 0 ? (
+            <p className="text-[#6B5E64] text-[13px]">Không có nhắc nhở sắp tới.</p>
+          ) : (
+            <div className="space-y-3">
+              {reminders.map((r, i) => {
+                const dateObj = new Date(r.date);
+                const isToday = dateObj.toDateString() === now.toDateString();
+                const displayDate = isToday ? "Hôm nay" : `${dateObj.getDate()}/${dateObj.getMonth() + 1}`;
+                return (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-12 text-center shrink-0 text-[#6B5E64] text-[11px] font-medium bg-[#F8F5F2] py-1 rounded-md">
+                      {displayDate}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-medium truncate">{r.title}</p>
+                    </div>
+                    <div className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded" style={{ color: r.color, backgroundColor: `${r.color}15` }}>
+                      {r.type}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Cảnh báo */}
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+          <h2 className="font-bold text-[15px] mb-3 text-[#E11D48]">Cảnh báo</h2>
+          {alerts[0] === "Không có cảnh báo." ? (
+            <p className="text-[#6B5E64] text-[13px]">Không có cảnh báo.</p>
+          ) : (
+            <ul className="space-y-2 text-[13px] text-[#E11D48] list-disc pl-4">
+              {alerts.map((a, i) => <li key={i}>{a}</li>)}
+            </ul>
+          )}
+        </div>
+
       </div>
     </div>
   );

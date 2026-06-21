@@ -13,8 +13,16 @@ export interface DataService {
 export interface NasCounts { members: number; tasks: number; transactions: number; events: number; notes: number; }
 export interface SystemStatus { source: "nas" | "localStorage"; lastSyncedAt: string | null; message: string; counts: NasCounts | null; }
 
-const DATA_KEY = "family-hub:data";
 const PREFERENCES_KEY = "family-hub:preferences";
+let currentUserId = "";
+
+export function setCacheUserId(id: string) {
+  currentUserId = id;
+}
+
+function getDataKey() {
+  return currentUserId ? `family-hub:data_${currentUserId}` : "family-hub:data";
+}
 
 const emptyData: AppData = {
   members: [],
@@ -34,11 +42,11 @@ function getInitialData(): AppData {
 export class LocalStorageDataService implements DataService {
   async load(): Promise<AppData> {
     if (typeof window === "undefined") return getInitialData();
-    const raw = localStorage.getItem(DATA_KEY);
+    const raw = localStorage.getItem(getDataKey());
     if (!raw) return getInitialData();
     try { return normalizeData(JSON.parse(raw) as AppData); } catch { return getInitialData(); }
   }
-  async save(data: AppData) { localStorage.setItem(DATA_KEY, JSON.stringify(data)); }
+  async save(data: AppData) { localStorage.setItem(getDataKey(), JSON.stringify(data)); }
   exportData() { return JSON.stringify(loadCache(), null, 2); }
   importData(content: string) {
     const data: unknown = JSON.parse(content);
@@ -234,7 +242,7 @@ function normalizeId(id: string) {
 
 function loadCache(): AppData {
   if (typeof window === "undefined") return getInitialData();
-  const raw = localStorage.getItem(DATA_KEY);
+  const raw = localStorage.getItem(getDataKey());
   if (!raw) return getInitialData();
   try { return normalizeData(JSON.parse(raw) as AppData); } catch { return getInitialData(); }
 }

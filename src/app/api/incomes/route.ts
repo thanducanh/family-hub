@@ -43,9 +43,10 @@ function normalizeRecordPayload(item: Record<string, unknown>) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!await requireSession()) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
   const year = normalizeYear(new URL(request.url).searchParams.get("year"));
-  const data = await fetchIncomeData(year);
+  const data = await fetchIncomeData(year, user);
   return NextResponse.json({ ok: true, data });
 }
 

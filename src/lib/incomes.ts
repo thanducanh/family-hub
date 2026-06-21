@@ -125,14 +125,19 @@ function toMemberJob(row: Record<string, unknown>): MemberJob {
   };
 }
 
-export async function fetchIncomeData(year: number) {
+import { buildDataFilter } from "@/lib/auth";
+import type { SessionUser } from "@/lib/auth";
+
+export async function fetchIncomeData(year: number, user: SessionUser | null = null) {
   try {
+    const { where, params } = buildDataFilter(user, 'r', 1, 'member_id');
     const result = await pool.query(
       `SELECT r.*, m.name AS member_name, CONCAT_WS(' · ', NULLIF(j.title, ''), NULLIF(j.company, '')) AS job_name
        FROM income_records r
        LEFT JOIN members m ON m.id = r.member_id
        LEFT JOIN member_jobs j ON j.id = COALESCE(r.job_id, r.work_id)
-       ORDER BY COALESCE(r.received_date, r.income_date) ASC, r.created_at ASC`
+       WHERE ${where}
+       ORDER BY COALESCE(r.received_date, r.income_date) ASC, r.created_at ASC`, params
     );
 
     const allRows = result.rows.map(toIncomeRecord);

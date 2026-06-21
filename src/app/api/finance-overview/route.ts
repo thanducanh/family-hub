@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { requireSession, getSessionUser, buildDataFilter } from "@/lib/auth";
 
 async function hasColumn(tableName: string, columnName: string) {
   const result = await pool.query(
@@ -79,12 +79,14 @@ async function getFinanceSettings() {
 }
 
 export async function GET(req: NextRequest) {
-  if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   const yearParam = Number(req.nextUrl.searchParams.get("year"));
   const year = Number.isFinite(yearParam) && yearParam > 0 ? yearParam : new Date().getFullYear();
 
   try {
+    const filter = buildDataFilter(user, '', 2, 'member_id');
     const settings = await getFinanceSettings();
     const hasExpenseDate = await hasColumn("transactions", "expense_date");
     const transactionDateExpr = hasExpenseDate
@@ -102,15 +104,16 @@ export async function GET(req: NextRequest) {
     const realExpenseCondition = "COALESCE(counts_for_personal_expense, CASE WHEN category IN ('Tiết kiệm', 'Thanh toán hộ') THEN false ELSE true END) = true";
 
     const [incomeRecordsResult, expensesResult, savingsInExpenseResult, investmentsBuyResult, investmentsSellResult] = await Promise.all([
-      pool.query(`SELECT month, SUM(amount) as total FROM income_records WHERE status = 'Đã nhận' AND year = $1 GROUP BY month`, [year]),
+      pool.query(`SELECT month, SUM(amount) as total FROM income_records WHERE status = 'Đã nhận' AND year = $1 AND ${filter.where} GROUP BY month`, [year, ...filter.params]),
       pool.query(
         `SELECT EXTRACT(MONTH FROM ${transactionDateExpr}) as month, SUM(amount) as total
          FROM transactions
          WHERE type = 'expense'
            AND ${realExpenseCondition}
            AND EXTRACT(YEAR FROM ${transactionDateExpr}) = $1
+           AND ${filter.where}
          GROUP BY EXTRACT(MONTH FROM ${transactionDateExpr})`,
-        [year]
+        [year, ...filter.params]
       ),
       pool.query(
         `SELECT EXTRACT(MONTH FROM ${transactionDateExpr}) as month, SUM(amount) as total
@@ -118,11 +121,12 @@ export async function GET(req: NextRequest) {
          WHERE type = 'expense'
            AND category = 'Tiết kiệm'
            AND EXTRACT(YEAR FROM ${transactionDateExpr}) = $1
+           AND ${filter.where}
          GROUP BY EXTRACT(MONTH FROM ${transactionDateExpr})`,
-        [year]
+        [year, ...filter.params]
       ),
-      pool.query(`SELECT EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price + fee) as total FROM investment_transactions WHERE action = 'buy' AND EXTRACT(YEAR FROM trade_date) = $1 GROUP BY EXTRACT(MONTH FROM trade_date)`, [year]),
-      pool.query(`SELECT EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price - fee) as total FROM investment_transactions WHERE action = 'sell' AND EXTRACT(YEAR FROM trade_date) = $1 GROUP BY EXTRACT(MONTH FROM trade_date)`, [year]),
+      pool.query(`SELECT EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price + fee) as total FROM investment_transactions WHERE action = 'buy' AND EXTRACT(YEAR FROM trade_date) = $1 AND ${filter.where} GROUP BY EXTRACT(MONTH FROM trade_date)`, [year, ...filter.params]),
+      pool.query(`SELECT EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price - fee) as total FROM investment_transactions WHERE action = 'sell' AND EXTRACT(YEAR FROM trade_date) = $1 AND ${filter.where} GROUP BY EXTRACT(MONTH FROM trade_date)`, [year, ...filter.params]),
     ]);
 
     const dataMap: Record<number, { month: number; income: number; expense: number; savingsInExpense: number; investmentBuy: number; investmentSell: number; netInvestment: number }> = {};
@@ -148,11 +152,11 @@ export async function GET(req: NextRequest) {
 
     const cashQuery = await pool.query(
       `SELECT
-        (SELECT COALESCE(SUM(amount), 0) FROM income_records WHERE status = 'Đã nhận' AND make_date(year::integer, month::integer, 1) >= $1::date) as total_income,
-        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND ${realExpenseCondition} AND ${transactionDateExpr} >= $1::date) as total_expense,
-        (SELECT COALESCE(SUM(quantity * price + fee), 0) FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date) as total_invest_buy,
-        (SELECT COALESCE(SUM(quantity * price - fee), 0) FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date) as total_invest_sell`,
-      [settings.trackingStartDate]
+        (SELECT COALESCE(SUM(amount), 0) FROM income_records WHERE status = 'Đã nhận' AND make_date(year::integer, month::integer, 1) >= $1::date AND ${filter.where}) as total_income,
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND ${realExpenseCondition} AND ${transactionDateExpr} >= $1::date AND ${filter.where}) as total_expense,
+        (SELECT COALESCE(SUM(quantity * price + fee), 0) FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date AND ${filter.where}) as total_invest_buy,
+        (SELECT COALESCE(SUM(quantity * price - fee), 0) FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND ${filter.where}) as total_invest_sell`,
+      [settings.trackingStartDate, ...filter.params]
     );
 
     const row = cashQuery.rows[0] || {};
@@ -164,11 +168,11 @@ export async function GET(req: NextRequest) {
 
     const assetsQuery = await pool.query(
       `SELECT
-        (SELECT COALESCE(SUM(CASE WHEN type = 'withdraw' THEN -amount ELSE amount END), 0) FROM savings_records WHERE make_date(year::integer, month::integer, 1) >= $1::date) as savings_records_total,
-        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND category = 'Tiết kiệm' AND linked_savings_id IS NULL AND ${transactionDateExpr} >= $1::date) as unlinked_savings_expense_total,
-        (SELECT COALESCE(SUM(quantity * price + fee), 0) FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date) as investment_buy_total,
-        (SELECT COALESCE(SUM(quantity * price - fee), 0) FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date) as investment_sell_total`,
-      [settings.trackingStartDate]
+        (SELECT COALESCE(SUM(CASE WHEN type = 'withdraw' THEN -amount ELSE amount END), 0) FROM savings_records WHERE make_date(year::integer, month::integer, 1) >= $1::date AND ${filter.where}) as savings_records_total,
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND category = 'Tiết kiệm' AND linked_savings_id IS NULL AND ${transactionDateExpr} >= $1::date AND ${filter.where}) as unlinked_savings_expense_total,
+        (SELECT COALESCE(SUM(quantity * price + fee), 0) FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date AND ${filter.where}) as investment_buy_total,
+        (SELECT COALESCE(SUM(quantity * price - fee), 0) FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND ${filter.where}) as investment_sell_total`,
+      [settings.trackingStartDate, ...filter.params]
     );
     const assets = assetsQuery.rows[0] || {};
     const savingsRecordsTotal = Number(assets.savings_records_total || 0);
@@ -180,13 +184,14 @@ export async function GET(req: NextRequest) {
     const estimatedAssets = currentCash + currentSavings + currentInvestment;
 
     const yearStartDate = `${year}-01-01`;
+    const filter3 = buildDataFilter(user, '', 3, 'member_id');
     const beforeYearQuery = await pool.query(
       `SELECT
-        (SELECT COALESCE(SUM(amount), 0) FROM income_records WHERE status = 'Đã nhận' AND make_date(year::integer, month::integer, 1) >= $1::date AND make_date(year::integer, month::integer, 1) < $2::date) as total_income,
-        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND ${realExpenseCondition} AND ${transactionDateExpr} >= $1::date AND ${transactionDateExpr} < $2::date) as total_expense,
-        (SELECT COALESCE(SUM(quantity * price + fee), 0) FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date AND trade_date < $2::date) as total_invest_buy,
-        (SELECT COALESCE(SUM(quantity * price - fee), 0) FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND trade_date < $2::date) as total_invest_sell`,
-      [settings.trackingStartDate, yearStartDate]
+        (SELECT COALESCE(SUM(amount), 0) FROM income_records WHERE status = 'Đã nhận' AND make_date(year::integer, month::integer, 1) >= $1::date AND make_date(year::integer, month::integer, 1) < $2::date AND ${filter3.where}) as total_income,
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND ${realExpenseCondition} AND ${transactionDateExpr} >= $1::date AND ${transactionDateExpr} < $2::date AND ${filter3.where}) as total_expense,
+        (SELECT COALESCE(SUM(quantity * price + fee), 0) FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date AND trade_date < $2::date AND ${filter3.where}) as total_invest_buy,
+        (SELECT COALESCE(SUM(quantity * price - fee), 0) FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND trade_date < $2::date AND ${filter3.where}) as total_invest_sell`,
+      [settings.trackingStartDate, yearStartDate, ...filter3.params]
     );
     const beforeYear = beforeYearQuery.rows[0] || {};
     let cumulativeCash = settings.openingCashBalance

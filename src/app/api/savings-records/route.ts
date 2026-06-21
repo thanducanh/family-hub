@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { requireSession } from "@/lib/auth";
+import { getSessionUser, buildDataFilter, requireSession } from "@/lib/auth";
 
 async function ensureSavingsCompatibility() {
   await pool.query(`
@@ -39,16 +39,20 @@ function mapSavingsRow(r: any) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!await requireSession()) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+  const user = await getSessionUser();
+  if (!user) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
   await ensureSavingsCompatibility();
   const yearStr = request.nextUrl.searchParams.get("year");
   const year = yearStr ? Number(yearStr) : null;
 
+  const filter = buildDataFilter(user, '', 1, 'member_id');
+
   const savingsQuery = year
-    ? "SELECT id, member_id, year, month, amount, type, holder, description, note, created_at, updated_at FROM savings_records WHERE year = $1 ORDER BY month DESC, created_at DESC"
-    : "SELECT id, member_id, year, month, amount, type, holder, description, note, created_at, updated_at FROM savings_records ORDER BY month DESC, created_at DESC";
-  const savingsResult = await pool.query(savingsQuery, year ? [year] : []);
+    ? `SELECT id, member_id, year, month, amount, type, holder, description, note, created_at, updated_at FROM savings_records WHERE ${filter.where} AND year = $${filter.params.length + 1} ORDER BY month DESC, created_at DESC`
+    : `SELECT id, member_id, year, month, amount, type, holder, description, note, created_at, updated_at FROM savings_records WHERE ${filter.where} ORDER BY month DESC, created_at DESC`;
+  const savingsParams = year ? [...filter.params, year] : filter.params;
+  const savingsResult = await pool.query(savingsQuery, savingsParams);
 
   const transactionSavingsQuery = `
     SELECT ('transaction-' || id::text) as id,
@@ -66,10 +70,12 @@ export async function GET(request: NextRequest) {
     WHERE type = 'expense'
       AND category = 'Tiết kiệm'
       AND linked_savings_id IS NULL
-      ${year ? "AND EXTRACT(YEAR FROM COALESCE(date, created_at)) = $1" : ""}
+      AND ${filter.where}
+      ${year ? `AND EXTRACT(YEAR FROM COALESCE(date, created_at)) = $${filter.params.length + 1}` : ""}
     ORDER BY EXTRACT(MONTH FROM COALESCE(date, created_at)) DESC, created_at DESC
   `;
-  const transactionSavingsResult = await pool.query(transactionSavingsQuery, year ? [year] : []);
+  const transactionSavingsParams = year ? [...filter.params, year] : filter.params;
+  const transactionSavingsResult = await pool.query(transactionSavingsQuery, transactionSavingsParams);
 
   return NextResponse.json({ data: [...savingsResult.rows, ...transactionSavingsResult.rows].map(mapSavingsRow) });
 }
@@ -79,6 +85,17 @@ export async function POST(request: NextRequest) {
 
   await ensureSavingsCompatibility();
   const item = await request.json();
+  
+  if (!item.id && item.type === "monthly") {
+    const existingResult = await pool.query(
+      `SELECT id FROM savings_records WHERE member_id IS NOT DISTINCT FROM $1 AND year = $2 AND month = $3 AND type = 'monthly' AND holder = $4`,
+      [item.memberId || null, item.year, item.month, item.holder || "Ngân hàng"]
+    );
+    if (existingResult.rows.length > 0) {
+      item.id = existingResult.rows[0].id;
+    }
+  }
+
   const id = item.id || crypto.randomUUID();
 
   const fields = ["id", "member_id", "year", "month", "amount", "type", "holder", "description", "note"];

@@ -67,3 +67,12 @@ export async function refreshedSessionCookie(user: SessionUser) {
   const expiresAt = current?.expiresAt ?? Date.now() + SHORT_SESSION_SECONDS * 1000;
   return { name: COOKIE_NAME, value: createSessionTokenUntil(user, expiresAt), httpOnly: true, sameSite: "lax" as const, secure: process.env.COOKIE_SECURE === "true", path: "/", maxAge: Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)) };
 }
+
+export function buildDataFilter(user: SessionUser | null, tablePrefix: string = '', paramIndexStart: number = 1, memberIdCol: string = 'member_id') {
+  if (!user) return { where: '1=0', params: [] };
+  const isAdmin = user.role === 'full_access';
+  if (isAdmin) return { where: '1=1', params: [] };
+  if (!user.memberId) return { where: '1=0', params: [] }; // Cannot see anything if no memberId and not admin
+  const prefix = tablePrefix ? `${tablePrefix}.` : '';
+  return { where: `${prefix}${memberIdCol} = $${paramIndexStart}`, params: [user.memberId] };
+}

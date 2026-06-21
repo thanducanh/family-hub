@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, buildDataFilter } from "@/lib/auth";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -9,10 +9,13 @@ export async function GET(request: Request) {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const filter = buildDataFilter(user, '', 1, 'member_id');
+
     const result = await pool.query(
       `SELECT id, member_id as "memberId", to_char(trade_date, 'YYYY-MM-DD') as "tradeDate", stock_code as "stockCode", action, quantity::float, price::float, fee::float, note, created_at as "createdAt", updated_at as "updatedAt"
        FROM investment_transactions
-       ORDER BY trade_date DESC, created_at DESC`
+       WHERE ${filter.where}
+       ORDER BY trade_date DESC, created_at DESC`, filter.params
     );
     return NextResponse.json(result.rows);
   } catch (error) {
