@@ -868,13 +868,13 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
     </Sheet>}
 
     {logoutConfirmOpen && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onMouseDown={() => setLogoutConfirmOpen(false)}>
-        <div onMouseDown={e => e.stopPropagation()} className="w-full max-w-sm rounded-2xl bg-[var(--app-card)] p-6 shadow-2xl">
-          <h3 className="text-lg font-bold text-slate-900 dark:text-white">Đăng xuất</h3>
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này?</p>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 pointer-events-auto" onMouseDown={() => setLogoutConfirmOpen(false)}>
+        <div onMouseDown={e => e.stopPropagation()} className="w-full max-w-sm rounded-[24px] bg-[#FFFFFF] p-6 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]">
+          <h3 className="text-lg font-bold text-[#171018]">Đăng xuất</h3>
+          <p className="mt-2 text-sm text-[#6B5E64]">Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này?</p>
           <div className="mt-6 flex justify-end gap-3">
-            <button onClick={() => setLogoutConfirmOpen(false)} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5">Hủy</button>
-            <button onClick={() => { setLogoutConfirmOpen(false); logout(); }} className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white hover:bg-rose-600">Đăng xuất</button>
+            <button onClick={() => setLogoutConfirmOpen(false)} className="rounded-xl border border-[#E8DCD5] px-4 py-2 text-sm font-bold text-[#171018] hover:bg-[#F8F5F2]">Hủy</button>
+            <button onClick={() => { setLogoutConfirmOpen(false); logout(); }} className="rounded-xl bg-[#800020] px-4 py-2 text-sm font-bold text-white hover:bg-[#4A0012]">Đăng xuất</button>
           </div>
         </div>
       </div>
@@ -1181,51 +1181,51 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
       </nav>
 
       {mobileLoginOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm pointer-events-auto" onClick={closeMobileLogin}>
-          <div className="w-full max-w-sm rounded-[24px] bg-[#064e46] p-6 shadow-2xl animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 pointer-events-auto" onClick={closeMobileLogin}>
+          <div className="w-full max-w-sm rounded-[24px] bg-[#FFFFFF] p-6 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5] animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#facc15]">Đăng nhập gia đình</p>
-                <h2 className="text-lg font-black mt-0.5 text-white">Family Hub</h2>
+                <p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#800020]">Đăng nhập gia đình</p>
+                <h2 className="text-lg font-black mt-0.5 text-[#171018]">Family Hub</h2>
               </div>
-              <button onClick={closeMobileLogin} className="grid size-8 place-items-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white">✕</button>
+              <button onClick={closeMobileLogin} className="grid size-8 place-items-center rounded-full bg-[#F8E7EC] text-[#800020] hover:bg-[#800020] hover:text-white transition-colors">✕</button>
             </div>
-            {loginPrompt && <p className="mb-4 text-xs font-semibold text-[#facc15] bg-[#facc15]/10 p-2.5 rounded-xl border border-[#facc15]/20">{loginPrompt}</p>}
+            {loginPrompt && <p className="mb-4 text-xs font-semibold text-[#800020] bg-[#F8E7EC] p-2.5 rounded-xl border border-[#E8DCD5]">{loginPrompt}</p>}
             
             {forgot ? (
               <form onSubmit={requestPasswordReset} className="space-y-4">
                 <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-white/70">Tài khoản hoặc email</span>
-                  <input required autoComplete="username" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm outline-none focus:border-[#facc15] text-white placeholder-white/40" placeholder="Nhập username hoặc email" value={forgotAccount} onChange={event => setForgotAccount(event.target.value)} />
+                  <span className="mb-1 block text-xs font-bold text-[#6B5E64]">Tài khoản hoặc email</span>
+                  <input required autoComplete="username" className="h-12 w-full rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] px-4 text-sm text-[#171018] outline-none focus:border-[#800020] placeholder-[#6B5E64]" placeholder="Nhập username hoặc email" value={forgotAccount} onChange={event => setForgotAccount(event.target.value)} />
                 </label>
-                {forgotMessage && <p className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 p-2 rounded-lg">{forgotMessage}</p>}
-                {error && <p className="text-xs text-rose-400 bg-rose-400/10 border border-rose-400/20 p-2 rounded-lg">{error}</p>}
-                <button disabled={loading} className="w-full h-12 rounded-xl bg-[#facc15] font-black text-[#003f3a] hover:bg-[#eab308] disabled:opacity-50 transition">{loading ? "Đang gửi..." : "Gửi yêu cầu"}</button>
-                <button type="button" onClick={() => { setForgot(false); setError(""); setForgotMessage(""); }} className="w-full text-center text-xs font-bold text-[#facc15]">Quay lại đăng nhập</button>
+                {forgotMessage && <p className="text-xs text-[#059669] bg-[#059669]/10 border border-[#059669]/20 p-2 rounded-lg">{forgotMessage}</p>}
+                {error && <p className="text-xs text-[#E11D48] bg-[#E11D48]/10 border border-[#E11D48]/20 p-2 rounded-lg">{error}</p>}
+                <button disabled={loading} className="w-full h-12 rounded-xl bg-[#800020] font-black text-white hover:bg-[#4A0012] disabled:opacity-50 transition">{loading ? "Đang gửi..." : "Gửi yêu cầu"}</button>
+                <button type="button" onClick={() => { setForgot(false); setError(""); setForgotMessage(""); }} className="w-full text-center text-xs font-bold text-[#800020]">Quay lại đăng nhập</button>
               </form>
             ) : (
               <form onSubmit={submit} className="space-y-4">
                 <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-white/70">Tài khoản hoặc email</span>
-                  <input required autoComplete="username" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 px-4 text-sm outline-none focus:border-[#facc15] text-white placeholder-white/40" placeholder="Tài khoản" value={username} onChange={event => setUsername(event.target.value)} />
+                  <span className="mb-1 block text-xs font-bold text-[#6B5E64]">Tài khoản hoặc email</span>
+                  <input required autoComplete="username" className="h-12 w-full rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] px-4 text-sm text-[#171018] outline-none focus:border-[#800020] placeholder-[#6B5E64]" placeholder="Tài khoản" value={username} onChange={event => setUsername(event.target.value)} />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-white/70">Mật khẩu</span>
+                  <span className="mb-1 block text-xs font-bold text-[#6B5E64]">Mật khẩu</span>
                   <div className="relative">
-                    <input required type={showPassword ? "text" : "password"} autoComplete="current-password" className="h-12 w-full rounded-xl border border-white/10 bg-white/5 pl-4 pr-12 text-sm outline-none focus:border-[#facc15] text-white placeholder-white/40" placeholder="Mật khẩu" value={password} onChange={event => setPassword(event.target.value)} />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 grid w-12 place-items-center text-white/50 hover:text-[#facc15]">
+                    <input required type={showPassword ? "text" : "password"} autoComplete="current-password" className="h-12 w-full rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] pl-4 pr-12 text-sm text-[#171018] outline-none focus:border-[#800020] placeholder-[#6B5E64]" placeholder="Mật khẩu" value={password} onChange={event => setPassword(event.target.value)} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 grid w-12 place-items-center text-[#6B5E64] hover:text-[#800020]">
                       <PasswordEyeIcon visible={showPassword} />
                     </button>
                   </div>
                 </label>
                 <div className="flex items-center justify-between text-xs">
-                  <label className="flex items-center gap-2 text-white/70 cursor-pointer">
-                    <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} className="size-4 rounded border-white/20 bg-white/10 accent-[#facc15]" /> Ghi nhớ
+                  <label className="flex items-center gap-2 text-[#171018] font-medium cursor-pointer">
+                    <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} className="size-4 rounded border-[#E8DCD5] bg-[#FFFFFF] accent-[#800020]" /> Ghi nhớ
                   </label>
-                  <button type="button" onClick={() => { setForgot(true); setError(""); }} className="font-bold text-[#facc15]">Quên mật khẩu?</button>
+                  <button type="button" onClick={() => { setForgot(true); setError(""); }} className="font-bold text-[#800020]">Quên mật khẩu?</button>
                 </div>
-                {error && <p className="text-xs text-rose-400 bg-rose-400/10 border border-rose-400/20 p-2 rounded-lg">{error}</p>}
-                <button disabled={loading} className="w-full h-12 rounded-xl bg-[#facc15] font-black text-[#003f3a] hover:bg-[#eab308] disabled:opacity-50 transition">{loading ? "Đang đăng nhập..." : "Đăng nhập"}</button>
+                {error && <p className="text-xs text-[#E11D48] bg-[#E11D48]/10 border border-[#E11D48]/20 p-2 rounded-lg">{error}</p>}
+                <button disabled={loading} className="w-full h-12 rounded-xl bg-[#800020] font-black text-white hover:bg-[#4A0012] disabled:opacity-50 transition">{loading ? "Đang đăng nhập..." : "Đăng nhập"}</button>
               </form>
             )}
           </div>
@@ -6979,10 +6979,10 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
 function MobileSettings({ user, onLogout, openChangePassword, language, setLanguage, theme, setTheme, t }: { user: AuthUser; onLogout: () => void; openChangePassword: () => void; language: Language; setLanguage: (x: Language) => void; theme: Theme; setTheme: (x: Theme) => void; t: ReturnType<typeof translator> }) {
   const ui = useUI();
   const [activeSheet, setActiveSheet] = useState<"theme" | "language" | null>(null);
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
   async function handleLogout() {
-    if (!await ui.confirm(mobileT(language, "set.logout") + "?", "Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng?")) return;
-    onLogout();
+    setLogoutModalOpen(true);
   }
 
   const GlobeIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>;
@@ -7065,6 +7065,19 @@ function MobileSettings({ user, onLogout, openChangePassword, language, setLangu
               ))}
             </div>
             <button onClick={() => setActiveSheet(null)} className="w-full mt-4 p-3 rounded-[12px] bg-[var(--mobile-bg)] border border-[var(--mobile-border)] text-[var(--mobile-muted)] font-bold text-[13px]">Hủy</button>
+          </div>
+        </div>
+      )}
+
+      {logoutModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 pointer-events-auto" onClick={() => setLogoutModalOpen(false)}>
+          <div className="w-full max-w-sm rounded-[24px] bg-[#FFFFFF] p-6 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5] animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-[#171018]">{mobileT(language, "set.logout")}?</h3>
+            <p className="mt-2 text-sm text-[#6B5E64]">Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng?</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setLogoutModalOpen(false)} className="rounded-xl border border-[#E8DCD5] px-4 py-2 text-sm font-bold text-[#171018] hover:bg-[#F8F5F2]">Hủy</button>
+              <button onClick={() => { setLogoutModalOpen(false); onLogout(); }} className="rounded-xl bg-[#800020] px-4 py-2 text-sm font-bold text-white hover:bg-[#4A0012]">Đăng xuất</button>
+            </div>
           </div>
         </div>
       )}
@@ -7583,10 +7596,10 @@ function MobileHome({
   });
   
   const shortcuts = [
-    { label: "Thêm chi tiêu", icon: icons.finance, color: "bg-rose-500", onClick: () => setEditor({ kind: "transactions", item: { type: "expense", date: new Date().toISOString().split('T')[0] } as any }) },
-    { label: "Thêm thu nhập", icon: icons.finance, color: "bg-emerald-500", onClick: () => setEditor({ kind: "transactions", item: { type: "income", date: new Date().toISOString().split('T')[0] } as any }) },
-    { label: "Thêm công việc", icon: <CheckListIcon />, color: "bg-orange-500", onClick: () => setEditor({ kind: "tasks" }) },
-    { label: "Thêm sự kiện", icon: <CalendarIcon />, color: "bg-blue-500", onClick: () => setEditor({ kind: "events" }) },
+    { label: "Thêm chi tiêu", icon: icons.finance, color: "bg-[#E11D48]", onClick: () => setEditor({ kind: "transactions", item: { type: "expense", date: new Date().toISOString().split('T')[0] } as any }) },
+    { label: "Thêm thu nhập", icon: icons.finance, color: "bg-[#059669]", onClick: () => setEditor({ kind: "transactions", item: { type: "income", date: new Date().toISOString().split('T')[0] } as any }) },
+    { label: "Thêm công việc", icon: <CheckListIcon />, color: "bg-[#D4AF37]", onClick: () => setEditor({ kind: "tasks" }) },
+    { label: "Thêm sự kiện", icon: <CalendarIcon />, color: "bg-[#800020]", onClick: () => setEditor({ kind: "events" }) },
   ];
 
   const coverUrl = getHomeCoverUrl(user, lastUser);
@@ -7602,7 +7615,7 @@ function MobileHome({
     : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-[#800020] pointer-events-none";
 
   return (
-    <div className="min-h-[100dvh] overflow-x-hidden bg-[var(--mobile-bg)] pb-24 font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif]">
+    <div className="min-h-[100dvh] overflow-x-hidden bg-[#F8F5F2] pb-24 font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif]">
       <section style={heroStyle} className={heroClass}>
         {coverUrl && (
           <div className="absolute inset-0 bg-black/30 pointer-events-none z-0" />
@@ -7634,7 +7647,7 @@ function MobileHome({
           </div>
 
           <div className="mt-auto space-y-3.5">
-            <button type="button" onClick={openProfile} className="flex h-16 w-full items-center gap-3 rounded-[20px] bg-black/25 px-3 text-left text-white ring-1 ring-white/15 backdrop-blur-md active:bg-black/40">
+            <button type="button" onClick={openProfile} className="flex h-16 w-full items-center gap-3 rounded-[20px] bg-[rgba(23,16,24,0.55)] px-3 text-left text-white border border-[rgba(255,255,255,0.18)] backdrop-blur-md active:bg-[rgba(23,16,24,0.7)]">
               <AccountAvatar user={user} size="size-11" />
               <span className="min-w-0 flex-1">
                 <span className="block text-[11px] font-semibold text-white/80">Tài khoản</span>
@@ -7645,15 +7658,15 @@ function MobileHome({
             </button>
             <div className="grid grid-cols-2 gap-3 pointer-events-auto">
               <button type="button" onClick={() => setShowMembers(true)} className="h-11 min-w-0 rounded-full bg-[#800020] px-3 text-[13px] font-bold text-white shadow-sm active:scale-[.99]">Thành viên</button>
-              <button type="button" onClick={() => go("settings")} className="h-11 min-w-0 rounded-full bg-[#F8E7EC] border border-[#800020] px-3 text-[13px] font-bold text-[#800020] shadow-sm active:scale-[.99]">Hệ thống</button>
+              <button type="button" onClick={() => go("settings")} className="h-11 min-w-0 rounded-full bg-[#FFFFFF] border border-[#800020] px-3 text-[13px] font-bold text-[#800020] shadow-sm active:scale-[.99]">Hệ thống</button>
             </div>
           </div>
         </div>
       </section>
 
-      <div className="space-y-3 px-3 pt-3 pointer-events-auto">
-        <section className="rounded-[20px] bg-[var(--mobile-card)] p-4 shadow-sm border border-[var(--mobile-border)]">
-          <h2 className="text-[14px] font-semibold text-[var(--mobile-text)] mb-3">Thông tin cá nhân</h2>
+      <div className="space-y-4 px-3 pt-3 pointer-events-auto">
+        <section className="rounded-[24px] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]">
+          <h2 className="text-[14px] font-semibold text-[#171018] mb-3">Thông tin cá nhân</h2>
           <div className="grid grid-cols-3 gap-y-4 gap-x-2">
             {[
               ["Thông tin", <UserIcon />, () => setProfileSheet("info")],
@@ -7662,8 +7675,8 @@ function MobileHome({
               ["Thẻ NH", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="14" x="2" y="5" rx="2"></rect><line x1="2" x2="22" y1="10" y2="10"></line></svg>, () => setProfileSheet("bank")],
               ["SIM", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect><path d="M12 18h.01"></path></svg>, () => setProfileSheet("sim")]
             ].map(([label, icon, action]: any) => (
-              <button key={label as string} onClick={action} className="flex min-w-0 flex-col items-center justify-start gap-2 rounded-2xl text-center text-[11px] font-medium text-[var(--mobile-muted)] active:opacity-70 transition-opacity">
-                <span className="grid size-[40px] shrink-0 place-items-center rounded-full bg-[#F8E7EC] text-[#800020] shadow-sm border border-[#D4AF37] [&>svg]:size-[18px]">{icon}</span>
+              <button key={label as string} onClick={action} className="flex min-w-0 flex-col items-center justify-start gap-2 rounded-2xl text-center text-[11px] font-medium text-[#171018] active:opacity-70 transition-opacity">
+                <span className="grid size-[40px] shrink-0 place-items-center rounded-full bg-[#F8E7EC] text-[#800020] border border-[#D4AF37] [&>svg]:size-[18px]">{icon}</span>
                 <span className="w-full whitespace-normal leading-tight line-clamp-2 px-0.5">{label}</span>
               </button>
             ))}
@@ -7671,10 +7684,10 @@ function MobileHome({
         </section>
 
         <section onClick={() => go("finance")} className="cursor-pointer">
-          <div className="rounded-[20px] bg-[var(--mobile-card)] p-4 shadow-sm border border-[var(--mobile-border)]">
+          <div className="rounded-[24px] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-[15px] font-bold text-[var(--mobile-text)]">Quản lý tài chính cá nhân</h2>
-              <span className="text-[13px] font-bold text-[#D4AF37]">Chi tiết</span>
+              <h2 className="text-[15px] font-bold text-[#171018]">Quản lý tài chính cá nhân</h2>
+              <span className="text-[13px] font-bold text-[#800020]">Chi tiết</span>
             </div>
             {homeFinanceStatus === "unauthorized" ? (
               <p className="py-6 text-center text-sm font-semibold text-[#D4AF37]">Đăng nhập để xem tài chính</p>
@@ -7684,22 +7697,22 @@ function MobileHome({
               <p className="py-6 text-center text-sm text-[var(--mobile-muted)]">Không thể tải dữ liệu tài chính</p>
             ) : <div className="flex gap-3">
               <div className="flex-1 flex flex-col justify-center">
-                <p className="text-[12px] font-medium text-[var(--mobile-muted)]">Tháng {now.getMonth() + 1}</p>
+                <p className="text-[12px] font-medium text-[#6B5E64]">Tháng {now.getMonth() + 1}</p>
                 <div className="mt-1.5 space-y-0.5">
-                  <p className="text-[13px] font-semibold text-[var(--mobile-text)]">Thu: <span className="text-emerald-500">{money(income)}</span></p>
-                  <p className="text-[13px] font-semibold text-[var(--mobile-text)]">Chi: <span className="text-rose-500">{money(expense)}</span></p>
+                  <p className="text-[13px] font-semibold text-[#171018]">Thu: <span className="text-[#059669]">{money(income)}</span></p>
+                  <p className="text-[13px] font-semibold text-[#171018]">Chi: <span className="text-[#E11D48]">{money(expense)}</span></p>
                 </div>
-                <p className="mt-2.5 text-[10px] text-[var(--mobile-muted)]">Cập nhật đến ngày {now.getDate().toString().padStart(2, '0')}/{(now.getMonth() + 1).toString().padStart(2, '0')}/{now.getFullYear()}</p>
+                <p className="mt-2.5 text-[10px] text-[#6B5E64]">Cập nhật đến ngày {now.getDate().toString().padStart(2, '0')}/{(now.getMonth() + 1).toString().padStart(2, '0')}/{now.getFullYear()}</p>
               </div>
               <div className="w-[140px] h-28 shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} barSize={10}>
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6B5E64" }} dy={4} />
                     <Bar dataKey="thu" radius={[2, 2, 0, 0]}>
-                      {chartData.map((entry, index) => <Cell key={`cell-thu-${index}`} fill={index === 2 ? "#10b981" : "#10b98160"} />)}
+                      {chartData.map((entry, index) => <Cell key={`cell-thu-${index}`} fill={index === 2 ? "#059669" : "#E8DCD5"} />)}
                     </Bar>
                     <Bar dataKey="chi" radius={[2, 2, 0, 0]}>
-                      {chartData.map((entry, index) => <Cell key={`cell-chi-${index}`} fill={index === 2 ? "#f43f5e" : "#f43f5e60"} />)}
+                      {chartData.map((entry, index) => <Cell key={`cell-chi-${index}`} fill={index === 2 ? "#E11D48" : "#F8E7EC"} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -7708,11 +7721,11 @@ function MobileHome({
           </div>
         </section>
 
-        <section className="rounded-[20px] bg-[var(--mobile-card)] p-4 shadow-sm border border-[var(--mobile-border)]">
-          <h2 className="text-sm font-bold text-[var(--mobile-text)] mb-3">Lối tắt nhanh</h2>
+        <section className="rounded-[24px] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]">
+          <h2 className="text-[14px] font-bold text-[#171018] mb-3">Lối tắt nhanh</h2>
           <div className="grid grid-cols-2 gap-3">
             {shortcuts.map(item => (
-              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-[var(--mobile-bg)] text-left text-[var(--mobile-text)] active:opacity-70 transition-opacity">
+              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-[#FFFFFF] border border-[#E8DCD5] shadow-sm text-left text-[#171018] active:opacity-70 transition-opacity">
                 <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.color} text-white`}>{item.icon}</span>
                 <span className="text-xs font-bold leading-tight">{item.label}</span>
               </button>
@@ -7720,19 +7733,19 @@ function MobileHome({
           </div>
         </section>
 
-        <section className="rounded-[20px] bg-[var(--mobile-card)] p-4 shadow-sm border border-[var(--mobile-border)]">
-          <h2 className="font-bold text-[var(--mobile-text)]">Hoạt động gần đây</h2>
+        <section className="rounded-[24px] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]">
+          <h2 className="text-[14px] font-bold text-[#171018] mb-3">Hoạt động gần đây</h2>
           {notifications.length ? (
-            <div className="mt-3 space-y-3">
+            <div className="space-y-3">
               {notifications.slice(0, 3).map(item => (
-                <button key={item.id} onClick={() => go("notifications")} className="block w-full rounded-2xl bg-[var(--mobile-bg)] p-3 text-left active:opacity-70 transition-opacity">
-                  <b className="block truncate text-sm text-[var(--mobile-text)]">{item.actorName || "Family Hub"}</b>
-                  <p className="mt-1 line-clamp-2 text-xs text-[var(--mobile-muted)]">{item.message}</p>
+                <button key={item.id} onClick={() => go("notifications")} className="block w-full rounded-2xl bg-[#FFFFFF] border border-[#E8DCD5] shadow-sm p-3 text-left active:opacity-70 transition-opacity">
+                  <b className="block truncate text-[13px] text-[#171018]">{item.actorName || "Family Hub"}</b>
+                  <p className="mt-1 line-clamp-2 text-[12px] text-[#6B5E64]">{item.message}</p>
                 </button>
               ))}
             </div>
           ) : (
-            <p className="py-6 text-center text-sm text-[#6B5E64]">Chưa có hoạt động gần đây</p>
+            <p className="py-6 text-center text-[13px] text-[#6B5E64]">Chưa có hoạt động gần đây</p>
           )}
         </section>
       </div>
