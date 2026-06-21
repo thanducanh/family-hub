@@ -7965,14 +7965,13 @@ function MobileHome({
           </div>
 
           <div className="mt-auto space-y-3.5">
-            <button type="button" onClick={openProfile} className="flex h-16 w-full items-center gap-3 rounded-[20px] bg-[rgba(23,16,24,0.55)] px-3 text-left text-white border border-[rgba(255,255,255,0.18)] backdrop-blur-md active:bg-[rgba(23,16,24,0.7)]">
+            <button type="button" onClick={openProfile} className="flex h-[60px] w-full items-center gap-3 rounded-2xl bg-[rgba(23,16,24,0.42)] px-3 text-left text-white border border-[rgba(255,255,255,0.16)] shadow-sm backdrop-blur-md active:bg-[rgba(23,16,24,0.5)]">
               <AccountAvatar user={user} size="size-11" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-semibold text-white/80">Tài khoản</span>
-                <b className="block truncate text-sm text-white">{user.displayName || user.username}</b>
-                <span className="block truncate text-[10px] text-white/70">@{user.username}</span>
+                <span className="block text-[11px] font-medium text-white/80">Tài khoản</span>
+                <b className="block truncate text-[14px] font-bold text-white">{user.displayName || user.username}</b>
               </span>
-              <span className="text-xl font-light text-white">›</span>
+              <span className="text-xl font-light text-white/80">›</span>
             </button>
             <div className="grid grid-cols-2 gap-3 pointer-events-auto">
               <button type="button" onClick={() => setShowMembers(true)} className="h-11 min-w-0 rounded-full bg-[#800020] px-3 text-[13px] font-bold text-white shadow-sm active:scale-[.99]">Thành viên</button>
