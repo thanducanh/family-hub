@@ -1021,20 +1021,6 @@ function SystemAdminProfile({ user, openChangePassword, logout, savedUser, refre
   return <div className="max-w-2xl space-y-5"><Card className="overflow-visible p-6"><div className="flex items-start gap-4"><AccountAvatar user={{ avatar: form.avatar, displayName: form.displayName || "Quản trị viên" }} size="size-16" /><div className="min-w-0 flex-1"><h2 className="truncate text-xl font-bold">{form.displayName || "Quản trị viên"}</h2><p className="mt-1 text-sm text-slate-400">Tài khoản hệ thống</p></div><div className="relative"><button type="button" onClick={() => setMoreOpen(open => !open)} className="grid size-10 place-items-center rounded-lg border border-[var(--app-border)] text-xl text-slate-500 hover:bg-slate-50 dark:hover:bg-white/5" aria-label="Thao tác hồ sơ" aria-expanded={moreOpen}>⋮</button>{moreOpen && <div className="absolute right-0 top-12 z-20 w-56 rounded-2xl border border-[var(--app-border)] bg-[var(--app-card)] p-2 shadow-xl"><button type="button" onClick={() => { setMoreOpen(false); setEditOpen(true); }} className={actionClass}><UserIcon /> Chỉnh sửa hồ sơ</button><button type="button" onClick={() => { setMoreOpen(false); openChangePassword(); }} className={actionClass}><LockIcon /> Đổi mật khẩu</button><button type="button" onClick={logout} className={`${actionClass} text-rose-500`}><LogoutIcon /> Đăng xuất</button></div>}</div></div><div className="mt-5 grid gap-4 text-sm sm:grid-cols-2"><AccountDetail label="Username" value={user.username || "admin"} /><AccountDetail label="Quyền" value="Toàn quyền" /><AccountDetail label="Trạng thái" value="Đang hoạt động" /><AccountDetail label="Loại tài khoản" value="Tài khoản hệ thống" /></div></Card>{editOpen && <Card className="p-6"><h3 className="font-semibold">Hồ sơ tài khoản</h3><form onSubmit={submit} className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Tên hiển thị"><input required className={inputClass} value={form.displayName} onChange={event => setForm(current => ({ ...current, displayName: event.target.value }))} /></Field><Field label="Email"><input type="email" className={inputClass} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} /></Field><Field label="Avatar URL"><input className={inputClass} value={form.avatar} onChange={event => setForm(current => ({ ...current, avatar: event.target.value }))} /></Field>{error && <p className="text-sm text-rose-500 md:col-span-2">{error}</p>}{message && <p className="text-sm text-emerald-500 md:col-span-2">{message}</p>}<div className="flex flex-wrap gap-2 md:col-span-2"><button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Lưu hồ sơ</button><button type="button" onClick={logout} className="rounded-lg border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-500">Đăng xuất</button></div></form></Card>}</div>;
 }
 function AccountDetail({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-slate-400">{label}</p><p className="mt-1 font-semibold">{value}</p></div>; }
-function generateVietQR(bin: string, accountNo: string): string {
-  const receiverInfo = `0006${bin}01${accountNo.length.toString().padStart(2, "0")}${accountNo}`;
-  const merchantInfo = `0010A00000072701${receiverInfo.length.toString().padStart(2, "0")}${receiverInfo}0208QRIBFTTA`;
-  const payload = `00020101021138${merchantInfo.length.toString().padStart(2, "0")}${merchantInfo}53037045802VN6304`;
-  let crc = 0xFFFF;
-  for (let i = 0; i < payload.length; i++) {
-    crc ^= payload.charCodeAt(i) << 8;
-    for (let j = 0; j < 8; j++) {
-      if ((crc & 0x8000) !== 0) crc = (crc << 1) ^ 0x1021;
-      else crc = crc << 1;
-    }
-  }
-  return payload + (crc & 0xFFFF).toString(16).toUpperCase().padStart(4, "0");
-}
 
 function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Screen, showMembers?: boolean) => void }) {
   const ui = useUI();
@@ -1052,8 +1038,6 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
   const [pendingScreen, setPendingScreen] = useState<Screen | null>(null);
   const [loginPrompt, setLoginPrompt] = useState("");
 
-  const [guestBankAccounts, setGuestBankAccounts] = useState<any[]>([]);
-
   useEffect(() => {
     try {
       const legacy = JSON.parse(localStorage.getItem("familyHubLastUser") || "null");
@@ -1065,11 +1049,6 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
       };
       if (stored?.username) { setLastUser(stored); setUsername(stored.username); }
     } catch { localStorage.removeItem("familyHubLastUser"); }
-    
-    try {
-      const storedBank = localStorage.getItem("familyHubLastBankAccounts");
-      if (storedBank) setGuestBankAccounts(JSON.parse(storedBank));
-    } catch {}
   }, []);
 
   async function submit(event: React.FormEvent) {
@@ -1098,11 +1077,6 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
         localStorage.removeItem("lastCoverUrl");
         localStorage.removeItem("lastBackgroundUrl");
       }
-      
-      fetch("/api/bank-accounts").then(r => r.json()).then(res => {
-        if (res?.data?.length) localStorage.setItem("familyHubLastBankAccounts", JSON.stringify(res.data));
-        else localStorage.removeItem("familyHubLastBankAccounts");
-      }).catch(() => {});
 
       setMobileLoginOpen(false);
       addAppLog("ACTION", `User ${result.user.username} logged in successfully`, { screen: "login" });
@@ -1125,11 +1099,6 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
   const guestHour = new Date().getHours();
   const guestGreeting = guestHour >= 5 && guestHour < 11 ? "Chào buổi sáng" : guestHour >= 11 && guestHour < 13 ? "Chào buổi trưa" : guestHour >= 13 && guestHour < 18 ? "Chào buổi chiều" : "Chào buổi tối";
   const guestDisplayName = lastUser?.displayName;
-  
-  const bidvAccount = guestBankAccounts.find(a => ["970418", "bidv", "đầu tư và phát triển"].some(k => (a.bankName || a.bank || "").toLowerCase().includes(k)));
-  const hasAccountNo = bidvAccount ? String(bidvAccount.accountNumber || bidvAccount.accountNo || bidvAccount.stk || bidvAccount.cardNumber || "").replace(/\D/g, "") : "";
-  const accountHolder = bidvAccount?.accountName || bidvAccount?.accountHolder || bidvAccount?.ownerName || bidvAccount?.holderName || lastUser?.displayName || "";
-  const vietQrPayload = hasAccountNo ? generateVietQR("970418", hasAccountNo) : "";
 
   const closeMobileLogin = () => { setMobileLoginOpen(false); setForgot(false); setError(""); setForgotMessage(""); setPendingScreen(null); setLoginPrompt(""); };
   const openGuestLogin = (screen: Screen | null = null) => { setPendingScreen(screen); setLoginPrompt(screen ? "Vui lòng đăng nhập để sử dụng tính năng này" : ""); setMobileLoginOpen(true); };
@@ -1204,29 +1173,22 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
 
       <div className="px-5 space-y-4 relative z-20 pointer-events-auto mb-6 flex justify-center">
         <section className="w-[317px] rounded-[16px] bg-[#FFFFFF] border border-[#E8DCD5] shadow-sm p-4">
-          {vietQrPayload ? (
-            <div className="flex gap-4 items-center">
-              <div className="shrink-0 bg-white p-1.5 rounded-xl border border-[#E8DCD5] shadow-sm">
-                <QRCode value={vietQrPayload} size={88} level="M" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="text-[12px] font-bold text-[#6B5E64] mb-1">Mã thanh toán của tôi</h2>
-                <b className="block text-[14px] font-black text-[#171018] truncate leading-tight mb-0.5" style={{ textTransform: "uppercase" }}>{accountHolder}</b>
-                <div className="flex items-center gap-1.5 mt-1.5">
-                  <span className="inline-flex h-5 items-center rounded-md bg-[#800020] px-1.5 text-[10px] font-bold text-white uppercase tracking-wider">BIDV</span>
-                  <span className="text-[13px] font-bold text-[#6B5E64] font-mono tracking-tight">{hasAccountNo.slice(0, 4)}***{hasAccountNo.slice(-3)}</span>
-                </div>
+          <div className="flex gap-4 items-center">
+            <div className="shrink-0 bg-white p-1.5 rounded-xl border border-[#E8DCD5] shadow-sm h-[100px] w-[100px] flex items-center justify-center">
+              <img src="/images/bidv-qr.png" alt="BIDV QR" className="max-h-full max-w-full object-contain" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-[12px] font-bold text-[#6B5E64] mb-1">Mã thanh toán của tôi</h2>
+              <b className="block text-[14px] font-black text-[#171018] truncate leading-tight mb-0.5 uppercase">THAN DUC ANH</b>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <span className="inline-flex h-5 items-center rounded-md bg-[#800020] px-1.5 text-[10px] font-bold text-white uppercase tracking-wider">BIDV</span>
+                <span className="text-[13px] font-bold text-[#6B5E64] font-mono tracking-tight">1380541186</span>
               </div>
             </div>
-          ) : (
-            <>
-              <h2 className="text-[14px] font-bold text-[#171018] mb-4">Mã thanh toán của tôi</h2>
-              <div className="py-6 flex flex-col items-center justify-center bg-[#F8E7EC] rounded-xl border border-[#E8DCD5]/50">
-                <span className="text-2xl mb-2 opacity-50">🔒</span>
-                <p className="text-[13px] font-medium text-[#6B5E64] text-center">Chưa có tài khoản BIDV<br />để tạo mã thanh toán</p>
-              </div>
-            </>
-          )}
+          </div>
+          <button type="button" onClick={() => alert("Tính năng đang phát triển")} className="mt-4 w-full h-10 rounded-xl bg-[#D4AF37] text-[13px] font-bold text-[#171018] shadow-sm active:scale-[.98] transition-transform">
+            Chia sẻ
+          </button>
         </section>
       </div>
 
