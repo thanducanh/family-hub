@@ -206,6 +206,24 @@ function nextBirthday(member: Member, now = new Date()) {
 function isOverdue(task: Task, now = new Date()) { const due = parseDate(task.dueDate, now); return task.status !== "done" && Boolean(due && due < new Date(now.getFullYear(), now.getMonth(), now.getDate())); }
 function isDueToday(task: Task, now = new Date()) { const due = parseDate(task.dueDate, now); return Boolean(due && due.toDateString() === now.toDateString()); }
 function memberName(members: Member[], id: string) { const member = members.find(item => item.id === id); return member ? member.nickname || member.name : ""; }
+const MOBILE_I18N: Record<string, Record<string, string>> = {
+  vi: {
+    "nav.home": "Trang chủ", "nav.calendar": "Lịch", "nav.stats": "Thống kê", "nav.finance": "Thu chi", "nav.settings": "Cài đặt",
+    "set.sec": "Cài đặt An toàn - Bảo mật", "set.pass": "Đổi mật khẩu",
+    "set.app": "Cài đặt Ứng dụng", "set.theme": "Đổi giao diện", "set.lang": "Ngôn ngữ", "set.logout": "Đăng xuất"
+  },
+  en: {
+    "nav.home": "Home", "nav.calendar": "Calendar", "nav.stats": "Stats", "nav.finance": "Finance", "nav.settings": "Settings",
+    "set.sec": "Security Settings", "set.pass": "Change Password",
+    "set.app": "Application Settings", "set.theme": "Theme", "set.lang": "Language", "set.logout": "Log Out"
+  },
+  ja: {
+    "nav.home": "ホーム", "nav.calendar": "カレンダー", "nav.stats": "統計", "nav.finance": "収支", "nav.settings": "設定",
+    "set.sec": "セキュリティ設定", "set.pass": "パスワード変更",
+    "set.app": "アプリ設定", "set.theme": "テーマ", "set.lang": "言語", "set.logout": "ログアウト"
+  }
+};
+const mobileT = (lang: string, key: string) => MOBILE_I18N[lang]?.[key] || key;
 
 export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   const ui = useUI();
@@ -312,10 +330,16 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       window.removeEventListener("appinstalled", onInstalled);
     };
   }, []);
+  const [resolvedMobileTheme, setResolvedMobileTheme] = useState<"light" | "dark">("light");
+
   useEffect(() => {
     if (!preferencesLoaded) return;
     const media = matchMedia("(prefers-color-scheme: dark)");
-    const applyTheme = () => document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && media.matches));
+    const applyTheme = () => {
+      const isDark = theme === "dark" || (theme === "system" && media.matches);
+      document.documentElement.classList.toggle("dark", isDark);
+      setResolvedMobileTheme(isDark ? "dark" : "light");
+    };
     applyTheme();
     document.documentElement.lang = language;
     dataService.savePreferences({ language, theme });
@@ -429,6 +453,44 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     screen === "notifications" ? <NotificationsView user={user} notifications={notifications} setNotifications={setNotifications} /> :
     (
       <>
+        <style dangerouslySetInnerHTML={{ __html: `
+          @media (max-width: 767px) {
+            :root {
+              --mobile-bg: ${resolvedMobileTheme === "dark" ? "#171018" : "#F8F5F2"};
+              --mobile-card: ${resolvedMobileTheme === "dark" ? "#26141A" : "#FFFFFF"};
+              --mobile-text: ${resolvedMobileTheme === "dark" ? "#FFFFFF" : "#171018"};
+              --mobile-muted: ${resolvedMobileTheme === "dark" ? "#D8C8CE" : "#6B5E64"};
+              --mobile-border: ${resolvedMobileTheme === "dark" ? "#4A0012" : "#E8DCD5"};
+              --mobile-primary: #800020;
+              --mobile-accent: #D4AF37;
+              
+              --app-background: var(--mobile-bg);
+              --app-card: var(--mobile-card);
+              --app-foreground: var(--mobile-text);
+              --app-border: var(--mobile-border);
+              --app-muted: var(--mobile-muted);
+              
+              --app-metric-bg: ${resolvedMobileTheme === "dark" ? "#4A0012" : "#F8E7EC"};
+              --app-metric-bg-dark: ${resolvedMobileTheme === "dark" ? "#4A0012" : "#F8E7EC"};
+              --app-metric-text: #800020;
+              --app-success: #059669;
+              --app-danger: #E11D48;
+            }
+            
+            /* Overrides for Calendar & other legacy indigo elements on Mobile */
+            .bg-\\[\\#4f46e5\\], .bg-indigo-600 { background-color: #800020 !important; }
+            .hover\\:bg-indigo-700:hover { background-color: #4A0012 !important; }
+            .text-indigo-600, .text-\\[\\#4f46e5\\] { color: #800020 !important; }
+            .bg-indigo-50 { background-color: #F8E7EC !important; color: #800020 !important; }
+            .bg-indigo-50\\/20 { background-color: rgba(248, 231, 236, 0.5) !important; }
+            .border-indigo-600, .border-\\[\\#4f46e5\\] { border-color: #800020 !important; }
+            .border-indigo-200, .border-indigo-100 { border-color: #D4AF37 !important; }
+            .dark\\:text-indigo-400 { color: #D4AF37 !important; }
+            .dark\\:bg-indigo-400 { background-color: #D4AF37 !important; }
+            .dark\\:bg-indigo-500\\/10 { background-color: rgba(212, 175, 55, 0.1) !important; }
+            .dark\\:bg-indigo-500\\/20 { background-color: rgba(212, 175, 55, 0.2) !important; }
+          }
+        `}} />
         <div className="md:hidden">
           <MobileSettings user={user} onLogout={logout} openChangePassword={() => setChangePasswordOpen(true)} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} t={t} />
         </div>
@@ -439,7 +501,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     );
 
   return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" ? "pb-0" : "pb-[100px] md:pb-0"} ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
-    <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} t={t} />
+    <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} language={language} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
     <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}>
       <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
@@ -2125,36 +2187,36 @@ function LoadingSkeleton() {
   return <main className="min-h-screen animate-pulse bg-[var(--app-background)] px-5 py-6 text-[var(--app-foreground)] md:pl-72 md:pr-8"><div className="mx-auto max-w-7xl"><div className="h-4 w-28 rounded bg-rose-200 dark:bg-white/10" /><div className="mt-3 h-8 w-48 rounded bg-slate-200 dark:bg-white/10" /><div className="mt-8 grid gap-4 lg:grid-cols-[1.3fr_.7fr]"><div className="h-36 rounded-3xl bg-rose-200 dark:bg-white/10" /><div className="grid grid-cols-2 gap-3"><div className="rounded-3xl bg-slate-200 dark:bg-white/10" /><div className="rounded-3xl bg-slate-200 dark:bg-white/10" /></div></div><div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{Array.from({ length: 6 }, (_, index) => <div key={index} className="h-20 rounded-3xl bg-slate-200 dark:bg-white/10" />)}</div><div className="mt-6 grid gap-4 lg:grid-cols-2"><div className="h-48 rounded-3xl bg-slate-200 dark:bg-white/10" /><div className="h-48 rounded-3xl bg-slate-200 dark:bg-white/10" /></div></div></main>;
 }
 
-function MobileNav({ screen, profileOpen, go, openProfile, t }: { screen: Screen; profileOpen: boolean; go: (s: Screen) => void; openProfile: () => void; t: ReturnType<typeof translator> }) {
+function MobileNav({ screen, profileOpen, go, openProfile, language }: { screen: Screen; profileOpen: boolean; go: (s: Screen) => void; openProfile: () => void; language: Language }) {
   const navItemClass = "flex w-full h-full flex-col items-center justify-center gap-1.5 transition-all px-0";
   const activeColor = "text-[#D4AF37]";
-  const inactiveColor = "text-white/70";
+  const inactiveColor = "text-white";
   
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-5 h-16 w-full items-center border-t border-[#800020] bg-[#800020] pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,.25)] backdrop-blur-xl min-[769px]:hidden">
       <button onClick={() => go("members")} className={`${navItemClass} ${screen === "members" && !profileOpen ? activeColor : inactiveColor}`}>
         <span className="text-lg leading-none"><HomeIcon /></span>
-        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Trang chủ</span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{mobileT(language, "nav.home")}</span>
       </button>
 
       <button onClick={() => go("calendar")} className={`${navItemClass} ${screen === "calendar" && !profileOpen ? activeColor : inactiveColor}`}>
         <span className="text-lg leading-none">{icons.calendar}</span>
-        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Lịch</span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{mobileT(language, "nav.calendar")}</span>
       </button>
 
       <button onClick={() => go("dashboard")} className={`${navItemClass} ${screen === "dashboard" && !profileOpen ? activeColor : inactiveColor}`}>
         <span className="text-lg leading-none"><HomeIcon /></span>
-        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Tổng quan</span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{mobileT(language, "nav.stats")}</span>
       </button>
 
       <button onClick={() => go("finance")} className={`${navItemClass} ${screen === "finance" && !profileOpen ? activeColor : inactiveColor}`}>
         <span className="text-lg leading-none">{icons.finance}</span>
-        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Thu chi</span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{mobileT(language, "nav.finance")}</span>
       </button>
 
       <button onClick={() => go("settings")} className={`${navItemClass} ${screen === "settings" && !profileOpen ? activeColor : inactiveColor}`}>
         <span className="text-lg leading-none"><SettingsIcon /></span>
-        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">Cài đặt</span>
+        <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{mobileT(language, "nav.settings")}</span>
       </button>
     </nav>
   );
@@ -2221,12 +2283,12 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
   const todayTasks = data.tasks.filter(task => isDueToday(task, now));
   const overdueTasks = data.tasks.filter(task => isOverdue(task, now));
   const metrics: [string, string, string, string][] = [
-    ["Tổng thành viên", String(data.members.length), "text-indigo-600", "Gia đình"],
+    ["Tổng thành viên", String(data.members.length), "text-[var(--app-metric-text,theme(colors.indigo.600))]", "Gia đình"],
     ["Công việc hôm nay", String(todayTasks.length), "text-orange-500", "Cần xử lý"],
-    ["Công việc quá hạn", String(overdueTasks.length), "text-rose-500", "Cần chú ý"],
-    ["Thu tháng này", money(monthlyIncome), "text-emerald-500", "Tổng thu"],
-    ["Chi tháng này", money(monthlyExpense), "text-rose-500", "Tổng chi"],
-    ["Số dư tháng này", money(monthlyIncome - monthlyExpense), monthlyIncome - monthlyExpense >= 0 ? "text-emerald-500" : "text-rose-500", "Thu trừ chi"],
+    ["Công việc quá hạn", String(overdueTasks.length), "text-[var(--app-danger,theme(colors.rose.500))]", "Cần chú ý"],
+    ["Thu tháng này", money(monthlyIncome), "text-[var(--app-success,theme(colors.emerald.500))]", "Tổng thu"],
+    ["Chi tháng này", money(monthlyExpense), "text-[var(--app-danger,theme(colors.rose.500))]", "Tổng chi"],
+    ["Số dư tháng này", money(monthlyIncome - monthlyExpense), monthlyIncome - monthlyExpense >= 0 ? "text-[var(--app-success,theme(colors.emerald.500))]" : "text-[var(--app-danger,theme(colors.rose.500))]", "Thu trừ chi"],
   ];
   const monthly = Array.from({ length: 6 }, (_, index) => {
     const date = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
@@ -2289,7 +2351,7 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
     </div>
   </div>;
 }
-function MetricCard({ label, value, color, hint }: { label: string; value: string; color: string; hint: string }) { return <Card className="p-4 md:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs md:text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p><p className={`mt-2 md:mt-3 text-lg md:text-2xl font-bold ${color}`}>{value}</p></div><span className="grid size-8 md:size-10 place-items-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-400/10"><span className="scale-75 md:scale-100">●</span></span></div><p className="mt-3 md:mt-4 text-[10px] md:text-xs text-slate-400">{hint}</p></Card>; }
+function MetricCard({ label, value, color, hint }: { label: string; value: string; color: string; hint: string }) { return <Card className="p-4 md:p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs md:text-sm font-medium text-[var(--app-muted,theme(colors.slate.500))] dark:text-[var(--app-muted,theme(colors.slate.400))]">{label}</p><p className={`mt-2 md:mt-3 text-lg md:text-2xl font-bold ${color}`}>{value}</p></div><span className="grid size-8 md:size-10 place-items-center rounded-xl bg-[var(--app-metric-bg,theme(colors.indigo.50))] text-[var(--app-metric-text,theme(colors.indigo.500))] dark:bg-[var(--app-metric-bg-dark,theme(colors.indigo.400/10))]"><span className="scale-75 md:scale-100">●</span></span></div><p className="mt-3 md:mt-4 text-[10px] md:text-xs text-[var(--app-muted,theme(colors.slate.400))]">{hint}</p></Card>; }
 function MonthlyChart({ data }: { data: { label: string; income: number; expense: number }[] }) {
   const max = Math.max(...data.flatMap(item => [item.income, item.expense]), 1);
   const hasData = data.some(item => item.income || item.expense);
@@ -2299,7 +2361,7 @@ function CategoryChart({ data }: { data: [string, number][] }) {
   const total = data.reduce((sum, item) => sum + item[1], 0);
   const colors = ["bg-rose-400", "bg-orange-400", "bg-violet-400", "bg-sky-400", "bg-emerald-400"];
   return <Card className="p-5"><b>Chi tiêu theo danh mục</b>{total ? <><div className="mt-4 flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">{data.map(([label, value], index) => <span key={label} className={`h-full ${colors[index % colors.length]}`} style={{ width: `${value / total * 100}%` }} />)}</div><div className="mt-4 space-y-3">{data.slice(0, 5).map(([label, value], index) => <div key={label} className="flex justify-between text-xs"><span><i className={`mr-2 inline-block size-2 rounded-full ${colors[index % colors.length]}`} />{label}</span><b>{money(value)}</b></div>)}</div></> : <div className="mt-5">Chưa có dữ liệu</div>}</Card>; }
-function CompletionChart({ value, done, total }: { value: number; done: number; total: number }) { return <Card className="p-5"><div className="flex items-center justify-between"><b>Tỷ lệ hoàn thành công việc</b><b className="text-emerald-500">{value}%</b></div><div className="mt-8 grid place-items-center"><div className="grid size-36 place-items-center rounded-full bg-emerald-50 text-3xl font-bold text-emerald-500 ring-8 ring-emerald-100 dark:bg-emerald-400/10 dark:ring-emerald-400/20">{value}%</div></div><p className="mt-8 text-center text-xs text-slate-400">{total ? `${done}/${total} công việc đã hoàn thành` : "Chưa có dữ liệu công việc"}</p></Card>; }
+function CompletionChart({ value, done, total }: { value: number; done: number; total: number }) { return <Card className="p-5"><div className="flex items-center justify-between"><b>Tỷ lệ hoàn thành công việc</b><b className="text-[var(--app-success,theme(colors.emerald.500))]">{value}%</b></div><div className="mt-8 grid place-items-center"><div className="grid size-36 place-items-center rounded-full bg-[var(--app-metric-bg,theme(colors.emerald.50))] text-3xl font-bold text-[var(--app-success,theme(colors.emerald.500))] ring-8 ring-[var(--app-metric-bg,theme(colors.emerald.100))] dark:bg-[var(--app-metric-bg-dark,theme(colors.emerald.400/10))] dark:ring-[var(--app-metric-bg-dark,theme(colors.emerald.400/20))]">{value}%</div></div><p className="mt-8 text-center text-xs text-[var(--app-muted,theme(colors.slate.400))]">{total ? `${done}/${total} công việc đã hoàn thành` : "Chưa có dữ liệu công việc"}</p></Card>; }
 function NotificationsView({ user, notifications, setNotifications }: { user: AuthUser; notifications: CalendarNotification[]; setNotifications: React.Dispatch<React.SetStateAction<CalendarNotification[]>> }) {
   const [selected, setSelected] = useState<CalendarNotification | null>(null);
   const [pushStatus, setPushStatus] = useState<"checking" | "subscribed" | "unsubscribed" | "denied">("checking");
@@ -3317,12 +3379,12 @@ function MobileFinance({ data, open, t, user, update, go }: FinanceProps) {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const back = () => tab === "transactions" ? go?.("dashboard") : setTab("transactions");
 
-  const activeTabClass = "flex-1 py-3 text-center text-[15px] font-semibold text-white border-b-[3px] border-[#facc15] transition-all whitespace-nowrap";
+  const activeTabClass = "flex-1 py-3 text-center text-[15px] font-semibold text-white border-b-[3px] border-[#D4AF37] transition-all whitespace-nowrap";
   const inactiveTabClass = "flex-1 py-3 text-center text-[15px] font-medium text-white/60 border-b-[3px] border-transparent transition-all whitespace-nowrap";
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-[#003f3a] dark:bg-[#064e46] md:hidden font-sans">
-      <div className="bg-[#003f3a] pt-3 px-4 pb-0 shrink-0 shadow-md relative z-10">
+    <div className="flex flex-col h-[100dvh] bg-[#800020] dark:bg-[#4A0012] md:hidden font-sans">
+      <div className="bg-[#800020] dark:bg-[#4A0012] pt-3 px-4 pb-0 shrink-0 shadow-md relative z-10">
         <div className="flex items-center justify-between mb-2">
           <button type="button" aria-label="Quay lại" onClick={back} className="text-white p-2 -ml-2 active:bg-white/10 rounded-full">
             <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
@@ -3340,8 +3402,8 @@ function MobileFinance({ data, open, t, user, update, go }: FinanceProps) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto relative z-0">
-        <div className="absolute top-0 inset-x-0 h-40 bg-[#003f3a] rounded-b-[2rem] shadow-sm pointer-events-none -z-10" />
+      <div className="flex-1 overflow-y-auto relative z-0 bg-[var(--mobile-bg)]">
+        <div className="absolute top-0 inset-x-0 h-40 bg-[#800020] dark:bg-[#4A0012] rounded-b-[2rem] shadow-sm pointer-events-none -z-10" />
         
         {tab === "transactions" && <MobileTransactionList data={data} update={update} user={user} refreshTrigger={refreshTrigger} refresh={() => setRefreshTrigger(r => r + 1)} />}
         {tab === "savings" && <MobileSavingsList data={data} update={update} user={user} refreshTrigger={refreshTrigger} refresh={() => setRefreshTrigger(r => r + 1)} />}
@@ -3442,32 +3504,32 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
       </div>
     </div>
 
-    <div className="bg-[#064e46] rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden border border-[rgba(250,204,21,0.25)]">
+    <div className="bg-[#4A0012] rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden border border-[rgba(212,175,55,0.25)]">
       <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
       <p className="mb-1 text-[14px] font-normal text-white/80">Tiền hiện tại</p>
       <b className="mb-5 block whitespace-nowrap text-[clamp(24px,8vw,32px)] font-semibold leading-tight tracking-tight">{loadingOverview ? "..." : (overviewDataCache[year] ? money(currentCash) : "-")}</b>
       
       <div className="grid grid-cols-3 border-t border-white/20 pt-3 gap-1">
         {([['all', 'Chi tiết'], ['income', 'Thu nhập'], ['expense', 'Chi tiêu']] as const).map(([value, label]) => (
-          <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] transition-colors ${subTab === value ? "bg-[#facc15] font-semibold text-[#003f3a] shadow-sm" : "font-normal text-[#cbd5e1] active:bg-white/10"}`}>{label}</button>
+          <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] transition-colors ${subTab === value ? "bg-[#D4AF37] font-semibold text-[#171018] shadow-sm" : "font-normal text-[#cbd5e1] active:bg-white/10"}`}>{label}</button>
         ))}
       </div>
     </div>
 
-    <div className="-mx-4 min-h-[300px] bg-[#003f3a] px-4 pb-4 text-white">
-      {loadingIncomes ? <div className="py-10 text-center text-sm font-normal text-[#cbd5e1]">Đang tải...</div> : displayList.length === 0 ? <div className="py-12 text-center text-sm font-normal text-[#cbd5e1]">Chưa có giao dịch</div> : (
+    <div className="-mx-4 min-h-[300px] bg-[var(--mobile-bg)] px-4 pb-4 text-[var(--mobile-text)]">
+      {loadingIncomes ? <div className="py-10 text-center text-sm font-normal text-[var(--mobile-muted)]">Đang tải...</div> : displayList.length === 0 ? <div className="py-12 text-center text-sm font-normal text-[var(--mobile-muted)]">Chưa có giao dịch</div> : (
         <div className="space-y-5">
           {Object.entries(groupedItems).map(([date, items]) => <section key={date}>
-            <h3 className="mb-1 text-[18px] font-medium tracking-tight text-white/95">{date}</h3>
-            <div className="ml-8 divide-y divide-white/15">
+            <h3 className="mb-1 text-[18px] font-medium tracking-tight text-[var(--mobile-text)]">{date}</h3>
+            <div className="ml-8 divide-y divide-[var(--mobile-border)]">
               {items.map((item: any) => <button type="button" onClick={() => setDetail(item)} key={`${item._isIncome ? 'income' : 'expense'}-${item.id}`} className="flex w-full items-start justify-between gap-3 py-2.5 text-left active:opacity-70">
                 <div className="min-w-0 flex-1 text-left">
-                  <b className="block truncate text-[15px] font-medium text-white/95">{item._displayName}</b>
-                  <span className="mt-0.5 block truncate text-[13px] font-normal text-[#cbd5e1]">{item.note || item._displayCategory || "Khác"}</span>
+                  <b className="block truncate text-[15px] font-medium text-[var(--mobile-text)]">{item._displayName}</b>
+                  <span className="mt-0.5 block truncate text-[13px] font-normal text-[var(--mobile-muted)]">{item.note || item._displayCategory || "Khác"}</span>
                 </div>
                 <div className="shrink-0 text-right">
-                  <b className={`block text-[15px] font-medium ${item._isIncome ? "text-[#86efac]" : "text-[#fb923c]"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
-                  {item._displayTime && <span className="mt-0.5 block text-[13px] font-normal text-[#cbd5e1]">{String(item._displayTime).slice(0, 5)}</span>}
+                  <b className={`block text-[15px] font-medium ${item._isIncome ? "text-[var(--app-success)]" : "text-[var(--app-danger)]"}`}>{item._isIncome ? "+" : "-"}{money(item.amount)}</b>
+                  {item._displayTime && <span className="mt-0.5 block text-[13px] font-normal text-[var(--mobile-muted)]">{String(item._displayTime).slice(0, 5)}</span>}
                 </div>
               </button>)}
             </div>
@@ -3477,7 +3539,7 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
     </div>
 
     <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-12">
-      <button type="button" aria-label={subTab === "all" ? "Thêm giao dịch" : subTab === "income" ? "Thêm thu" : "Thêm chi"} onClick={() => setEditor({ type: subTab === "all" ? "expense" : subTab, isNew: true })} className={`grid size-12 place-items-center rounded-full shadow-xl active:scale-95 transition-transform ${subTab === "income" ? "bg-[#22c55e] text-white" : subTab === "expense" ? "bg-[#fb923c] text-white" : "bg-[#facc15] text-[#003f3a]"}`}>
+      <button type="button" aria-label={subTab === "all" ? "Thêm giao dịch" : subTab === "income" ? "Thêm thu" : "Thêm chi"} onClick={() => setEditor({ type: subTab === "all" ? "expense" : subTab, isNew: true })} className={`grid size-12 place-items-center rounded-full shadow-xl active:scale-95 transition-transform ${subTab === "income" ? "bg-[#22c55e] text-white" : subTab === "expense" ? "bg-[#fb923c] text-white" : "bg-[#D4AF37] text-[#171018]"}`}>
         <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
       </button>
     </div>
@@ -3644,28 +3706,28 @@ function MobileSavingsList({ data: appData, update, user, refreshTrigger, refres
   const totalSavings = savings.reduce((sum, item) => sum + (item.type === "withdraw" ? -Number(item.amount || 0) : Number(item.amount || 0)), 0);
 
   return <div className="px-4 pt-3 pb-32">
-    <div className="bg-gradient-to-br from-blue-600 to-indigo-600 dark:from-blue-900 dark:to-indigo-800 rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden mt-2">
+    <div className="bg-[#4A0012] rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden mt-2 border border-[rgba(212,175,55,0.25)]">
       <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
       <p className="text-[14px] text-white/80 font-medium mb-1">Tiết kiệm hiện có</p>
       <b className="text-[32px] font-bold block mb-1 tracking-tight truncate">{money(totalSavings)}</b>
     </div>
 
-    <div className="bg-white dark:bg-[var(--app-card)] rounded-[1.5rem] shadow-sm p-4 border border-slate-100 dark:border-white/5 min-h-[300px]">
-      <h3 className="font-bold text-slate-800 dark:text-white mb-4 text-[16px] px-1">Danh sách tiết kiệm</h3>
-      {savings.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-slate-400"><svg className="size-12 mb-3 text-slate-200 dark:text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có tiết kiệm</p></div> : (
+    <div className="bg-[var(--mobile-card)] rounded-[1.5rem] shadow-sm p-4 border border-[var(--mobile-border)] min-h-[300px]">
+      <h3 className="font-bold text-[var(--mobile-text)] mb-4 text-[16px] px-1">Danh sách tiết kiệm</h3>
+      {savings.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-[var(--mobile-muted)]"><svg className="size-12 mb-3 text-[var(--mobile-border)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có tiết kiệm</p></div> : (
         <div className="space-y-4">
           {savings.map(item => (
             <div key={item.id} onClick={() => setDetail(item)} className="flex justify-between items-center active:opacity-60 transition-opacity">
               <div className="flex gap-3 items-center min-w-0 pr-3">
-                <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-blue-50 text-blue-500 dark:bg-blue-500/10">
+                <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-[var(--mobile-bg)] text-[var(--mobile-accent)]">
                    <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
                 <div className="min-w-0">
-                  <b className="text-slate-800 dark:text-white text-[15px] font-bold block truncate leading-tight">{item.description || "Tiết kiệm"}</b>
-                  <p className="text-[13px] text-slate-500 mt-0.5 truncate">Tháng {item.month}/{item.year} • {item.holder || "Không rõ"}</p>
+                  <b className="text-[var(--mobile-text)] text-[15px] font-bold block truncate leading-tight">{item.description || "Tiết kiệm"}</b>
+                  <p className="text-[13px] text-[var(--mobile-muted)] mt-0.5 truncate">Tháng {item.month}/{item.year} • {item.holder || "Không rõ"}</p>
                 </div>
               </div>
-              <b className="shrink-0 text-right text-[15px] font-bold text-blue-500">{money(item.amount)}</b>
+              <b className="shrink-0 text-right text-[15px] font-bold text-[var(--app-success)]">{money(item.amount)}</b>
             </div>
           ))}
         </div>
@@ -3828,28 +3890,28 @@ function MobileInvestmentList({ data: appData, update, user, refreshTrigger, ref
   const totalInvestments = investments.reduce((sum, item) => sum + (item.action === "sell" ? -1 : 1) * (Number(item.quantity || 0) * Number(item.price || 0) + (item.action === "buy" ? Number(item.fee || 0) : -Number(item.fee || 0))), 0);
 
   return <div className="px-4 pt-3 pb-32">
-    <div className="bg-gradient-to-br from-purple-600 to-fuchsia-600 dark:from-purple-900 dark:to-fuchsia-900 rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden mt-2">
+    <div className="bg-[#4A0012] rounded-[1.5rem] p-5 shadow-xl text-white mb-5 relative overflow-hidden mt-2 border border-[rgba(212,175,55,0.25)]">
       <div className="absolute top-0 right-0 p-10 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl pointer-events-none" />
       <p className="text-[14px] text-white/80 font-medium mb-1">Đầu tư hiện có</p>
       <b className="text-[32px] font-bold block mb-1 tracking-tight truncate">{money(totalInvestments)}</b>
     </div>
 
-    <div className="bg-white dark:bg-[var(--app-card)] rounded-[1.5rem] shadow-sm p-4 border border-slate-100 dark:border-white/5 min-h-[300px]">
-      <h3 className="font-bold text-slate-800 dark:text-white mb-4 text-[16px] px-1">Danh sách đầu tư</h3>
-      {investments.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-slate-400"><svg className="size-12 mb-3 text-slate-200 dark:text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có đầu tư</p></div> : (
+    <div className="bg-[var(--mobile-card)] rounded-[1.5rem] shadow-sm p-4 border border-[var(--mobile-border)] min-h-[300px]">
+      <h3 className="font-bold text-[var(--mobile-text)] mb-4 text-[16px] px-1">Danh sách đầu tư</h3>
+      {investments.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-[var(--mobile-muted)]"><svg className="size-12 mb-3 text-[var(--mobile-border)]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có đầu tư</p></div> : (
         <div className="space-y-4">
           {investments.map(item => (
             <div key={item.id} onClick={() => setDetail(item)} className="flex justify-between items-center active:opacity-60 transition-opacity">
               <div className="flex gap-3 items-center min-w-0 pr-3">
-                <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-purple-50 text-purple-500 dark:bg-purple-500/10">
+                <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-[var(--mobile-bg)] text-[var(--mobile-accent)]">
                    <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
                 </div>
                 <div className="min-w-0">
-                  <b className="text-slate-800 dark:text-white text-[15px] font-bold block truncate leading-tight">{item.stockCode || "Đầu tư"}</b>
-                  <p className="text-[13px] text-slate-500 mt-0.5 truncate">{formatDateVN(item.tradeDate || item.createdAt)} • {item.action === "sell" ? "Bán" : "Mua"}</p>
+                  <b className="text-[var(--mobile-text)] text-[15px] font-bold block truncate leading-tight">{item.stockCode || "Đầu tư"}</b>
+                  <p className="text-[13px] text-[var(--mobile-muted)] mt-0.5 truncate">{formatDateVN(item.tradeDate || item.createdAt)} • {item.action === "sell" ? "Bán" : "Mua"}</p>
                 </div>
               </div>
-              <b className="shrink-0 text-right text-[15px] font-bold text-purple-500">{money(Number(item.quantity || 0) * Number(item.price || 0))}</b>
+              <b className="shrink-0 text-right text-[15px] font-bold text-[var(--mobile-accent)]">{money(Number(item.quantity || 0) * Number(item.price || 0))}</b>
             </div>
           ))}
         </div>
@@ -3857,7 +3919,7 @@ function MobileInvestmentList({ data: appData, update, user, refreshTrigger, ref
     </div>
     
     <div className="fixed bottom-[calc(4rem+max(12px,env(safe-area-inset-bottom)))] right-4 z-40 size-14">
-      <button type="button" aria-label="Thêm đầu tư" onClick={() => setEditor({ isNew: true })} className="grid size-14 place-items-center rounded-full bg-purple-500 text-white shadow-xl active:scale-95 transition-transform">
+      <button type="button" aria-label="Thêm đầu tư" onClick={() => setEditor({ isNew: true })} className="grid size-14 place-items-center rounded-full bg-[#D4AF37] text-[#171018] shadow-xl active:scale-95 transition-transform">
         <svg className="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 5v14m7-7H5" /></svg>
       </button>
     </div>
@@ -6916,7 +6978,7 @@ function MobileSettings({ user, onLogout, openChangePassword, language, setLangu
   const [activeSheet, setActiveSheet] = useState<"theme" | "language" | null>(null);
 
   async function handleLogout() {
-    if (!await ui.confirm("Đăng xuất?", "Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng?")) return;
+    if (!await ui.confirm(mobileT(language, "set.logout") + "?", "Bạn có chắc chắn muốn đăng xuất khỏi ứng dụng?")) return;
     onLogout();
   }
 
@@ -6924,14 +6986,14 @@ function MobileSettings({ user, onLogout, openChangePassword, language, setLangu
 
   function ItemRow({ icon, label, value, onClick, children }: any) {
     return (
-      <div className="relative flex items-center justify-between py-2.5 px-3 active:bg-[#F8E7EC] transition-colors border-b border-[#E8DCD5] last:border-0 cursor-pointer" onClick={onClick}>
+      <div className="relative flex items-center justify-between py-2.5 px-3 active:opacity-70 transition-colors border-b border-[var(--mobile-border)] last:border-0 cursor-pointer" onClick={onClick}>
         <div className="flex items-center gap-2.5">
-          <span className="grid size-[28px] shrink-0 place-items-center rounded-full bg-[#F8E7EC] text-[#800020] shadow-sm border border-[#D4AF37] [&>svg]:size-[14px]">
+          <span className="grid size-[28px] shrink-0 place-items-center rounded-full text-[var(--mobile-primary)] shadow-sm border border-[var(--mobile-accent)] [&>svg]:size-[14px]">
             {icon}
           </span>
-          <span className="text-[13px] font-bold text-[#171018]">{label}</span>
+          <span className="text-[13px] font-bold text-[var(--mobile-text)]">{label}</span>
         </div>
-        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#6B5E64] pointer-events-none">
+        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--mobile-muted)] pointer-events-none">
           {value && <span>{value}</span>}
           {children}
         </div>
@@ -6940,66 +7002,66 @@ function MobileSettings({ user, onLogout, openChangePassword, language, setLangu
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif] flex flex-col min-h-[calc(100dvh-64px)] bg-[#F8F5F2] px-3 pt-3 pb-4">
+    <div className="mx-auto w-full max-w-2xl font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif] flex flex-col min-h-[calc(100dvh-64px)] bg-[var(--mobile-bg)] px-3 pt-3 pb-4">
       <div className="space-y-4 flex-1">
         <section>
-          <h2 className="text-[11px] font-bold text-[#800020] mb-1.5 ml-1 uppercase tracking-wider">Cài đặt An toàn - Bảo mật</h2>
-          <div className="rounded-[16px] bg-[#FFFFFF] shadow-sm border border-[#E8DCD5] overflow-hidden">
-            <ItemRow icon={<LockIcon />} label="Đổi mật khẩu" onClick={openChangePassword}>
-              <span className="text-[#D4AF37] text-lg leading-none">›</span>
+          <h2 className="text-[11px] font-bold text-[var(--mobile-primary)] mb-1.5 ml-1 uppercase tracking-wider">{mobileT(language, "set.sec")}</h2>
+          <div className="rounded-[16px] bg-[var(--mobile-card)] shadow-sm border border-[var(--mobile-border)] overflow-hidden">
+            <ItemRow icon={<LockIcon />} label={mobileT(language, "set.pass")} onClick={openChangePassword}>
+              <span className="text-[var(--mobile-accent)] text-lg leading-none">›</span>
             </ItemRow>
           </div>
         </section>
 
         <section>
-          <h2 className="text-[11px] font-bold text-[#800020] mb-1.5 ml-1 uppercase tracking-wider">Cài đặt Ứng dụng</h2>
-          <div className="rounded-[16px] bg-[#FFFFFF] shadow-sm border border-[#E8DCD5] overflow-hidden">
-            <ItemRow icon={<ThemeIcon dark={theme==="dark"} />} label="Đổi giao diện" value={theme === "light" ? "Sáng" : theme === "dark" ? "Tối" : "Theo hệ thống"} onClick={() => setActiveSheet("theme")}>
-              <span className="text-[#D4AF37] text-lg leading-none">›</span>
+          <h2 className="text-[11px] font-bold text-[var(--mobile-primary)] mb-1.5 ml-1 uppercase tracking-wider">{mobileT(language, "set.app")}</h2>
+          <div className="rounded-[16px] bg-[var(--mobile-card)] shadow-sm border border-[var(--mobile-border)] overflow-hidden">
+            <ItemRow icon={<ThemeIcon dark={theme==="dark"} />} label={mobileT(language, "set.theme")} value={t(theme)} onClick={() => setActiveSheet("theme")}>
+              <span className="text-[var(--mobile-accent)] text-lg leading-none">›</span>
             </ItemRow>
-            <ItemRow icon={<GlobeIcon />} label="Ngôn ngữ" value={language === "vi" ? "Tiếng Việt" : language === "en" ? "English" : "日本語"} onClick={() => setActiveSheet("language")}>
-              <span className="text-[#D4AF37] text-lg leading-none">›</span>
+            <ItemRow icon={<GlobeIcon />} label={mobileT(language, "set.lang")} value={language === "vi" ? "Tiếng Việt" : language === "en" ? "English" : "日本語"} onClick={() => setActiveSheet("language")}>
+              <span className="text-[var(--mobile-accent)] text-lg leading-none">›</span>
             </ItemRow>
           </div>
         </section>
 
         <div className="pt-2">
-          <div className="rounded-[16px] bg-[#FFFFFF] shadow-sm border border-[#E8DCD5] overflow-hidden">
-            <ItemRow icon={<LogoutIcon />} label="Đăng xuất" onClick={handleLogout} />
+          <div className="rounded-[16px] bg-[var(--mobile-card)] shadow-sm border border-[var(--mobile-border)] overflow-hidden">
+            <ItemRow icon={<LogoutIcon />} label={mobileT(language, "set.logout")} onClick={handleLogout} />
           </div>
         </div>
       </div>
 
       {activeSheet === "theme" && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={() => setActiveSheet(null)}>
-          <div className="bg-[#FFFFFF] rounded-t-[20px] p-4 animate-in slide-in-from-bottom duration-200" onClick={e => e.stopPropagation()}>
-            <h3 className="text-[14px] font-bold text-[#800020] mb-4 text-center">Chọn giao diện</h3>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm" onClick={() => setActiveSheet(null)}>
+          <div className="bg-[var(--mobile-card)] rounded-t-[20px] p-4 animate-in slide-in-from-bottom duration-200" onClick={e => e.stopPropagation()}>
+            <h3 className="text-[14px] font-bold text-[var(--mobile-primary)] mb-4 text-center">{mobileT(language, "set.theme")}</h3>
             <div className="space-y-2">
               {(["light", "dark", "system"] as Theme[]).map(x => (
-                <button key={x} onClick={() => { setTheme(x); setActiveSheet(null); }} className={`w-full flex items-center justify-between p-3 rounded-[12px] border ${theme === x ? "border-[#800020] bg-[#F8E7EC] text-[#800020]" : "border-[#E8DCD5] bg-[#F8F5F2] text-[#171018]"} text-[13px] font-bold transition-colors`}>
+                <button key={x} onClick={() => { setTheme(x); setActiveSheet(null); }} className={`w-full flex items-center justify-between p-3 rounded-[12px] border ${theme === x ? "border-[var(--mobile-primary)] text-[var(--mobile-primary)]" : "border-[var(--mobile-border)] text-[var(--mobile-text)]"} text-[13px] font-bold transition-colors`}>
                   <span>{t(x)}</span>
-                  {theme === x && <span className="text-[#D4AF37] text-lg leading-none font-bold">✓</span>}
+                  {theme === x && <span className="text-[var(--mobile-accent)] text-lg leading-none font-bold">✓</span>}
                 </button>
               ))}
             </div>
-            <button onClick={() => setActiveSheet(null)} className="w-full mt-4 p-3 rounded-[12px] bg-[#F8F5F2] border border-[#E8DCD5] text-[#6B5E64] font-bold text-[13px]">Hủy</button>
+            <button onClick={() => setActiveSheet(null)} className="w-full mt-4 p-3 rounded-[12px] bg-[var(--mobile-bg)] border border-[var(--mobile-border)] text-[var(--mobile-muted)] font-bold text-[13px]">Hủy</button>
           </div>
         </div>
       )}
 
       {activeSheet === "language" && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={() => setActiveSheet(null)}>
-          <div className="bg-[#FFFFFF] rounded-t-[20px] p-4 animate-in slide-in-from-bottom duration-200" onClick={e => e.stopPropagation()}>
-            <h3 className="text-[14px] font-bold text-[#800020] mb-4 text-center">Chọn ngôn ngữ</h3>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm" onClick={() => setActiveSheet(null)}>
+          <div className="bg-[var(--mobile-card)] rounded-t-[20px] p-4 animate-in slide-in-from-bottom duration-200" onClick={e => e.stopPropagation()}>
+            <h3 className="text-[14px] font-bold text-[var(--mobile-primary)] mb-4 text-center">{mobileT(language, "set.lang")}</h3>
             <div className="space-y-2">
               {[{ id: "vi", label: "Tiếng Việt" }, { id: "en", label: "English" }, { id: "ja", label: "日本語" }].map(x => (
-                <button key={x.id} onClick={() => { setLanguage(x.id as Language); setActiveSheet(null); }} className={`w-full flex items-center justify-between p-3 rounded-[12px] border ${language === x.id ? "border-[#800020] bg-[#F8E7EC] text-[#800020]" : "border-[#E8DCD5] bg-[#F8F5F2] text-[#171018]"} text-[13px] font-bold transition-colors`}>
+                <button key={x.id} onClick={() => { setLanguage(x.id as Language); setActiveSheet(null); }} className={`w-full flex items-center justify-between p-3 rounded-[12px] border ${language === x.id ? "border-[var(--mobile-primary)] text-[var(--mobile-primary)]" : "border-[var(--mobile-border)] text-[var(--mobile-text)]"} text-[13px] font-bold transition-colors`}>
                   <span>{x.label}</span>
-                  {language === x.id && <span className="text-[#D4AF37] text-lg leading-none font-bold">✓</span>}
+                  {language === x.id && <span className="text-[var(--mobile-accent)] text-lg leading-none font-bold">✓</span>}
                 </button>
               ))}
             </div>
-            <button onClick={() => setActiveSheet(null)} className="w-full mt-4 p-3 rounded-[12px] bg-[#F8F5F2] border border-[#E8DCD5] text-[#6B5E64] font-bold text-[13px]">Hủy</button>
+            <button onClick={() => setActiveSheet(null)} className="w-full mt-4 p-3 rounded-[12px] bg-[var(--mobile-bg)] border border-[var(--mobile-border)] text-[var(--mobile-muted)] font-bold text-[13px]">Hủy</button>
           </div>
         </div>
       )}
@@ -7537,7 +7599,7 @@ function MobileHome({
     : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-[#800020] pointer-events-none";
 
   return (
-    <div className="min-h-[100dvh] overflow-x-hidden bg-[#F8F5F2] pb-24 font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif]">
+    <div className="min-h-[100dvh] overflow-x-hidden bg-[var(--mobile-bg)] pb-24 font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif]">
       <section style={heroStyle} className={heroClass}>
         {coverUrl && (
           <div className="absolute inset-0 bg-black/30 pointer-events-none z-0" />
@@ -7587,8 +7649,8 @@ function MobileHome({
       </section>
 
       <div className="space-y-3 px-3 pt-3 pointer-events-auto">
-        <section className="rounded-[20px] bg-[#FFFFFF] p-4 shadow-sm border border-[#E8DCD5]">
-          <h2 className="text-[14px] font-semibold text-[#171018] mb-3">Thông tin cá nhân</h2>
+        <section className="rounded-[20px] bg-[var(--mobile-card)] p-4 shadow-sm border border-[var(--mobile-border)]">
+          <h2 className="text-[14px] font-semibold text-[var(--mobile-text)] mb-3">Thông tin cá nhân</h2>
           <div className="grid grid-cols-3 gap-y-4 gap-x-2">
             {[
               ["Thông tin", <UserIcon />, () => setProfileSheet("info")],
@@ -7597,7 +7659,7 @@ function MobileHome({
               ["Thẻ NH", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="14" x="2" y="5" rx="2"></rect><line x1="2" x2="22" y1="10" y2="10"></line></svg>, () => setProfileSheet("bank")],
               ["SIM", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect><path d="M12 18h.01"></path></svg>, () => setProfileSheet("sim")]
             ].map(([label, icon, action]: any) => (
-              <button key={label as string} onClick={action} className="flex min-w-0 flex-col items-center justify-start gap-2 rounded-2xl text-center text-[11px] font-medium text-[#6B5E64] active:opacity-70 transition-opacity">
+              <button key={label as string} onClick={action} className="flex min-w-0 flex-col items-center justify-start gap-2 rounded-2xl text-center text-[11px] font-medium text-[var(--mobile-muted)] active:opacity-70 transition-opacity">
                 <span className="grid size-[40px] shrink-0 place-items-center rounded-full bg-[#F8E7EC] text-[#800020] shadow-sm border border-[#D4AF37] [&>svg]:size-[18px]">{icon}</span>
                 <span className="w-full whitespace-normal leading-tight line-clamp-2 px-0.5">{label}</span>
               </button>
@@ -7606,25 +7668,25 @@ function MobileHome({
         </section>
 
         <section onClick={() => go("finance")} className="cursor-pointer">
-          <div className="rounded-[20px] bg-[#FFFFFF] p-4 shadow-sm border border-[#E8DCD5]">
+          <div className="rounded-[20px] bg-[var(--mobile-card)] p-4 shadow-sm border border-[var(--mobile-border)]">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-[15px] font-bold text-[#171018]">Quản lý tài chính cá nhân</h2>
+              <h2 className="text-[15px] font-bold text-[var(--mobile-text)]">Quản lý tài chính cá nhân</h2>
               <span className="text-[13px] font-bold text-[#D4AF37]">Chi tiết</span>
             </div>
             {homeFinanceStatus === "unauthorized" ? (
               <p className="py-6 text-center text-sm font-semibold text-[#D4AF37]">Đăng nhập để xem tài chính</p>
             ) : homeFinanceStatus === "loading" ? (
-              <p className="py-6 text-center text-sm text-[#6B5E64]">Đang tải dữ liệu tài chính...</p>
+              <p className="py-6 text-center text-sm text-[var(--mobile-muted)]">Đang tải dữ liệu tài chính...</p>
             ) : homeFinanceStatus === "error" ? (
-              <p className="py-6 text-center text-sm text-[#6B5E64]">Không thể tải dữ liệu tài chính</p>
+              <p className="py-6 text-center text-sm text-[var(--mobile-muted)]">Không thể tải dữ liệu tài chính</p>
             ) : <div className="flex gap-3">
               <div className="flex-1 flex flex-col justify-center">
-                <p className="text-[12px] font-medium text-[#6B5E64]">Tháng {now.getMonth() + 1}</p>
+                <p className="text-[12px] font-medium text-[var(--mobile-muted)]">Tháng {now.getMonth() + 1}</p>
                 <div className="mt-1.5 space-y-0.5">
-                  <p className="text-[13px] font-semibold text-[#171018]">Thu: <span className="text-emerald-500">{money(income)}</span></p>
-                  <p className="text-[13px] font-semibold text-[#171018]">Chi: <span className="text-rose-500">{money(expense)}</span></p>
+                  <p className="text-[13px] font-semibold text-[var(--mobile-text)]">Thu: <span className="text-emerald-500">{money(income)}</span></p>
+                  <p className="text-[13px] font-semibold text-[var(--mobile-text)]">Chi: <span className="text-rose-500">{money(expense)}</span></p>
                 </div>
-                <p className="mt-2.5 text-[10px] text-[#6B5E64]">Cập nhật đến ngày {now.getDate().toString().padStart(2, '0')}/{(now.getMonth() + 1).toString().padStart(2, '0')}/{now.getFullYear()}</p>
+                <p className="mt-2.5 text-[10px] text-[var(--mobile-muted)]">Cập nhật đến ngày {now.getDate().toString().padStart(2, '0')}/{(now.getMonth() + 1).toString().padStart(2, '0')}/{now.getFullYear()}</p>
               </div>
               <div className="w-[140px] h-28 shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
@@ -7643,11 +7705,11 @@ function MobileHome({
           </div>
         </section>
 
-        <section className="rounded-[20px] bg-[#FFFFFF] p-4 shadow-sm border border-[#E8DCD5]">
-          <h2 className="text-sm font-bold text-[#171018] mb-3">Lối tắt nhanh</h2>
+        <section className="rounded-[20px] bg-[var(--mobile-card)] p-4 shadow-sm border border-[var(--mobile-border)]">
+          <h2 className="text-sm font-bold text-[var(--mobile-text)] mb-3">Lối tắt nhanh</h2>
           <div className="grid grid-cols-2 gap-3">
             {shortcuts.map(item => (
-              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-[#F8F5F2] text-left text-[#171018] active:bg-[#E8DCD5]">
+              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-[var(--mobile-bg)] text-left text-[var(--mobile-text)] active:opacity-70 transition-opacity">
                 <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.color} text-white`}>{item.icon}</span>
                 <span className="text-xs font-bold leading-tight">{item.label}</span>
               </button>
@@ -7655,14 +7717,14 @@ function MobileHome({
           </div>
         </section>
 
-        <section className="rounded-[20px] bg-[#FFFFFF] p-4 shadow-sm border border-[#E8DCD5]">
-          <h2 className="font-bold text-[#171018]">Hoạt động gần đây</h2>
+        <section className="rounded-[20px] bg-[var(--mobile-card)] p-4 shadow-sm border border-[var(--mobile-border)]">
+          <h2 className="font-bold text-[var(--mobile-text)]">Hoạt động gần đây</h2>
           {notifications.length ? (
             <div className="mt-3 space-y-3">
               {notifications.slice(0, 3).map(item => (
-                <button key={item.id} onClick={() => go("notifications")} className="block w-full rounded-2xl bg-[#F8F5F2] p-3 text-left active:bg-[#E8DCD5]">
-                  <b className="block truncate text-sm text-[#171018]">{item.actorName || "Family Hub"}</b>
-                  <p className="mt-1 line-clamp-2 text-xs text-[#6B5E64]">{item.message}</p>
+                <button key={item.id} onClick={() => go("notifications")} className="block w-full rounded-2xl bg-[var(--mobile-bg)] p-3 text-left active:opacity-70 transition-opacity">
+                  <b className="block truncate text-sm text-[var(--mobile-text)]">{item.actorName || "Family Hub"}</b>
+                  <p className="mt-1 line-clamp-2 text-xs text-[var(--mobile-muted)]">{item.message}</p>
                 </button>
               ))}
             </div>
