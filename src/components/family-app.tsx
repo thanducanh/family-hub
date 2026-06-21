@@ -1099,7 +1099,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
   const closeMobileLogin = () => { setMobileLoginOpen(false); setForgot(false); setError(""); setForgotMessage(""); setPendingScreen(null); setLoginPrompt(""); };
   const openGuestLogin = (screen: Screen | null = null) => { setPendingScreen(screen); setLoginPrompt(screen ? "Vui lòng đăng nhập để sử dụng tính năng này" : ""); setMobileLoginOpen(true); };
   
-  const guestNavItems: [string, React.ReactNode, Screen | null][] = [["Trang chủ", <HomeIcon />, null], ["Lịch", <CalendarIcon />, "calendar"], ["Tổng quan", <HomeIcon />, "dashboard"], ["Thu chi", <WalletIcon />, "finance"], ["Cá nhân", <UserIcon />, "settings"]];
+  const guestNavItems: [string, React.ReactNode, Screen | null][] = [["Trang chủ", <HomeIcon />, null], ["Lịch", <CalendarIcon />, "calendar"], ["Thống kê", <BarChart3 />, "dashboard"], ["Thu chi", <WalletIcon />, "finance"], ["Cá nhân", <UserIcon />, "settings"]];
   
   const guestActions = [
     ["Thành viên", <UsersIcon />, () => openGuestLogin("members")],
@@ -1131,106 +1131,47 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
         backgroundSize: "cover",
         backgroundPosition: "center",
       }
-    : {};
-  const guestHeroClass = guestCoverUrl
-    ? "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden pointer-events-none"
-    : "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden bg-gradient-to-br from-[#003f3a] to-[#012f2d] pointer-events-none";
+    : { backgroundColor: "#800020" };
+  const guestHeroClass = "relative w-full h-[65vh] min-h-[420px] max-h-[550px] flex flex-col p-4 text-white overflow-hidden pointer-events-none rounded-b-[32px] shadow-md";
 
   const mobileGuestHome = (
-    <main className="relative min-h-[100dvh] overflow-x-hidden bg-[#003f3a] pb-24 font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif] text-white min-[769px]:hidden">
+    <main className="relative min-h-[100dvh] overflow-x-hidden bg-[#F8F5F2] pb-24 font-[Inter,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif] text-[#171018] min-[769px]:hidden">
       <section style={guestHeroStyle} className={guestHeroClass}>
         {guestCoverUrl && (
-          <div className="absolute inset-0 bg-black/55 pointer-events-none z-0" />
-        )}
-        {!guestCoverUrl && (
-          <div className="absolute inset-0 bg-black/40 pointer-events-none z-0" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/70 pointer-events-none z-0" />
         )}
         
         <div className="relative z-10 w-full h-full flex flex-col pointer-events-auto">
           <header className="flex h-11 items-center justify-between w-full mb-6">
             <div className="flex items-center gap-2">
-              <span className="grid size-8 place-items-center rounded-xl bg-white/12 text-[11px] font-black ring-1 ring-white/15">FH</span>
-              <b className="text-sm tracking-wide text-white">Family Hub</b>
+              <span className="grid size-8 place-items-center rounded-xl bg-white/20 text-[11px] font-black backdrop-blur-sm">FH</span>
+              <b className="text-sm tracking-wide text-white drop-shadow-md">Family Hub</b>
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={() => openGuestLogin("notifications")} className="grid size-9 place-items-center rounded-full bg-slate-950/25 text-white ring-1 ring-white/15" aria-label="Thông báo"><BellIcon /></button>
+              <button type="button" onClick={() => openGuestLogin("notifications")} className="grid size-9 place-items-center rounded-full bg-black/20 text-white backdrop-blur-sm" aria-label="Thông báo"><BellIcon /></button>
             </div>
           </header>
 
-          <div className="mt-2">
-            <p className="text-[12px] font-medium text-cyan-100/90">{guestGreeting}!</p>
-            <h1 className="mt-1 truncate text-[24px] font-bold leading-tight text-white drop-shadow-sm">{guestDisplayName}</h1>
-            <span className="mt-2 inline-flex rounded-full bg-black/30 px-2.5 py-0.5 text-[10px] font-bold text-white ring-1 ring-white/20">Chưa đăng nhập</span>
-          </div>
-
-          <div className="mt-auto space-y-3.5">
-            <button type="button" onClick={() => openGuestLogin()} className="flex h-16 w-full items-center gap-3 rounded-[20px] bg-black/25 px-3 text-left text-white ring-1 ring-white/15 backdrop-blur-md active:bg-black/40">
-              <AccountAvatar user={{ displayName: guestDisplayName, avatar: lastUser?.avatar || "" }} size="size-11" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-semibold text-white/80">Tài khoản</span>
-                <b className="block truncate text-sm text-white">{lastUser?.username || "Chưa đăng nhập"}</b>
-                <span className="block truncate text-[10px] text-white/70">@{lastUser?.username || "guest"}</span>
-              </span>
-              <span className="text-xl font-light text-white">›</span>
-            </button>
-            <div className="grid grid-cols-2 gap-3 pointer-events-auto">
-              <button type="button" onClick={() => openGuestLogin()} className="h-11 min-w-0 rounded-full bg-[#facc15] px-3 text-[13px] font-bold text-[#003f3a] shadow-sm active:scale-[.99]">Đăng nhập</button>
-              <button type="button" onClick={() => openGuestLogin("finance")} className="h-11 min-w-0 rounded-full bg-[#064e46]/80 px-3 text-[13px] font-bold text-white shadow-sm ring-1 ring-white/50 backdrop-blur-sm active:scale-[.99]">Quản lý thu chi</button>
-            </div>
+          <div className="mt-auto pb-4">
+            <p className="text-[14px] font-medium text-white/90 drop-shadow-md">{guestGreeting}!</p>
+            <h1 className="mt-1 text-[28px] font-bold leading-tight text-white drop-shadow-md">
+              Mừng bạn đến với<br />Family Hub
+            </h1>
           </div>
         </div>
       </section>
 
-      <div className="space-y-3 px-3 pt-3 pointer-events-auto">
-        <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
-          <h2 className="text-[14px] font-semibold text-white mb-3">Thông tin cá nhân</h2>
-          <div className="grid grid-cols-3 gap-y-4 gap-x-2">
-            {[
-              ["Thông tin", <UserIcon />, () => { sessionStorage.setItem("pendingProfileSheet", "info"); openGuestLogin(); }],
-              ["Tài khoản", <LockIcon />, () => { sessionStorage.setItem("pendingProfileSheet", "account"); openGuestLogin(); }],
-              ["Danh thiếp", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 18a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2"></path><rect width="18" height="18" x="3" y="4" rx="2"></rect><circle cx="12" cy="10" r="2"></circle><line x1="8" x2="8" y1="2" y2="4"></line><line x1="16" x2="16" y1="2" y2="4"></line></svg>, () => { sessionStorage.setItem("pendingProfileSheet", "card"); openGuestLogin(); }],
-              ["Thẻ NH", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="14" x="2" y="5" rx="2"></rect><line x1="2" x2="22" y1="10" y2="10"></line></svg>, () => { sessionStorage.setItem("pendingProfileSheet", "bank"); openGuestLogin(); }],
-              ["SIM", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect><path d="M12 18h.01"></path></svg>, () => { sessionStorage.setItem("pendingProfileSheet", "sim"); openGuestLogin(); }]
-            ].map(([label, icon, action]: any) => (
-              <button key={label as string} onClick={action} className="flex min-w-0 flex-col items-center justify-start gap-2 rounded-2xl text-center text-[11px] font-medium text-[#cbd5e1] active:opacity-70 transition-opacity">
-                <span className="grid size-[40px] shrink-0 place-items-center rounded-full bg-[#facc15]/15 text-[#facc15] shadow-sm ring-1 ring-[#facc15]/30 [&>svg]:size-[18px]">{icon}</span>
-                <span className="w-full whitespace-normal leading-tight line-clamp-2 px-0.5">{label}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section onClick={() => openGuestLogin("finance")} className="cursor-pointer">
-          <div className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-[15px] font-bold text-white">Quản lý tài chính cá nhân</h2>
-              <span className="text-[13px] font-bold text-[#facc15]">Chi tiết</span>
-            </div>
-            <div className="py-6 flex flex-col items-center justify-center bg-black/10 rounded-xl">
-              <span className="text-2xl mb-2 opacity-50">🔒</span>
-              <p className="text-[13px] font-medium text-[#cbd5e1]">Đăng nhập để xem tài chính</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-[20px] bg-[#064e46] p-4 shadow-sm border border-white/5">
-          <h2 className="text-sm font-bold text-white mb-3">Lối tắt nhanh</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {guestShortcuts.map(item => (
-              <button key={item.label} onClick={item.onClick} className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 text-left text-white active:bg-white/10">
-                <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.color} text-white`}>{item.icon}</span>
-                <span className="text-xs font-bold leading-tight">{item.label}</span>
-              </button>
-            ))}
-          </div>
-        </section>
+      <div className="px-5 -mt-7 relative z-20 pointer-events-auto">
+        <button type="button" onClick={() => openGuestLogin()} className="w-full h-[56px] rounded-[28px] bg-[#D4AF37] px-6 text-[16px] font-bold text-[#171018] shadow-lg active:scale-[.98] transition-transform flex items-center justify-center">
+          Đăng nhập ngay
+        </button>
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-5 h-16 w-full items-center border-t border-white/10 bg-[#012f2d]/92 pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,.25)] backdrop-blur-xl pointer-events-auto">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-5 h-16 w-full items-center border-t border-[#800020] bg-[#800020] pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,.25)] backdrop-blur-xl pointer-events-auto">
         {guestNavItems.map(([label, icon, target]) => {
           const active = target === null;
           return (
-            <button key={label} type="button" onClick={() => target ? openGuestLogin(target) : undefined} className={`flex w-full h-full flex-col items-center justify-center gap-1.5 transition-all px-0 ${active ? "text-[#facc15]" : "text-[#cbd5e1]"}`}>
+            <button key={label} type="button" onClick={() => target ? openGuestLogin(target) : undefined} className={`flex w-full h-full flex-col items-center justify-center gap-1.5 transition-all px-0 ${active ? "text-[#D4AF37]" : "text-white/70"}`}>
               <span className="text-lg leading-none">{icon}</span>
               <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{label}</span>
             </button>
