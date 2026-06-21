@@ -430,7 +430,10 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   async function logout() {
     addAppLog("ACTION", "User logged out", { screen: "global" });
     await fetch("/api/auth/logout", { method: "POST" });
-    const keysToPreserve = ["familyHubLastUser", "lastUserName", "lastUsername", "lastAvatarUrl", "lastUserCoverUrl", "lastCoverUrl", "lastBackgroundUrl", "familyHubAppLogs"];
+    const keysToPreserve = [
+      "familyHubLastUser", "lastUserName", "lastUsername", "lastAvatarUrl", "lastUserCoverUrl", "lastCoverUrl", "lastBackgroundUrl", "familyHubAppLogs",
+      "theme", "language", "mobileTheme", "mobile_theme", "appTheme", "appLanguage", "familyHubTheme", "familyHubLanguage", "pwaInstallDismissed", "appSettings"
+    ];
     const saved: [string, string][] = [];
     keysToPreserve.forEach(k => {
       const val = localStorage.getItem(k);
@@ -1094,7 +1097,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
 
   const guestHour = new Date().getHours();
   const guestGreeting = guestHour >= 5 && guestHour < 11 ? "Chào buổi sáng" : guestHour >= 11 && guestHour < 13 ? "Chào buổi trưa" : guestHour >= 13 && guestHour < 18 ? "Chào buổi chiều" : "Chào buổi tối";
-  const guestDisplayName = lastUser?.displayName || "Family Hub";
+  const guestDisplayName = lastUser?.displayName;
   
   const closeMobileLogin = () => { setMobileLoginOpen(false); setForgot(false); setError(""); setForgotMessage(""); setPendingScreen(null); setLoginPrompt(""); };
   const openGuestLogin = (screen: Screen | null = null) => { setPendingScreen(screen); setLoginPrompt(screen ? "Vui lòng đăng nhập để sử dụng tính năng này" : ""); setMobileLoginOpen(true); };
@@ -1155,16 +1158,26 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
           <div className="mt-auto pb-4">
             <p className="text-[14px] font-medium text-white/90 drop-shadow-md">{guestGreeting}!</p>
             <h1 className="mt-1 text-[28px] font-bold leading-tight text-white drop-shadow-md">
-              Mừng bạn đến với<br />Family Hub
+              {guestDisplayName ? guestDisplayName : <>Mừng bạn đến với<br />Family Hub</>}
             </h1>
           </div>
         </div>
       </section>
 
-      <div className="px-5 -mt-7 relative z-20 pointer-events-auto">
+      <div className="px-5 -mt-7 relative z-20 pointer-events-auto mb-6">
         <button type="button" onClick={() => openGuestLogin()} className="w-full h-[56px] rounded-[28px] bg-[#D4AF37] px-6 text-[16px] font-bold text-[#171018] shadow-lg active:scale-[.98] transition-transform flex items-center justify-center">
-          Đăng nhập ngay
+          Đăng nhập
         </button>
+      </div>
+
+      <div className="px-5 space-y-4 relative z-20 pointer-events-auto mb-6">
+        <section className="rounded-[16px] bg-[#FFFFFF] border border-[#E8DCD5] shadow-sm p-4">
+          <h2 className="text-[14px] font-bold text-[#171018] mb-4">Mã thanh toán của tôi</h2>
+          <div className="py-6 flex flex-col items-center justify-center bg-[#F8E7EC] rounded-xl border border-[#E8DCD5]/50">
+            <span className="text-2xl mb-2 opacity-50">🔒</span>
+            <p className="text-[13px] font-medium text-[#6B5E64]">Chưa có mã thanh toán</p>
+          </div>
+        </section>
       </div>
 
       <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-5 h-16 w-full items-center border-t border-[#800020] bg-[#800020] pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,.25)] backdrop-blur-xl pointer-events-auto">
