@@ -3761,34 +3761,40 @@ function MobileSavingsDetail({ item, close, onEdit, onDeleted, data, update }: a
     }
   };
 
-  return <FullScreenMobileSheet title="Chi tiết tiết kiệm" close={close}>
-    <div className="p-4 space-y-4 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-[100dvh] pb-32">
-      <div className="bg-white dark:bg-[var(--app-card)] px-4 py-6 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 space-y-5">
-        <div className="text-center pb-5 border-b border-slate-100 dark:border-white/5">
-          <p className="text-[13px] text-slate-500 font-medium mb-1.5 uppercase tracking-wider">{item.type === "withdraw" ? "Rút tiết kiệm" : "Gửi tiết kiệm"}</p>
-          <h2 className="text-[20px] font-bold text-slate-800 dark:text-white mb-2">{item.description || "Tiết kiệm"}</h2>
-          <b className="text-[32px] block text-blue-500">{money(item.amount)}</b>
+  if (typeof document === "undefined") return null;
+  return createPortal(<div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#800020] min-[769px]:hidden">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#800020] px-3 text-white">
+      <button type="button" aria-label="Quay lại" onClick={event => { event.preventDefault(); event.stopPropagation(); close(); }} className="grid size-10 place-items-center rounded-full active:bg-white/10"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+      <h2 className="min-w-0 flex-1 truncate px-2 text-center text-[17px] font-semibold">Chi tiết tiết kiệm</h2>
+      <div className="w-10" />
+    </header>
+    <div className="min-h-0 flex-1 overflow-y-auto bg-[#F8F5F2] px-4 pb-[calc(24px+env(safe-area-inset-bottom))] pt-6 space-y-4">
+      <div className="bg-[#FFFFFF] px-4 py-6 rounded-[24px] shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5] space-y-5">
+        <div className="text-center pb-5 border-b border-[#E8DCD5]">
+          <p className="text-[13px] text-[#6B5E64] font-medium mb-1.5 uppercase tracking-wider">{item.type === "withdraw" ? "Rút tiết kiệm" : "Gửi tiết kiệm"}</p>
+          <h2 className="text-[20px] font-bold text-[#171018] mb-2">{item.description || "Tiết kiệm"}</h2>
+          <b className="text-[32px] block text-[#800020]">{money(item.amount)}</b>
         </div>
         <div className="space-y-4 pt-1">
           <div className="flex justify-between items-center">
-            <span className="text-[14px] text-slate-500">Kỳ</span>
-            <span className="text-[15px] font-bold">Tháng {item.month}/{item.year}</span>
+            <span className="text-[14px] text-[#6B5E64]">Kỳ</span>
+            <span className="text-[15px] font-bold text-[#171018]">Tháng {item.month}/{item.year}</span>
           </div>
-          <div className="flex justify-between items-center"><span className="text-[14px] text-slate-500">Nơi giữ</span><span className="text-[15px] font-bold">{item.holder || "Không rõ"}</span></div>
+          <div className="flex justify-between items-center"><span className="text-[14px] text-[#6B5E64]">Nơi giữ</span><span className="text-[15px] font-bold text-[#171018]">{item.holder || "Không rõ"}</span></div>
           {item.note && (
             <div className="flex justify-between items-start">
-              <span className="text-[14px] text-slate-500">Ghi chú</span>
-              <span className="text-[15px] font-medium text-right break-words max-w-[65%]">{item.note}</span>
+              <span className="text-[14px] text-[#6B5E64]">Ghi chú</span>
+              <span className="text-[15px] font-medium text-[#171018] text-right break-words max-w-[65%]">{item.note}</span>
             </div>
           )}
         </div>
       </div>
 
       <div className="flex gap-3">
-        {!String(item.id).startsWith("transaction-") && <><button onClick={onEdit} disabled={loading} className="flex-1 py-3.5 bg-blue-500 text-white rounded-xl font-bold text-[15px] active:bg-blue-600">Sửa</button><button onClick={remove} disabled={loading} className="flex-1 py-3.5 bg-white text-rose-500 border border-rose-100 rounded-xl font-bold text-[15px] active:bg-rose-50">Xóa</button></>}
+        {!String(item.id).startsWith("transaction-") && <><button onClick={onEdit} disabled={loading} className="flex-1 py-3.5 bg-[#800020] text-white rounded-xl font-bold text-[15px] active:bg-[#660019]">Sửa</button><button onClick={remove} disabled={loading} className="flex-1 py-3.5 bg-[#FFFFFF] text-[#E11D48] border border-[#E11D48] rounded-xl font-bold text-[15px] active:bg-rose-50">Xóa</button></>}
       </div>
     </div>
-  </FullScreenMobileSheet>;
+  </div>, document.body);
 }
 
 function MobileSavingsEditor({ item, close, onSaved, user, data, update }: any) {
