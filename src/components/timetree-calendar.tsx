@@ -714,7 +714,6 @@ export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user
         setEvents={setEvents} goToday={goToday}
         openMenuId={openMenuId} setOpenMenuId={setOpenMenuId}
       />
-      {mobileTab !== "list" && <button type="button" onClick={() => openNewEvent(selectedDate)} className="fixed bottom-[calc(80px+env(safe-area-inset-bottom,0px))] right-4 z-[45] grid size-12 place-items-center rounded-full bg-[#4f46e5] text-3xl font-semibold text-white shadow-xl transition hover:bg-indigo-700 active:scale-95" aria-label={t ? t("addEvent") : "Thêm sự kiện"}>+</button>}
       {draft && <EventEditorSheet draft={draft} calendars={calendars} customLists={customLists} members={members} user={user} setDraft={setDraft} save={saveEvent} remove={draft.id ? () => deleteEvent(draft as CalendarEvent) : undefined} />}
       {detail && <EventDetailSheet item={detail} calendars={calendars} members={members} close={() => setDetail(null)} edit={() => openEditEvent(detail)} remove={() => deleteEvent(detail)} markDone={() => markDone(detail)} />}
     </div>
@@ -1331,9 +1330,32 @@ function MobileCalendarView({
   mobileTab, setMobileTab, anchor, setAnchor, selectedDate, pickDate, events, visibleEvents, selectedEvents, agendaEvents, calendars, members, enabledTypes, setEnabledTypes, openEventDetail, openNewEvent, showLunar, user,
   customLists, saveCustomLists, hiddenLists, toggleListVisibility, setEvents, goToday, openMenuId, setOpenMenuId, setDaySheetDate, setDetail, setDraft, t
 }: any) {
-  const [editingList, setEditingList] = useState<any>(null);
-  const [isAddingList, setIsAddingList] = useState(false);
-  const [detailList, setDetailList] = useState<any>(null);
+  const [todos, setTodos] = useState<any[]>([]);
+  const [todoFilter, setTodoFilter] = useState("Ngày chọn");
+  const [editingTodo, setEditingTodo] = useState<any>(null);
+  const [isAddingTodo, setIsAddingTodo] = useState(false);
+  
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const key = `familyHubTodos:${user?.id || user?.memberId || "guest"}`;
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          setTodos(JSON.parse(saved));
+        }
+      } catch(e) {}
+    }
+  }, [user]);
+
+  const saveTodos = (newTodos: any[]) => {
+    setTodos(newTodos);
+    if (typeof window !== "undefined") {
+      try {
+        const key = `familyHubTodos:${user?.id || user?.memberId || "guest"}`;
+        localStorage.setItem(key, JSON.stringify(newTodos));
+      } catch(e) {}
+    }
+  };
 
   const getLunarSafe = (dIso: string) => {
     try {
@@ -1341,48 +1363,64 @@ function MobileCalendarView({
     } catch(e) {}
     return { text: "", important: false };
   };
+
   const tabs = [
-    { id: "month", label: t ? t("month") : "Tháng", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg> },
-    { id: "week", label: t ? t("week") : "Tuần", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><path d="M8 14h.01M12 14h.01M16 14h.01"/></svg> },
-    { id: "day", label: t ? t("day") : "Ngày", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><rect x="8" y="14" width="8" height="4" rx="1"/></svg> },
-    { id: "list", label: t ? t("list") : "Danh sách", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg> }
+    { id: "month", label: "Tháng", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg> },
+    { id: "day", label: "Chi tiết ngày", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><rect x="8" y="14" width="8" height="4" rx="1"/></svg> },
+    { id: "todo", label: "To-do list", icon: <svg viewBox="0 0 24 24" className="size-[18px] stroke-current stroke-2 fill-none"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> }
   ];
 
-  const defaultLists = [
-    { id: "work", label: t ? t("work") ?? "Công việc" : "Công việc", color: "#22c55e" },
-    { id: "study", label: t ? t("study") ?? "Học tập" : "Học tập", color: "#f97316" },
-    { id: "family", label: t ? t("family") ?? "Gia đình" : "Gia đình", color: "#3b82f6" },
-    { id: "personal", label: t ? t("personal") ?? "Cá nhân" : "Cá nhân", color: "#a855f7" },
-    { id: "birthday", label: t ? t("birthday") : "Sinh nhật", color: "#eab308" },
-    { id: "holiday", label: t ? t("holiday") : "Ngày lễ", color: "#ef4444" },
-    { id: "reminder", label: t ? t("reminder") ?? "Nhắc nhở" : "Nhắc nhở", color: "#ec4899" },
-    { id: "other", label: t ? t("other") ?? "Khác" : "Khác", color: "#94a3b8" }
-  ];
+  const now = new Date();
+  const todayIso = iso(now);
 
-  const toggleVisibility = (id: string) => {
-    setEnabledTypes((prev: string[]) => {
-      if (prev.includes(id)) return prev.filter(t => t !== id);
-      return [...prev, id];
+  const todoEvents = todos.map(t => ({
+    ...t,
+    startDate: t.date,
+    endDate: t.date,
+    type: "todo",
+    allDay: !t.startTime && !t.endTime,
+    calendarId: "todo",
+    color: t.status === "done" ? "#059669" : t.status === "overdue" ? "#E11D48" : "#800020"
+  }));
+
+  const allVisibleEvents = [...visibleEvents, ...todoEvents];
+  const selectedDayEvents = [...selectedEvents, ...todoEvents.filter(t => t.startDate === selectedDate)];
+
+  const handleToggleTodoDone = (e: any, todoId: string) => {
+    e.stopPropagation();
+    const next = todos.map(t => {
+      if (t.id === todoId) {
+        return { ...t, status: t.status === "done" ? "pending" : "done" };
+      }
+      return t;
     });
+    saveTodos(next);
+  };
+
+  const handleMobileFabClick = () => {
+    if (mobileTab === "todo") {
+      setIsAddingTodo(true);
+      return;
+    }
+    openNewEvent();
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-950">
-      {/* Top Tabs */}
-      <div className="flex items-center justify-between bg-white border-b border-slate-100 dark:border-white/5 sticky top-0 z-10 dark:bg-slate-950">
+    <div className="flex flex-col h-full bg-[#F8F5F2]">
+      <div className="flex items-center justify-between bg-[#FFFFFF] border-b border-[#E8DCD5] sticky top-0 z-10">
         {tabs.map(tab => {
           const isActive = mobileTab === tab.id;
           return (
             <button 
               key={tab.id}
               onClick={() => setMobileTab(tab.id)}
-              className={`flex-1 flex flex-col items-center justify-center pt-2 pb-1 transition-all relative ${isActive ? "text-[#4f46e5] dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}
+              className={`flex-1 flex flex-col items-center justify-center pt-2 pb-1 transition-all relative ${isActive ? "text-[#800020]" : "text-[#6B5E64]"}`}
             >
               <div className={`flex flex-col items-center justify-center h-[34px] ${isActive ? "mt-0" : "mt-1"}`}>
                 <div className="flex items-center justify-center h-[20px]">{tab.icon}</div>
                 {isActive && <span className="text-[10px] font-medium mt-0.5">{tab.label}</span>}
               </div>
-              {isActive && <div className="absolute bottom-0 left-1/4 right-1/4 h-0.5 bg-[#4f46e5] dark:bg-indigo-400 rounded-t" />}
+              {isActive && <div className="absolute bottom-0 left-1/4 right-1/4 h-0.5 bg-[#D4AF37] rounded-t" />}
             </button>
           );
         })}
@@ -1390,61 +1428,63 @@ function MobileCalendarView({
 
       <div className="flex-1 overflow-hidden flex flex-col">
         {mobileTab === "month" && (
-          <div className="flex flex-col flex-1 min-h-0">
-
-            {/* Calendar Grid */}
-            <div className="flex flex-col flex-1 min-h-0 bg-white dark:bg-slate-950">
-              <div className="flex items-center px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-10">
-                <h2 className="text-sm font-bold text-slate-800 dark:text-white flex-1 flex items-center gap-2">
-                  {t ? t("month") : "Tháng"} {anchor.getMonth() + 1} {anchor.getFullYear()}
-                  <button onClick={goToday} className="flex size-5 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 active:scale-95" title={t ? t("today") : "Hôm nay"}>
+          <div className="flex flex-col flex-1 min-h-0 bg-[#F8F5F2]">
+            <div className="flex flex-col flex-1 min-h-0 bg-[#FFFFFF]">
+              <div className="flex items-center px-3 py-1.5 bg-[#F8F5F2] border-b border-[#E8DCD5] h-10">
+                <h2 className="text-sm font-bold text-[#171018] flex-1 flex items-center gap-2">
+                  Tháng {anchor.getMonth() + 1} {anchor.getFullYear()}
+                  <button onClick={goToday} className="flex size-5 items-center justify-center rounded-full bg-[#F8E7EC] text-[#800020] border border-[#E8DCD5] active:scale-95" title="Hôm nay">
                     <svg viewBox="0 0 24 24" className="size-3 stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><circle cx="12" cy="15" r="1" /></svg>
                   </button>
                 </h2>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))} className="p-1.5 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                  <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() - 1, 1))} className="p-1.5 text-[#800020] active:scale-95 bg-[#FFFFFF] rounded-lg border border-[#E8DCD5]">
                     <svg viewBox="0 0 24 24" className="size-3.5 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" /></svg>
                   </button>
-                  <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1))} className="p-1.5 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                  <button onClick={() => setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 1))} className="p-1.5 text-[#800020] active:scale-95 bg-[#FFFFFF] rounded-lg border border-[#E8DCD5]">
                     <svg viewBox="0 0 24 24" className="size-3.5 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" /></svg>
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-7 border-b border-slate-100 dark:border-white/5 shrink-0">
+              <div className="grid grid-cols-7 border-b border-[#E8DCD5] shrink-0 bg-[#FFFFFF]">
                 {["CN", "T2", "T3", "T4", "T5", "T6", "T7"].map((day, i) => (
-                  <div key={day} className={`text-center text-[9px] py-1 font-bold uppercase tracking-wider ${i === 0 ? "text-red-500" : "text-slate-400"}`}>{day}</div>
+                  <div key={day} className={`text-center text-[9px] py-1 font-bold uppercase tracking-wider ${i === 0 ? "text-[#E11D48]" : "text-[#6B5E64]"}`}>{day}</div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 grid-rows-6 flex-1 min-h-0">
+              <div className="grid grid-cols-7 grid-rows-6 flex-1 min-h-0 bg-[#FFFFFF]">
                 {monthCells(anchor).map((date, index) => {
                   const dateIso = iso(date);
                   const isSelected = selectedDate === dateIso;
-                  const dayEvents = visibleEvents.filter((e: any) => e.startDate === dateIso).sort((a: any, b: any) => a.title.localeCompare(b.title));
+                  const isToday = todayIso === dateIso;
+                  const dayEvents = allVisibleEvents.filter((e: any) => e.startDate === dateIso).sort((a: any, b: any) => a.title.localeCompare(b.title));
                   const isCurrentMonth = date.getMonth() === anchor.getMonth();
                   const isSunday = date.getDay() === 0;
                   const isLastCol = index % 7 === 6;
                   const lunarInfo = getLunarSafe(dateIso);
+                  
                   return (
                     <div 
                       key={dateIso} 
                       onClick={() => { pickDate(dateIso); setMobileTab("day"); }}
-                      className={`flex flex-col border-b border-slate-100 dark:border-white/5 overflow-hidden cursor-pointer ${!isLastCol ? "border-r" : ""} ${!isCurrentMonth ? "bg-slate-50/50 dark:bg-white/[0.01]" : ""} ${isSelected ? "bg-indigo-50/20 dark:bg-indigo-500/10" : ""}`}
+                      className={`flex flex-col border-b border-[#E8DCD5] overflow-hidden cursor-pointer ${!isLastCol ? "border-r" : ""} ${!isCurrentMonth ? "bg-[#F8F5F2]" : "bg-[#FFFFFF]"} ${isSelected ? "!bg-[#FFF7F9] border border-[#800020]" : ""}`}
                     >
                       <div className="flex items-center justify-between px-0.5 pt-0.5">
-                        <span className={`text-[11px] font-semibold flex items-center justify-center size-[18px] rounded-full ${isSelected ? "bg-[#4f46e5] text-white" : isSunday ? "text-red-500" : "text-slate-700 dark:text-slate-300"}`}>
+                        <span className={[`text-[11px] font-semibold flex items-center justify-center size-[24px] rounded-full`,
+                          isSelected ? "bg-[#800020] text-white" : isToday ? "border border-[#D4AF37] text-[#800020]" : isSunday ? "text-[#E11D48]" : "text-[#171018]"
+                        ].join(" ")}>
                           {date.getDate()}
                         </span>
                         {lunarInfo.text && (
-                          <span className={`text-[8px] -mt-0.5 leading-none ${lunarInfo.important ? "text-rose-500 font-bold" : "text-slate-400 dark:text-slate-500"}`}>{lunarInfo.text}</span>
+                          <span className={`text-[8px] -mt-0.5 leading-none ${lunarInfo.important ? "text-[#E11D48] font-bold" : "text-[#6B5E64]"}`}>{lunarInfo.text}</span>
                         )}
                       </div>
                       <div className="flex flex-col gap-[1px] mt-[1px] px-[1px] w-full">
                         {dayEvents.slice(0, 3).map((e: any, i: number) => (
-                          <div key={i} className="h-3 px-1 rounded-[2px] text-[8px] font-bold truncate leading-snug flex items-center" style={{ backgroundColor: e.color ? e.color + "33" : "#4f46e533", color: e.color || "#4f46e5" }}>
+                          <div key={i} className="h-3 px-1 rounded-[2px] border border-[#E8DCD5] text-[8px] font-bold truncate leading-snug flex items-center" style={{ backgroundColor: e.color === "#E11D48" ? "#FFF1F2" : e.color === "#D4AF37" ? "#FFFBEB" : "#F8E7EC", color: e.color === "#E11D48" ? "#E11D48" : e.color === "#D4AF37" ? "#8A6A00" : "#800020" }}>
                             {e.title}
                           </div>
                         ))}
-                        {dayEvents.length > 3 && <span className="text-[8px] text-slate-400 font-medium px-1 text-left">+{dayEvents.length - 3}</span>}
+                        {dayEvents.length > 3 && <span className="text-[8px] font-medium px-1 text-left text-[#6B5E64]">+{dayEvents.length - 3}</span>}
                       </div>
                     </div>
                   );
@@ -1454,397 +1494,360 @@ function MobileCalendarView({
           </div>
         )}
 
-        {mobileTab === "week" && (
-          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto bg-white dark:bg-slate-950">
-            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-[52px]">
-              <h2 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                Tháng {new Date(selectedDate).getMonth() + 1} {new Date(selectedDate).getFullYear()}
-                <button onClick={goToday} className="flex size-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 active:scale-95" title="Hôm nay">
-                  <svg viewBox="0 0 24 24" className="size-3.5 stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><circle cx="12" cy="15" r="1" /></svg>
-                </button>
-              </h2>
-              <div className="flex items-center gap-2">
-                <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 7); pickDate(iso(d)); }} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
-                  <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" /></svg>
-                </button>
-                <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() + 7); pickDate(iso(d)); }} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
-                  <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" /></svg>
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-               {Array.from({length: 7}).map((_, i) => {
-                 const sd = new Date(selectedDate);
-                 const diff = sd.getDay() === 0 ? 6 : sd.getDay() - 1;
-                 sd.setDate(sd.getDate() - diff + i);
-                 const dIso = iso(sd);
-                 const dayEvs = visibleEvents.filter((e: any) => e.startDate === dIso).sort((a: any, b: any) => a.title.localeCompare(b.title));
-                 const isToday = dIso === iso(new Date());
-                 return (
-                   <div key={dIso} className="flex gap-4">
-                     <div className="w-10 shrink-0 flex flex-col items-center">
-                       <span className={`text-[10px] font-bold uppercase ${isToday ? "text-indigo-600" : "text-slate-500"}`}>
-                         {["CN", "T2", "T3", "T4", "T5", "T6", "T7"][sd.getDay()]}
-                       </span>
-                       <span className={`size-8 flex items-center justify-center rounded-full text-sm font-semibold mt-1 ${isToday ? "bg-indigo-600 text-white" : "text-slate-900 dark:text-white"}`}>
-                         {sd.getDate()}
-                       </span>
-                     </div>
-                     <div className="flex-1 space-y-2 min-w-0 pt-1">
-                       {dayEvs.length > 0 ? dayEvs.map((e: any) => (
-                         <div key={e.id} onClick={() => openEventDetail(e)} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex items-center gap-3 relative overflow-hidden active:scale-[0.98] transition-transform">
-                           <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: e.color || "#4f46e5" }} />
-                           <div className="flex-1 pl-2 min-w-0">
-                             <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate leading-tight">{e.title}</p>
-                             <p className="text-[10px] text-slate-500 mt-0.5 truncate">{e.time || "Cả ngày"} • {e.location || eventTypeMeta(e.type).label}</p>
-                           </div>
-                         </div>
-                       )) : <div className="h-8 flex items-center border-b border-dashed border-slate-200 dark:border-slate-800"></div>}
-                     </div>
-                   </div>
-                 )
-               })}
-            </div>
-          </div>
-        )}
-
         {mobileTab === "day" && (
-          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto bg-[#f8fafc] dark:bg-slate-950">
-            <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-white/5 h-[52px]">
-              <h2 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
+          <div className="flex flex-col flex-1 min-h-0 bg-[#F8F5F2]">
+            <div className="flex items-center justify-between px-4 py-3 bg-[#FFFFFF] border-b border-[#E8DCD5] h-[52px] shrink-0">
+              <h2 className="text-sm font-bold text-[#171018] flex items-center gap-2">
                 {formatDateVN(selectedDate)}
-                <button onClick={goToday} className="flex size-6 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 active:scale-95" title="Hôm nay">
+                <button onClick={goToday} className="flex size-6 items-center justify-center rounded-full bg-[#F8E7EC] text-[#800020] border border-[#E8DCD5] active:scale-95" title="Hôm nay">
                   <svg viewBox="0 0 24 24" className="size-3.5 stroke-current stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /><circle cx="12" cy="15" r="1" /></svg>
                 </button>
               </h2>
               <div className="flex items-center gap-2">
-                <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); pickDate(iso(d)); }} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); pickDate(iso(d)); }} className="p-2 text-[#800020] active:scale-95 bg-[#FFFFFF] rounded-lg border border-[#E8DCD5]">
                   <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6" /></svg>
                 </button>
-                <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() + 1); pickDate(iso(d)); }} className="p-2 text-slate-500 active:scale-95 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-white/10">
+                <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() + 1); pickDate(iso(d)); }} className="p-2 text-[#800020] active:scale-95 bg-[#FFFFFF] rounded-lg border border-[#E8DCD5]">
                   <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" /></svg>
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 pb-20">
-               {selectedEvents.length > 0 ? selectedEvents.map((e: any) => {
-                 const evColor = e.labelColor || e.color || eventTypeMeta(e.type).color || "#4f46e5";
-                 const evMemberIds: string[] = e.memberIds || e.assignedMemberIds || e.relatedMemberIds || e.participants || e.assignees || [];
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-24">
+               {selectedDayEvents.length > 0 ? selectedDayEvents.map((e: any) => {
+                 const isTodo = e.type === "todo";
+                 const evColor = e.color || eventTypeMeta(e.type)?.color || "#800020";
+                 const evMemberIds: string[] = isTodo ? (e.assignedMemberIds || []) : (e.memberIds || e.assignedMemberIds || e.relatedMemberIds || e.participants || e.assignees || []);
                  const evMembers: Member[] = evMemberIds.map((id: string) => members.find((m: Member) => m.id === id)).filter(Boolean) as Member[];
-                 const creator = e.createdByUserId ? members.find((m: Member) => m.id === e.createdByUserId) : null;
-                 const calLabel = e.calendarId === "fixed-birthday" || e.calendarId === "birthday"
+                 const calLabel = isTodo ? "To-do" : (e.calendarId === "fixed-birthday" || e.calendarId === "birthday"
                    ? "Sinh nhật"
                    : e.calendarId === "fixed-holiday" || e.calendarId === "holiday"
                    ? "Ngày lễ"
-                   : calendars.find((c: any) => c.id === e.calendarId)?.name || eventTypeMeta(e.type).label;
+                   : calendars.find((c: any) => c.id === e.calendarId)?.name || eventTypeMeta(e.type)?.label || "Sự kiện");
                  const timeLabel = e.allDay
                    ? "Cả ngày"
                    : e.startTime && e.endTime
                    ? `${e.startTime} – ${e.endTime}`
                    : e.startTime || "";
-                 const repeatLabel = e.repeatRule && e.repeatRule !== "none"
-                   ? repeatOptions.find((o: any) => o.value === e.repeatRule)?.label
-                   : null;
                  const note = e.note || e.description || "";
                  return (
-                   <div key={e.id} onClick={() => openEventDetail(e)} className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-white/5 relative overflow-hidden active:scale-[0.98] transition-transform cursor-pointer">
-                     <div className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl" style={{ backgroundColor: evColor }} />
-                     <div className="pl-5 pr-4 pt-3 pb-3">
-                       <p className="text-[14px] font-bold text-slate-900 dark:text-white leading-snug mb-1.5" style={{ wordBreak: "break-word" }}>{e.title}</p>
-                       <div className="flex items-center gap-1.5 mb-1">
-                         <svg viewBox="0 0 24 24" className="size-3 shrink-0 stroke-slate-400 stroke-2 fill-none"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                         <span className="text-[11px] text-slate-500 font-medium">
-                           {timeLabel}{" · "}{formatDateVN(e.startDate)}
-                           {e.endDate && e.endDate !== e.startDate ? ` → ${formatDateVN(e.endDate)}` : ""}
-                         </span>
-                       </div>
-                       <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                         <svg viewBox="0 0 24 24" className="size-3 shrink-0 stroke-slate-400 stroke-2 fill-none"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                         <span className="text-[11px] text-slate-500 font-medium">{calLabel}</span>
-                         {repeatLabel && (
-                           <span className="text-[10px] bg-slate-100 dark:bg-white/10 text-slate-500 rounded-full px-1.5 py-0.5 font-medium shrink-0">{repeatLabel}</span>
-                         )}
-                         {e.status === "done" && (
-                           <span className="text-[10px] bg-emerald-50 text-emerald-600 rounded-full px-1.5 py-0.5 font-semibold shrink-0">✓ Hoàn thành</span>
-                         )}
-                       </div>
-                       {evMembers.length > 0 && (
+                   <div key={e.id} onClick={() => isTodo ? setEditingTodo(todos.find(t => t.id === e.id)) : openEventDetail(e)} className="bg-[#FFFFFF] rounded-xl shadow-[0_4px_12px_rgba(128,0,32,0.04)] border border-[#E8DCD5] relative overflow-hidden active:scale-[0.98] transition-transform cursor-pointer">
+                     <div className="absolute left-0 top-0 bottom-0 w-1.5" style={{ backgroundColor: evColor }} />
+                     <div className="pl-4 pr-3 py-3 flex gap-2">
+                       <div className="flex-1 min-w-0">
+                         <p className="text-[14px] font-bold text-[#171018] leading-snug mb-1">{e.title}</p>
                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                           <svg viewBox="0 0 24 24" className="size-3 shrink-0 stroke-slate-400 stroke-2 fill-none"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                           <div className="flex flex-wrap gap-1">
+                           {timeLabel && <span className="text-[11px] text-[#6B5E64] font-medium">{timeLabel}</span>}
+                           {timeLabel && <span className="text-[#6B5E64]">•</span>}
+                           <span className="text-[11px] text-[#6B5E64] font-medium">{calLabel}</span>
+                           {isTodo && e.status === "done" && (
+                             <span className="text-[10px] bg-[#059669] text-white rounded-full px-1.5 py-0.5 font-semibold shrink-0">Hoàn thành</span>
+                           )}
+                           {isTodo && e.status === "overdue" && (
+                             <span className="text-[10px] bg-[#E11D48] text-white rounded-full px-1.5 py-0.5 font-semibold shrink-0">Quá hạn</span>
+                           )}
+                         </div>
+                         {evMembers.length > 0 && (
+                           <div className="flex flex-wrap gap-1 mt-1.5">
                              {evMembers.map((m: Member) => (
-                               <span key={m.id} className="inline-flex items-center gap-1 text-[10px] bg-indigo-50 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 rounded-full px-1.5 py-0.5 font-semibold">
-                                 <span className="size-3.5 shrink-0 rounded-full bg-indigo-200 dark:bg-indigo-700 flex items-center justify-center text-[8px] font-black">{(m.nickname || m.name || "?")[0]}</span>
+                               <span key={m.id} className="inline-flex items-center gap-1 text-[10px] bg-[#F8F5F2] text-[#800020] border border-[#E8DCD5] rounded-full px-1.5 py-0.5 font-semibold">
                                  {m.nickname || m.name}
                                </span>
                              ))}
                            </div>
-                         </div>
-                       )}
-                       {creator && (
-                         <div className="flex items-center gap-1.5 mb-1">
-                           <svg viewBox="0 0 24 24" className="size-3 shrink-0 stroke-slate-400 stroke-2 fill-none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                           <span className="text-[11px] text-slate-400 font-medium">Tạo bởi: {creator.nickname || creator.name}</span>
-                         </div>
-                       )}
-                       {note && (
-                         <div className="flex items-start gap-1.5 mt-1.5">
-                           <svg viewBox="0 0 24 24" className="size-3 shrink-0 mt-0.5 stroke-slate-400 stroke-2 fill-none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                           <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">{note}</p>
+                         )}
+                         {note && (
+                           <p className="text-[11px] text-[#6B5E64] line-clamp-2 mt-1.5">{note}</p>
+                         )}
+                       </div>
+                       {isTodo && (
+                         <div className="shrink-0 flex items-center justify-center px-1">
+                           <button onClick={(ev) => handleToggleTodoDone(ev, e.id)} className={`size-6 rounded border flex items-center justify-center ${e.status === 'done' ? 'bg-[#059669] border-[#059669]' : 'bg-[#F8F5F2] border-[#E8DCD5]'}`}>
+                             {e.status === "done" && <svg viewBox="0 0 24 24" className="size-4 stroke-white stroke-2 fill-none"><polyline points="20 6 9 17 4 12"/></svg>}
+                           </button>
                          </div>
                        )}
                      </div>
                    </div>
                  );
                }) : (
-                 <div className="py-12 flex flex-col items-center justify-center text-slate-400">
-                    <svg viewBox="0 0 24 24" className="size-16 stroke-current stroke-[1.5] fill-none mb-4 opacity-20"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
-                    <p className="text-sm font-medium">{t ? t("noEvents") : "Không có sự kiện nào"}</p>
+                 <div className="py-12 flex flex-col items-center justify-center text-[#6B5E64]">
+                    <svg viewBox="0 0 24 24" className="size-12 stroke-current stroke-[1.5] fill-none mb-4 opacity-20"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
+                    <p className="text-sm font-medium">Chưa có lịch trong ngày này</p>
                  </div>
                )}
             </div>
           </div>
         )}
 
-        {mobileTab === "list" && (
-          <div className="flex-1 min-h-0 overflow-y-auto bg-[#f8fafc]">
-            <div className="px-3 pb-6 pt-4 space-y-2">
-              <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">Danh sách hệ thống</h3>
-              {[{ id: "birthday", label: "Sinh nhật", color: "#f43f5e" }, { id: "holiday", label: "Ngày lễ", color: "#22c55e" }].map((cal: any) => (
-                <div key={cal.id} onClick={() => setDetailList(cal)} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 shadow-sm transition-transform active:scale-[0.98]">
-                  <div className="size-9 rounded-xl shrink-0 flex items-center justify-center" style={{ backgroundColor: cal.color + "1a" }}>
-                    <div className="size-4 rounded-full" style={{ backgroundColor: cal.color }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm font-bold text-slate-800">{cal.label}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{events.filter((e: any) => e.type === cal.id || e.calendarId === cal.id || e.calendarId === `fixed-${cal.id}`).length} sự kiện</p>
-                  </div>
-                  <svg viewBox="0 0 24 24" className="size-4 shrink-0 stroke-slate-300 stroke-2 fill-none"><polyline points="9 18 15 12 9 6"/></svg>
-                </div>
+        {mobileTab === "todo" && (
+          <div className="flex flex-col flex-1 min-h-0 bg-[#F8F5F2]">
+            <div className="flex px-4 py-3 gap-2 overflow-x-auto bg-[#FFFFFF] border-b border-[#E8DCD5] shrink-0 no-scrollbar">
+              {["Ngày chọn", "Sắp tới", "Quá hạn", "Hoàn thành"].map(f => (
+                <button 
+                  key={f} 
+                  onClick={() => setTodoFilter(f)} 
+                  className={`px-3 py-1.5 rounded-full text-[13px] font-bold whitespace-nowrap transition-colors ${todoFilter === f ? "bg-[#800020] text-white" : "bg-[#F8F5F2] text-[#6B5E64] border border-[#E8DCD5]"}`}
+                >
+                  {f}
+                </button>
               ))}
-              <h3 className="mb-2 mt-5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Danh sách của tôi</h3>
-              {customLists.length > 0 ? (
-                customLists.map((cal: any) => (
-                  <div key={cal.id} onClick={() => setDetailList(cal)} className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 shadow-sm transition-transform active:scale-[0.98]">
-                    <div className="size-9 rounded-xl shrink-0 flex items-center justify-center" style={{ backgroundColor: (cal.color || "#4f46e5") + "1a" }}>
-                      <div className="size-4 rounded-full" style={{ backgroundColor: cal.color || "#4f46e5" }} />
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-24">
+              {(() => {
+                const nowIso = iso(now);
+                let filtered = todos.filter(t => {
+                  if (t.status === "done") return todoFilter === "Hoàn thành";
+                  if (todoFilter === "Hoàn thành") return false;
+                  
+                  const isOverdue = t.status === "overdue" || (t.date < nowIso) || (t.date === nowIso && t.endTime && t.endTime < now.toTimeString().slice(0,5));
+                  
+                  if (todoFilter === "Quá hạn") return isOverdue;
+                  if (todoFilter === "Ngày chọn") return t.date === selectedDate;
+                  if (todoFilter === "Sắp tới") return t.date > nowIso && !isOverdue;
+                  return false;
+                });
+                
+                filtered.sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || "").localeCompare(b.startTime || ""));
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-12 flex flex-col items-center justify-center text-[#6B5E64]">
+                      <svg viewBox="0 0 24 24" className="size-12 stroke-current stroke-[1.5] fill-none mb-4 opacity-20"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                      <p className="text-sm font-medium">Không có to-do nào.</p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="truncate text-sm font-bold text-slate-800">{cal.name}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{events.filter((e: any) => e.calendarId === cal.id).length} sự kiện</p>
-                      {cal.memberId && cal.memberId !== "all" ? (
-                        <p className="text-xs text-indigo-500 font-medium mt-0.5 truncate">
-                          {members.find((m: Member) => m.id === cal.memberId)?.nickname ||
-                           members.find((m: Member) => m.id === cal.memberId)?.name ||
-                           "Thành viên"}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-slate-400 mt-0.5">Cả gia đình</p>
-                      )}
+                  );
+                }
+
+                return filtered.map(t => {
+                  const evMemberIds: string[] = t.assignedMemberIds || [];
+                  const evMembers: Member[] = evMemberIds.map((id: string) => members.find((m: Member) => m.id === id)).filter(Boolean) as Member[];
+                  const timeLabel = t.startTime && t.endTime ? `${t.startTime} - ${t.endTime}` : t.startTime || "";
+                  const doneCount = (t.checklist || []).filter((c:any) => c.done).length;
+                  const totalCount = (t.checklist || []).length;
+                  
+                  return (
+                    <div key={t.id} onClick={() => setEditingTodo(t)} className="bg-[#FFFFFF] rounded-xl shadow-[0_4px_12px_rgba(128,0,32,0.04)] border border-[#E8DCD5] p-3 flex gap-3 active:scale-[0.98] transition-transform cursor-pointer">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <p className={`text-[14px] font-bold leading-snug ${t.status === 'done' ? 'text-[#6B5E64] line-through' : 'text-[#171018]'}`}>{t.title}</p>
+                          {t.priority === "high" && <span className="shrink-0 text-[10px] bg-[#D4AF37] text-white rounded-full px-1.5 py-0.5 font-bold">Quan trọng</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[11px] text-[#6B5E64] font-medium">{formatDateVN(t.date)}</span>
+                          {timeLabel && <span className="text-[#6B5E64]">•</span>}
+                          {timeLabel && <span className="text-[11px] text-[#6B5E64] font-medium">{timeLabel}</span>}
+                          {totalCount > 0 && <span className="text-[#6B5E64]">•</span>}
+                          {totalCount > 0 && <span className="text-[11px] text-[#6B5E64] font-medium">{doneCount}/{totalCount}</span>}
+                        </div>
+                        {evMembers.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {evMembers.map((m: Member) => (
+                              <span key={m.id} className="inline-flex items-center gap-1 text-[10px] bg-[#F8F5F2] text-[#800020] border border-[#E8DCD5] rounded-full px-1.5 py-0.5 font-semibold">
+                                {m.nickname || m.name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="shrink-0 flex items-center justify-center">
+                        <button onClick={(ev) => handleToggleTodoDone(ev, t.id)} className={`size-8 rounded-full border flex items-center justify-center transition-colors ${t.status === 'done' ? 'bg-[#059669] border-[#059669]' : 'bg-[#F8F5F2] border-[#E8DCD5]'}`}>
+                          {t.status === "done" && <svg viewBox="0 0 24 24" className="size-5 stroke-white stroke-2 fill-none"><polyline points="20 6 9 17 4 12"/></svg>}
+                        </button>
+                      </div>
                     </div>
-                    <button onClick={(e) => { e.stopPropagation(); setEditingList(cal); }} className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 active:bg-slate-200" aria-label={`Sửa ${cal.name}`}>
-                      <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                    </button>
-                    <svg viewBox="0 0 24 24" className="size-4 shrink-0 stroke-slate-300 stroke-2 fill-none"><polyline points="9 18 15 12 9 6"/></svg>
-                  </div>
-                ))
-              ) : (
-                <div className="flex flex-col items-center justify-center py-10 text-slate-400">
-                  <svg viewBox="0 0 24 24" className="size-12 stroke-current stroke-[1.5] fill-none mb-4 opacity-30"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
-                  <p className="text-sm font-medium">Chưa có danh sách nào.</p>
-                </div>
-              )}
-              <button onClick={() => setIsAddingList(true)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-indigo-200 bg-indigo-50 p-4 text-sm font-bold text-indigo-600 transition-transform active:scale-[0.98]">
-                {t ? t("addList") : "+ Thêm danh sách"}
-              </button>
+                  );
+                });
+              })()}
             </div>
           </div>
         )}
       </div>
 
-      {(isAddingList || editingList) && (
-        <AddEditListSheet 
-          list={editingList} 
-          close={() => { setIsAddingList(false); setEditingList(null); }} 
-          customLists={customLists} 
-          saveCustomLists={saveCustomLists} 
-          events={events}
-          setEvents={setEvents}
+      <button
+        type="button"
+        onClick={handleMobileFabClick}
+        className="fixed bottom-[calc(96px+env(safe-area-inset-bottom,0px))] right-[18px] z-40 flex size-11 items-center justify-center rounded-full bg-[#800020] text-white shadow-[0_8px_18px_rgba(128,0,32,0.24)] transition-transform active:scale-95"
+        aria-label={mobileTab === "todo" ? "Thêm to-do" : "Thêm sự kiện"}
+      >
+        <svg viewBox="0 0 24 24" className="size-5 stroke-current stroke-2 fill-none"><path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" /></svg>
+      </button>
+
+      {(isAddingTodo || editingTodo) && (
+        <TodoEditorSheet 
+          todo={editingTodo}
+          selectedDate={selectedDate}
+          close={() => { setIsAddingTodo(false); setEditingTodo(null); }}
+          todos={todos}
+          saveTodos={saveTodos}
           members={members}
-          t={t}
-        />
-      )}
-      
-      {detailList && (
-        <ListDetailSheet 
-          list={detailList} 
-          close={() => setDetailList(null)} 
-          events={events} 
-          openEventDetail={openEventDetail}
-          openNewEvent={() => { setDetailList(null); openNewEvent(detailList); }}
-          isCustom={customLists.some((c: any) => c.id === detailList.id)}
-          t={t}
         />
       )}
     </div>
   );
 }
 
-function AddEditListSheet({ list, close, customLists, saveCustomLists, events, setEvents, members, t }: any) {
-  const [name, setName] = useState(list ? list.name : "");
-  const [color, setColor] = useState(list ? list.color : "#4f46e5");
-  const [memberId, setMemberId] = useState<string>(list?.memberId ?? "all");
+function TodoEditorSheet({ todo, selectedDate, close, todos, saveTodos, members }: any) {
+  const [form, setForm] = useState({
+    title: todo?.title || "",
+    description: todo?.description || "",
+    date: todo?.date || selectedDate || new Date().toISOString().slice(0,10),
+    startTime: todo?.startTime || "",
+    endTime: todo?.endTime || "",
+    assignedMemberIds: todo?.assignedMemberIds || [],
+    checklist: todo?.checklist || [],
+    priority: todo?.priority || "normal",
+    status: todo?.status || "pending"
+  });
   const [error, setError] = useState("");
 
-  const save = () => {
-    if (!name.trim()) { setError("Tên không được để trống"); return; }
-    if (customLists.some((c: any) => c.name === name.trim() && c.id !== list?.id)) { setError("Tên đã tồn tại"); return; }
-    
-    let next;
-    if (list) {
-      next = customLists.map((c: any) => {
-        if (c.id !== list.id) return c;
-        const updated = { ...c, name: name.trim(), color };
-        if (memberId === "all") { delete updated.memberId; } else { updated.memberId = memberId; }
-        return updated;
-      });
-    } else {
-      const newEntry: any = { id: "custom-" + Date.now(), name: name.trim(), color };
-      if (memberId !== "all") newEntry.memberId = memberId;
-      next = [...customLists, newEntry];
+  const handleSave = () => {
+    if (!form.title.trim()) {
+      setError("Tên việc không được để trống");
+      return;
     }
-    saveCustomLists(next);
+    if (form.startTime && form.endTime && form.endTime < form.startTime) {
+      setError("Giờ kết thúc không được nhỏ hơn giờ bắt đầu");
+      return;
+    }
+
+    const payload = {
+      ...form,
+      id: todo?.id || "todo-" + Date.now(),
+      createdAt: todo?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    let next;
+    if (todo) {
+      next = todos.map((t: any) => t.id === todo.id ? payload : t);
+    } else {
+      next = [...todos, payload];
+    }
+    saveTodos(next);
     close();
   };
 
   const remove = () => {
-    if (window.confirm("Bạn có chắc muốn xóa danh sách này?")) {
-      saveCustomLists(customLists.filter((c: any) => c.id !== list.id));
-      const nextEvents = events.map((ev: any) => {
-        if (ev.calendarId === list.id) {
-          return { ...ev, calendarId: "uncategorized", type: "other" };
-        }
-        return ev;
-      });
-      setEvents(nextEvents);
+    if (window.confirm("Bạn có chắc muốn xóa to-do này?")) {
+      saveTodos(todos.filter((t: any) => t.id !== todo.id));
       close();
     }
   };
 
-  const colors = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e", "#14b8a6", "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#d946ef", "#f43f5e", "#64748b"];
-  const memberOptions: Member[] = Array.isArray(members) ? members : [];
+  const inputClass = "w-full h-12 rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] px-4 text-[14px] text-[#171018] outline-none focus:border-[#800020] transition-colors";
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/45" onMouseDown={close}>
-      <div onMouseDown={e => e.stopPropagation()} className="w-full bg-white dark:bg-slate-900 rounded-t-2xl p-5 pb-8 animate-in slide-in-from-bottom-full duration-300 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-bold">{list ? "Sửa danh sách" : (t ? t("addList") : "Thêm danh sách")}</h3>
-          <button onClick={close} className="grid size-8 place-items-center rounded-full bg-slate-100 font-bold text-slate-500 hover:bg-slate-200">×</button>
-        </div>
-        
-        {error && <p className="text-sm text-red-500 mb-4">{error}</p>}
-        
-        <div className="space-y-5">
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Tên danh sách</label>
-            <input autoFocus value={name} onChange={e => {setName(e.target.value); setError("");}} placeholder="Ví dụ: Lịch tập gym" className="w-full h-12 rounded-xl border border-slate-200 dark:border-slate-700 px-4 bg-transparent outline-none focus:border-indigo-500" />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Màu sắc</label>
-            <div className="flex flex-wrap gap-3">
-              {colors.map(c => (
-                <button key={c} onClick={() => setColor(c)} className={["size-8 rounded-full flex items-center justify-center transition-transform", color === c ? "scale-125 ring-2 ring-offset-2 ring-indigo-500" : ""].join(" ")} style={{ backgroundColor: c }}>
-                  {color === c && <svg viewBox="0 0 24 24" className="size-4 stroke-white stroke-2 fill-none"><polyline points="20 6 9 17 4 12" /></svg>}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Gán cho thành viên</label>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setMemberId("all")}
-                className={["flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold border transition-all", memberId === "all" ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"].join(" ")}
-              >
-                <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none shrink-0"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                Cả gia đình
-              </button>
-              {memberOptions.map((m: Member) => (
-                <button
-                  key={m.id}
-                  onClick={() => setMemberId(m.id)}
-                  className={["flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold border transition-all", memberId === m.id ? "bg-indigo-600 text-white border-indigo-600 shadow-sm" : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"].join(" ")}
-                >
-                  <span className={["size-5 shrink-0 rounded-full flex items-center justify-center text-[10px] font-black", memberId === m.id ? "bg-white/30 text-white" : "bg-slate-100 text-slate-600"].join(" ")}>
-                    {(m.nickname || m.name || "?")[0]}
-                  </span>
-                  {m.nickname || m.name}
-                </button>
-              ))}
-            </div>
-          </div>
-          
-          <div className="pt-4 flex gap-3">
-            {list && (
-              <button onClick={remove} className="flex-1 h-12 rounded-xl bg-red-50 text-red-600 font-bold text-sm hover:bg-red-100">
-                Xóa
-              </button>
-            )}
-            <button onClick={save} className="flex-[2] h-12 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700">
-              Lưu
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-function ListDetailSheet({ list, close, events, openEventDetail, openNewEvent, isCustom, t }: any) {
-  const listEvents = events.filter((e: any) => e.calendarId === list.id || e.type === list.id);
-  
-  return (
-    <div className="fixed inset-0 z-[55] flex flex-col bg-slate-50 dark:bg-slate-950 animate-in slide-in-from-right-full duration-300">
-      <div className="flex items-center px-4 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 shrink-0">
-        <button onClick={close} className="p-2 -ml-2 text-slate-500 hover:text-slate-800">
-          <svg viewBox="0 0 24 24" className="size-6 stroke-current stroke-2 fill-none"><polyline points="15 18 9 12 15 6" /></svg>
-        </button>
-        <div className="flex-1 flex items-center gap-2 px-2">
-          <div className="size-3 rounded-full" style={{ backgroundColor: list.color || "#4f46e5" }} />
-          <h2 className="text-lg font-bold text-slate-800 dark:text-white truncate">{list.name || list.label}</h2>
-        </div>
-        <button onClick={openNewEvent} className="p-2 -mr-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-white/5 rounded-full">
-          <svg viewBox="0 0 24 24" className="size-6 stroke-current stroke-2 fill-none"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-        </button>
+    <div className="fixed inset-0 z-[60] flex flex-col bg-[#F8F5F2] animate-in slide-in-from-bottom-full duration-300">
+      <div className="flex items-center justify-between px-4 py-3 bg-[#FFFFFF] border-b border-[#E8DCD5] shrink-0">
+        <button onClick={close} className="text-[#6B5E64] font-medium text-sm px-2 py-1">Hủy</button>
+        <h3 className="text-[15px] font-bold text-[#171018]">{todo ? "Sửa To-do" : "Thêm To-do"}</h3>
+        <button onClick={handleSave} className="text-[#800020] font-bold text-sm px-2 py-1">Lưu</button>
       </div>
       
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {listEvents.length > 0 ? (
-          listEvents.sort((a: any, b: any) => a.startDate.localeCompare(b.startDate)).map((event: any) => {
-            const dateObj = new Date(event.startDate);
-            return (
-              <div key={event.id} onClick={() => openEventDetail(event)} className="bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-100 dark:border-white/5 flex gap-3 active:scale-[0.98] transition-transform cursor-pointer">
-                <div className="flex flex-col items-center justify-center w-12 shrink-0 bg-slate-50 dark:bg-slate-800 rounded-lg">
-                  <span className="text-[10px] font-bold text-red-500 uppercase">T{dateObj.getMonth() + 1}</span>
-                  <span className="text-lg font-black text-slate-800 dark:text-white leading-none">{dateObj.getDate()}</span>
-                </div>
-                <div className="flex-1 min-w-0 py-0.5">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{event.title}</p>
-                  <p className="text-[11px] text-slate-500 mt-1 truncate">
-                    {event.allDay ? "Cả ngày" : `${event.startTime} - ${event.endTime}`}
-                    {event.repeatRule === "yearly" && " • Lặp hằng năm"}
-                  </p>
-                </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 pb-[calc(104px+env(safe-area-inset-bottom))]">
+        {error && <p className="text-[13px] text-[#E11D48] font-medium">{error}</p>}
+        
+        <div>
+          <label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Tên việc *</label>
+          <input autoFocus value={form.title} onChange={e => {setForm({...form, title: e.target.value}); setError("");}} placeholder="Ví dụ: Mua đồ siêu thị" className={inputClass} />
+        </div>
+
+        <div>
+          <label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Ngày *</label>
+          <input type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} className={inputClass} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Giờ bắt đầu</label>
+            <input type="time" value={form.startTime} onChange={e => setForm({...form, startTime: e.target.value})} className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Giờ kết thúc</label>
+            <input type="time" value={form.endTime} onChange={e => setForm({...form, endTime: e.target.value})} className={inputClass} />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Mức độ</label>
+          <div className="flex gap-2">
+            {[ { id: "low", label: "Thấp" }, { id: "normal", label: "Bình thường" }, { id: "high", label: "Cao" } ].map(p => (
+              <button 
+                key={p.id} 
+                onClick={() => setForm({...form, priority: p.id})} 
+                className={`flex-1 h-10 rounded-xl text-[13px] font-bold transition-all border ${form.priority === p.id ? "bg-[#800020] text-white border-[#800020]" : "bg-[#FFFFFF] text-[#6B5E64] border-[#E8DCD5]"}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Thành viên phụ trách</label>
+          <div className="flex flex-wrap gap-2">
+            {members.map((m: any) => {
+              const isSel = form.assignedMemberIds.includes(m.id);
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    if (isSel) setForm({...form, assignedMemberIds: form.assignedMemberIds.filter((id: string) => id !== m.id)});
+                    else setForm({...form, assignedMemberIds: [...form.assignedMemberIds, m.id]});
+                  }}
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold border transition-all ${isSel ? "bg-[#800020] text-white border-[#800020]" : "bg-[#FFFFFF] text-[#6B5E64] border-[#E8DCD5]"}`}
+                >
+                  {m.nickname || m.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Checklist</label>
+          <div className="space-y-2">
+            {form.checklist.map((item: any, idx: number) => (
+              <div key={item.id} className="flex gap-2 items-center">
+                <button onClick={() => {
+                  const cl = [...form.checklist];
+                  cl[idx].done = !cl[idx].done;
+                  setForm({...form, checklist: cl});
+                }} className={`size-6 rounded border flex items-center justify-center shrink-0 ${item.done ? 'bg-[#059669] border-[#059669]' : 'bg-[#FFFFFF] border-[#E8DCD5]'}`}>
+                  {item.done && <svg viewBox="0 0 24 24" className="size-4 stroke-white stroke-2 fill-none"><polyline points="20 6 9 17 4 12"/></svg>}
+                </button>
+                <input 
+                  value={item.title} 
+                  onChange={e => {
+                    const cl = [...form.checklist];
+                    cl[idx].title = e.target.value;
+                    setForm({...form, checklist: cl});
+                  }} 
+                  className={`flex-1 h-10 rounded-lg border border-[#E8DCD5] bg-[#FFFFFF] px-3 text-[13px] outline-none focus:border-[#800020] ${item.done ? 'line-through text-[#6B5E64]' : 'text-[#171018]'}`} 
+                  placeholder="Tên việc con..." 
+                />
+                <button onClick={() => {
+                  const cl = [...form.checklist];
+                  cl.splice(idx, 1);
+                  setForm({...form, checklist: cl});
+                }} className="p-2 text-[#E11D48]">
+                  <svg viewBox="0 0 24 24" className="size-4 stroke-current stroke-2 fill-none"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
               </div>
-            );
-          })
-        ) : (
-          <div className="py-20 flex flex-col items-center justify-center text-slate-400">
-            <svg viewBox="0 0 24 24" className="size-12 stroke-current stroke-[1.5] fill-none mb-4 opacity-30"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
-            <p className="text-sm font-medium mb-4">Danh sách này chưa có sự kiện nào</p>
-            <button onClick={openNewEvent} className="px-4 py-2 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 font-bold text-sm rounded-full active:scale-95 transition-transform">
-              {list.id === "birthday" ? "+ " + (t ? t("birthday") : "Sinh nhật") : list.id === "holiday" ? "+ " + (t ? t("holiday") : "Ngày lễ") : "+ " + (t ? t("addEvent") : "Thêm sự kiện")}
+            ))}
+            <button onClick={() => setForm({...form, checklist: [...form.checklist, { id: Date.now().toString(), title: "", done: false }]})} className="text-[13px] font-bold text-[#800020] px-1 mt-1">+ Thêm việc con</button>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Ghi chú</label>
+          <textarea value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="w-full h-24 rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] p-3 text-[14px] text-[#171018] outline-none focus:border-[#800020] transition-colors resize-none" placeholder="Ghi chú chi tiết..." />
+        </div>
+
+        {todo && (
+          <div className="pt-4">
+            <button onClick={remove} className="w-full h-12 rounded-xl bg-[#F8E7EC] text-[#E11D48] font-bold text-[14px]">
+              Xóa To-do này
             </button>
           </div>
         )}

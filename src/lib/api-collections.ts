@@ -241,6 +241,28 @@ async function syncSavingsForTransaction(row: Record<string, unknown>) {
       await pool.query("UPDATE transactions SET savings_applied = true, savings_holder = $2 WHERE id = $1", [transactionId, holder]);
       return row;
     }
+  } else {
+    // Attempt to find an existing one to avoid duplicates due to frontend cache overriding linkedSavingsId with NULL
+    const existing = await pool.query(
+      `SELECT id FROM savings_records 
+       WHERE member_id IS NOT DISTINCT FROM $1 
+         AND year = $2 
+         AND month = $3 
+         AND amount = $4 
+         AND type = 'monthly' 
+         AND holder = $5 
+         AND description = $6
+       LIMIT 1`,
+      [row.member_id || null, year, month, amount, holder, description]
+    );
+    if (existing.rows.length > 0) {
+      const existingId = existing.rows[0].id;
+      await pool.query(
+        "UPDATE transactions SET linked_savings_id = $2, savings_applied = true, savings_holder = $3 WHERE id = $1",
+        [transactionId, existingId, holder]
+      );
+      return { ...row, linked_savings_id: existingId, savings_applied: true, savings_holder: holder };
+    }
   }
 
   const insert = await pool.query(

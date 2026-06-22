@@ -448,13 +448,19 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     setData(null);
   }
   async function refreshCurrentUser() {
-    const response = await fetch("/api/auth/me", { cache: "no-store" });
-    const result = await readJsonSafe<{ user?: AuthUser; member?: Member }>(response);
-    if (!response.ok || !result?.user) return null;
-    const nextUser = { ...result.user, member: result.member || result.user.member };
-    setUser(nextUser);
-    if (result.member) setData(current => current ? { ...current, members: current.members.map(member => member.id === result.member!.id ? result.member! : member) } : current);
-    return nextUser;
+    try {
+      const response = await fetch("/api/auth/me", { cache: "no-store", credentials: "include" });
+      const result = await readJsonSafe<{ user?: AuthUser; member?: Member }>(response);
+      if (!response.ok || !result?.user) return null;
+      const nextUser = { ...result.user, member: result.member || result.user.member };
+      setUser(nextUser);
+      if (result.member) setData(current => current ? { ...current, members: current.members.map(member => member.id === result.member!.id ? result.member! : member) } : current);
+      return nextUser;
+    } catch (error) {
+      console.warn("[refreshCurrentUser] Failed to fetch /api/auth/me", error);
+      ui.toast("Không thể tải lại thông tin tài khoản", "error");
+      return null;
+    }
   }
   if (user === undefined) return <LoadingSkeleton />;
   if (!user) return <LoginScreen onLogin={(nextUser, nextScreen = "members", showMembers = false) => {
@@ -3490,6 +3496,9 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
 
   const overviewData = overviewDataCache[year] || {};
   const currentCash = Number(overviewData.currentCash || 0);
+  const currentSavings = Number(overviewData.currentSavings || 0);
+  const currentInvestment = Number(overviewData.currentInvestment || 0);
+  const totalMoneyOnHand = Number(overviewData.estimatedAssets ?? (currentCash + currentSavings + currentInvestment));
 
   const monthItems = useMemo(() => {
     const summary = getMonthlyFinanceSummary(toArray(appData?.transactions), toArray(incomes), month, year, "all");
@@ -3513,6 +3522,14 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
 
   const monthIncsTotal = monthItems.filter(i => i._isIncome).reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
   const monthExpsTotal = monthItems.filter(i => !i._isIncome).reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
+  const monthSavingsTotal = toArray(appData?.transactions)
+    .filter((item: any) => (String(item.type).toLowerCase() === "expense" || Number(item.amount) < 0) && isSavingTransaction(item))
+    .filter((item: any) => {
+      const date = getFinanceDate(item);
+      return !Number.isNaN(date.getTime()) && date.getMonth() === month - 1 && date.getFullYear() === year;
+    })
+    .reduce((sum: number, item: any) => sum + Math.abs(Number(item.amount) || 0), 0);
+  const availableThisMonth = monthIncsTotal - monthExpsTotal - monthSavingsTotal;
 
   const displayList = monthItems.filter(item => subTab === "all" || (subTab === "income" ? item._isIncome : !item._isIncome));
   const groupedItems = displayList.reduce((groups: Record<string, any[]>, item: any) => {
@@ -3531,9 +3548,10 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
       </div>
     </div>
 
-    <div className="bg-[var(--mobile-card)] rounded-[24px] p-5 shadow-[0_8px_24px_rgba(128,0,32,0.08)] text-[#171018] mb-5 relative overflow-hidden border border-[#E8DCD5]">
-      <p className="mb-1 text-[14px] font-normal text-[#6B5E64]">Tiền hiện tại</p>
-      <b className="mb-5 block whitespace-nowrap text-[clamp(24px,8vw,32px)] font-bold leading-tight tracking-tight text-[#800020]">{loadingOverview ? "..." : (overviewDataCache[year] ? money(currentCash) : "-")}</b>
+    <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-4 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
+      <p className="mb-1 text-[13px] font-medium text-[#6B5E64]">Tiền có thể dùng</p>
+      <b className={`block break-words text-[clamp(23px,7.5vw,31px)] font-bold leading-tight tracking-tight ${availableThisMonth >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{money(availableThisMonth)}</b>
+      <p className="mb-3 mt-2 text-[11px] leading-4 text-[#6B5E64]">Tiền đang có: <span className="font-semibold text-[#171018]">{loadingOverview ? "..." : (overviewDataCache[year] ? money(totalMoneyOnHand) : "-")}</span></p>
       
       <div className="grid grid-cols-3 border-t border-[#E8DCD5] pt-3 gap-1">
         {([['all', 'Chi tiết'], ['income', 'Thu nhập'], ['expense', 'Chi tiêu']] as const).map(([value, label]) => (
@@ -3541,34 +3559,6 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
         ))}
       </div>
 
-      {subTab === "all" && (
-        <div className="flex justify-between items-center bg-[#F8F5F2] rounded-lg p-2 mb-1 mt-3 text-[12px] font-medium border border-[#E8DCD5]">
-          <div className="text-center flex-1 border-r border-[#E8DCD5]">
-            <p className="text-[#6B5E64]">Thu tháng</p>
-            <p className="text-[#059669] font-bold">{money(monthIncsTotal)}</p>
-          </div>
-          <div className="text-center flex-1 border-r border-[#E8DCD5]">
-            <p className="text-[#6B5E64]">Chi tháng</p>
-            <p className="text-[#E11D48] font-bold">{money(monthExpsTotal)}</p>
-          </div>
-          <div className="text-center flex-1">
-            <p className="text-[#6B5E64]">Còn lại</p>
-            <p className={`font-bold ${monthIncsTotal - monthExpsTotal >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{money(monthIncsTotal - monthExpsTotal)}</p>
-          </div>
-        </div>
-      )}
-      {subTab === "income" && (
-        <div className="bg-[#F8F5F2] rounded-lg p-2.5 mb-1 mt-3 flex justify-between items-center text-[13px] font-medium border border-[#E8DCD5]">
-          <span className="text-[#6B5E64]">Tổng thu tháng:</span>
-          <span className="text-[#059669] font-bold text-[15px]">{money(monthIncsTotal)}</span>
-        </div>
-      )}
-      {subTab === "expense" && (
-        <div className="bg-[#F8F5F2] rounded-lg p-2.5 mb-1 mt-3 flex justify-between items-center text-[13px] font-medium border border-[#E8DCD5]">
-          <span className="text-[#6B5E64]">Tổng chi tháng:</span>
-          <span className="text-[#E11D48] font-bold text-[15px]">{money(monthExpsTotal)}</span>
-        </div>
-      )}
     </div>
 
     <div className="min-h-[300px] pb-4">
@@ -3724,7 +3714,7 @@ function MobileTransactionEditor({ item, defaultType, allowTypeChange = false, c
 
   const shortTitle = `${item?.id ? "Sửa" : "Thêm"} ${type === "income" ? "thu" : "chi"}`;
   const formId = type === "income" ? "mobile-income-transaction-form" : "mobile-expense-transaction-form";
-  return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="button" onClick={() => (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit()} className="px-2 text-[15px] font-bold text-[#800020]">Lưu</button>}>
+  return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="submit" form={formId} onClick={() => (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit()} className="px-4 min-h-[40px] text-[15px] font-bold text-[#800020] active:opacity-60 transition-opacity">Lưu</button>}>
     <div className="p-4 pt-6 bg-[#F8F5F2] min-h-0 pb-[calc(104px+env(safe-area-inset-bottom))]">
       {(!item?.id && allowTypeChange) && <div className="sticky top-0 z-10 mb-4 flex rounded-xl bg-[#FFFFFF] p-1.5 shadow-sm border border-[#E8DCD5]">
         <button type="button" onClick={() => setType("income")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "income" ? "bg-[#F8F5F2] text-[#059669] shadow-sm" : "text-[#6B5E64]"}`}>Thu nhập</button>
@@ -7034,6 +7024,52 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
 
 const STATS_COLORS = ["#E11D48", "#D4AF37", "#059669", "#800020", "#3B82F6", "#F59E0B", "#8B5CF6", "#14B8A6"];
 
+export function getFinanceDate(t: any) {
+  const dStr = t.receivedDate || t.incomeDate || t.date || t.occurred_at || t.start_date || t.createdAt || t.created_at || 0;
+  return new Date(dStr);
+}
+
+export function isSavingTransaction(t: any) {
+  const catStr = String(t.category || "").toLowerCase();
+  const typeStr = String(t.type || "").toLowerCase();
+  const titleStr = String(t.name || t.title || "").toLowerCase();
+  return catStr.includes('tiết kiệm') || titleStr.includes('tiết kiệm') || typeStr.includes('tiết kiệm') || t.savingsApplied || t.savings_applied;
+}
+
+export function getMonthlyIncomeTotal(incomes: any[], month: number, year: number, memberFilterId: string = "all") {
+  return incomes.filter(t => {
+    const d = getFinanceDate(t);
+    return !Number.isNaN(d.getTime()) && d.getMonth() === month - 1 && d.getFullYear() === year;
+  }).filter(t => memberFilterId === "all" || (t.memberId || t.member_id || t.userId || t.user_id) === memberFilterId)
+    .reduce((sum, t) => sum + Math.abs(Number(t.amount || t.netAmount || 0)), 0);
+}
+
+export function getMonthlyExpenseTotal(transactions: any[], month: number, year: number, memberFilterId: string = "all") {
+  return transactions.filter(t => (String(t.type).toLowerCase() === "expense" || Number(t.amount) < 0) && !isSavingTransaction(t))
+    .filter(t => {
+      const d = getFinanceDate(t);
+      return !Number.isNaN(d.getTime()) && d.getMonth() === month - 1 && d.getFullYear() === year;
+    }).filter(t => memberFilterId === "all" || (t.memberId || t.member_id || t.userId || t.user_id) === memberFilterId)
+    .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+}
+
+export function getYearlyIncomeTotal(incomes: any[], year: number, memberFilterId: string = "all") {
+  return incomes.filter(t => {
+    const d = getFinanceDate(t);
+    return !Number.isNaN(d.getTime()) && d.getFullYear() === year;
+  }).filter(t => memberFilterId === "all" || (t.memberId || t.member_id || t.userId || t.user_id) === memberFilterId)
+    .reduce((sum, t) => sum + Math.abs(Number(t.amount || t.netAmount || 0)), 0);
+}
+
+export function getYearlyExpenseTotal(transactions: any[], year: number, memberFilterId: string = "all") {
+  return transactions.filter(t => (String(t.type).toLowerCase() === "expense" || Number(t.amount) < 0) && !isSavingTransaction(t))
+    .filter(t => {
+      const d = getFinanceDate(t);
+      return !Number.isNaN(d.getTime()) && d.getFullYear() === year;
+    }).filter(t => memberFilterId === "all" || (t.memberId || t.member_id || t.userId || t.user_id) === memberFilterId)
+    .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
+}
+
 export function getMonthlyFinanceSummary(
   transactions: any[],
   incomes: any[],
@@ -7041,13 +7077,8 @@ export function getMonthlyFinanceSummary(
   year: number,
   memberFilterId: string = "all"
 ) {
-  const getDate = (t: any) => {
-    const dStr = t.date || t.createdAt || t.created_at || t.receivedDate || t.incomeDate || t.occurred_at || t.start_date || 0;
-    return new Date(dStr);
-  };
-
   const filterByMonth = (t: any) => {
-    const d = getDate(t);
+    const d = getFinanceDate(t);
     return !Number.isNaN(d.getTime()) && d.getMonth() === month - 1 && d.getFullYear() === year;
   };
 
@@ -7058,18 +7089,11 @@ export function getMonthlyFinanceSummary(
     return true;
   };
 
-  const isSaving = (t: any) => {
-    const catStr = String(t.category || "").toLowerCase();
-    const typeStr = String(t.type || "").toLowerCase();
-    const titleStr = String(t.name || t.title || "").toLowerCase();
-    return catStr.includes('tiết kiệm') || titleStr.includes('tiết kiệm') || typeStr.includes('tiết kiệm') || t.savingsApplied || t.savings_applied;
-  };
-
   const monthExps = transactions
     .filter(t => String(t.type).toLowerCase() === "expense" || Number(t.amount) < 0)
     .filter(filterByMonth)
     .filter(memberFilter)
-    .filter(t => !isSaving(t));
+    .filter(t => !isSavingTransaction(t));
 
   const monthIncs = incomes
     .filter(filterByMonth)
@@ -7097,24 +7121,12 @@ export function getMonthlyFinanceSummary(
 
 function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
   const [filterMemberId, setFilterMemberId] = useState<string>("all");
-  const [savingsRecords, setSavingsRecords] = useState<any[]>([]);
   const [incomesRecords, setIncomesRecords] = useState<any[]>([]);
   const [loadingIncomes, setLoadingIncomes] = useState(true);
 
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-
-  useEffect(() => {
-    fetch("/api/savings-records", { cache: "no-store" }).then(async response => {
-      const text = await response.text();
-      if (!text) return;
-      const result = JSON.parse(text);
-      if (!response.ok) return;
-      const arr = Array.isArray(result) ? result : Array.isArray(result.data) ? result.data : Array.isArray(result.items) ? result.items : Array.isArray(result.records) ? result.records : [];
-      setSavingsRecords(arr);
-    }).catch(() => setSavingsRecords([]));
-  }, []);
 
   useEffect(() => {
     setLoadingIncomes(true);
@@ -7134,12 +7146,19 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
     }).catch(() => { setIncomesRecords([]); setLoadingIncomes(false); });
   }, [selectedYear]);
 
-  const totalCurrentSavings = savingsRecords.reduce((sum, item) => sum + (item.type === "withdraw" ? -Number(item.amount || 0) : Number(item.amount || 0)), 0);
-
   const summary = getMonthlyFinanceSummary(data.transactions || [], incomesRecords, selectedMonth, selectedYear, filterMemberId);
   const totalIncome = summary.incomeTotal;
   const totalExpense = summary.expenseTotal;
-  const netBalance = summary.netTotal;
+  const monthlySavings = toArray(data.transactions)
+    .filter((item: any) => (String(item.type).toLowerCase() === "expense" || Number(item.amount) < 0) && isSavingTransaction(item))
+    .filter((item: any) => {
+      const date = getFinanceDate(item);
+      const memberId = item.memberId || item.member_id || item.userId || item.user_id;
+      return !Number.isNaN(date.getTime()) && date.getMonth() === selectedMonth - 1 && date.getFullYear() === selectedYear
+        && (filterMemberId === "all" || !memberId || memberId === filterMemberId);
+    })
+    .reduce((sum: number, item: any) => sum + Math.abs(Number(item.amount) || 0), 0);
+  const netBalance = totalIncome - totalExpense - monthlySavings;
   
   const incomes = summary.incomeRecords;
   const expenses = summary.expenseRecords;
@@ -7220,6 +7239,45 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
     });
   }
 
+  const visibleMembers = user.role === "self_only" && user.memberId
+    ? data.members.filter(member => member.id === user.memberId)
+    : data.members;
+  const effectiveMemberFilter = user.role === "self_only" && user.memberId ? user.memberId : filterMemberId;
+  const yearIncomeTotal = getYearlyIncomeTotal(incomesRecords, selectedYear, effectiveMemberFilter);
+  const yearExpenseTotal = getYearlyExpenseTotal(data.transactions || [], selectedYear, effectiveMemberFilter);
+  const getYearlySavingsTotal = (memberId: string) => toArray(data.transactions)
+    .filter((item: any) => (String(item.type).toLowerCase() === "expense" || Number(item.amount) < 0) && isSavingTransaction(item))
+    .filter((item: any) => {
+      const date = getFinanceDate(item);
+      const itemMemberId = item.memberId || item.member_id || item.userId || item.user_id;
+      return !Number.isNaN(date.getTime()) && date.getFullYear() === selectedYear
+        && (memberId === "all" || !itemMemberId || itemMemberId === memberId);
+    })
+    .reduce((sum: number, item: any) => sum + Math.abs(Number(item.amount) || 0), 0);
+  const yearRows = (effectiveMemberFilter === "all"
+    ? [
+        { id: "all", name: "Tổng chung", income: yearIncomeTotal, expense: yearExpenseTotal },
+        ...visibleMembers.map(member => ({
+          id: member.id,
+          name: member.nickname || member.name,
+          income: getYearlyIncomeTotal(incomesRecords, selectedYear, member.id),
+          expense: getYearlyExpenseTotal(data.transactions || [], selectedYear, member.id)
+        }))
+      ]
+    : [{
+        id: effectiveMemberFilter,
+        name: getMemberName(effectiveMemberFilter),
+        income: yearIncomeTotal,
+        expense: yearExpenseTotal
+      }]
+  ).map(row => ({ ...row, balance: row.income - row.expense - getYearlySavingsTotal(row.id) }));
+  const yearChartData = Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1;
+    const mSum = getMonthlyFinanceSummary(data.transactions || [], incomesRecords, month, selectedYear, effectiveMemberFilter);
+    return { name: `T${month}`, Thu: mSum.incomeTotal, Chi: mSum.expenseTotal };
+  });
+  const yearChartMax = Math.max(...yearChartData.flatMap(item => [item.Thu, item.Chi]), 1);
+
   return (
     <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[100px] text-[#171018]">
       <div className="sticky top-0 z-30 bg-[#800020] px-4 py-3 border-b border-[#E8DCD5] shadow-sm flex items-center justify-between">
@@ -7262,19 +7320,19 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
         {/* Card Tổng quan */}
         <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] grid grid-cols-2 gap-4">
           <div>
-            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Tổng thu</p>
+            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Thu tháng</p>
             <p className="text-[16px] font-bold text-[#059669]">{money(totalIncome)}</p>
           </div>
           <div>
-            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Tổng chi</p>
+            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Chi tháng</p>
             <p className="text-[16px] font-bold text-[#E11D48]">{money(totalExpense)}</p>
           </div>
           <div>
-            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Tiết kiệm</p>
-            <p className="text-[16px] font-bold text-[#800020]">{money(totalCurrentSavings)}</p>
+            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Tiết kiệm tháng</p>
+            <p className="text-[16px] font-bold text-[#800020]">{money(monthlySavings)}</p>
           </div>
           <div>
-            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Còn lại</p>
+            <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Có thể dùng</p>
             <p className={`text-[16px] font-bold ${netBalance >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{money(netBalance)}</p>
           </div>
         </div>
@@ -7292,6 +7350,61 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
                 <Bar dataKey="Chi" fill="#E11D48" radius={[4, 4, 0, 0]} maxBarSize={20} />
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Card Thu / Chi năm */}
+        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-[15px] text-[#171018]">Thu / Chi năm</h2>
+              <p className="mt-0.5 text-[12px] font-medium text-[#6B5E64]">Năm {selectedYear}</p>
+            </div>
+            {effectiveMemberFilter !== "all" && (
+              <span className="rounded-full border border-[#E8DCD5] bg-[#F8F5F2] px-2 py-1 text-[10px] font-bold text-[#6B5E64]">
+                Tổng năm của thành viên
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            {yearRows.map(row => (
+              <div key={row.id} className="rounded-xl border border-[#E8DCD5] bg-[#FFFDFB] p-3">
+                <p className="mb-2 truncate text-[13px] font-bold text-[#171018]">{row.name}</p>
+                <div className="grid grid-cols-3 gap-2 text-[11px]">
+                  <div>
+                    <p className="font-medium text-[#6B5E64]">Thu</p>
+                    <p className="mt-0.5 break-words text-[12px] font-bold text-[#059669]">{money(row.income)}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-[#6B5E64]">Chi</p>
+                    <p className="mt-0.5 break-words text-[12px] font-bold text-[#E11D48]">{money(row.expense)}</p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-[#6B5E64]">Còn lại</p>
+                    <p className={`mt-0.5 break-words text-[12px] font-bold ${row.balance >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{money(row.balance)}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <div className="mb-2 flex items-center justify-between text-[11px] font-bold text-[#6B5E64]">
+              <span>12 tháng</span>
+              <span><span className="text-[#059669]">■ Thu</span><span className="ml-2 text-[#E11D48]">■ Chi</span></span>
+            </div>
+            <div className="grid h-28 grid-cols-12 items-end gap-1">
+              {yearChartData.map(item => (
+                <div key={item.name} className="flex min-w-0 flex-col items-center justify-end">
+                  <div className="flex h-20 w-full items-end justify-center gap-[2px]">
+                    <span className="w-[5px] rounded-t bg-[#059669]" style={{ height: `${item.Thu ? Math.max(3, (item.Thu / yearChartMax) * 100) : 0}%` }} title={`Thu: ${money(item.Thu)}`} />
+                    <span className="w-[5px] rounded-t bg-[#E11D48]" style={{ height: `${item.Chi ? Math.max(3, (item.Chi / yearChartMax) * 100) : 0}%` }} title={`Chi: ${money(item.Chi)}`} />
+                  </div>
+                  <span className="mt-1 text-[8px] font-semibold text-[#6B5E64]">{item.name}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -7327,14 +7440,14 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
           )}
         </div>
 
-        {/* Card Thu nhập */}
+        {/* Card Thu nhập theo thành viên */}
         <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
-          <h2 className="font-bold text-[15px] mb-3">Thu nhập</h2>
+          <h2 className="font-bold text-[15px] mb-3">Thu nhập theo thành viên</h2>
+          <p className="text-[14px] font-bold text-[#059669] mb-4">Tổng thu tháng: {money(filterMemberId === "all" ? totalIncome : (incomeByMember[filterMemberId] || 0))}</p>
           {incomes.length === 0 ? (
-            <p className="text-[#6B5E64] text-[13px]">Chưa có thu nhập.</p>
+            <p className="text-[#6B5E64] text-[13px]">Chưa có thu nhập trong tháng.</p>
           ) : filterMemberId === "all" ? (
             <div className="space-y-3">
-              <p className="text-[14px] font-bold text-[#059669] mb-2">Tổng thu: {money(totalIncome)}</p>
               {(Object.entries(incomeByMember) as [string, number][]).sort((a, b) => b[1] - a[1]).map(([mid, val]) => {
                 const pct = totalIncome > 0 ? Math.round((val / totalIncome) * 100) : 0;
                 return (
@@ -7343,6 +7456,7 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
                       <span className="font-medium">{getMemberName(mid)}</span>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-[#059669]">{money(val)}</span>
+                        <span className="text-[#6B5E64] text-[11px] w-8 text-right">{pct}%</span>
                       </div>
                     </div>
                     <div className="h-1.5 w-full bg-[#F8E7EC] rounded-full overflow-hidden">
@@ -7353,15 +7467,25 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
               })}
             </div>
           ) : (
-            <div className="space-y-2">
-              <p className="text-[14px] font-bold text-[#059669]">Tổng thu: {money(incomeByMember[filterMemberId] || 0)}</p>
-              <p className="text-[12px] text-[#6B5E64] mb-2 mt-2">Gần đây:</p>
-              {incomes.sort((a, b) => new Date(b.receivedDate || b.incomeDate || b.date || b.createdAt || 0).getTime() - new Date(a.receivedDate || a.incomeDate || a.date || a.createdAt || 0).getTime()).slice(0, 3).map((t, idx) => (
-                <div key={t.id || idx} className="flex justify-between text-[13px] border-b border-[#F8E7EC] pb-2 last:border-0 last:pb-0">
-                  <span className="truncate max-w-[60%]">{t.title || t.name || t.category || "Khoản thu"}</span>
-                  <span className="font-bold text-[#059669]">{money(Math.abs(Number(t.amount || t.netAmount || 0)))}</span>
-                </div>
-              ))}
+            <div className="space-y-3">
+              {(() => {
+                const val = incomeByMember[filterMemberId] || 0;
+                const pct = totalIncome > 0 ? Math.round((val / totalIncome) * 100) : 0;
+                return (
+                  <div>
+                    <div className="flex justify-between items-center text-[13px] mb-1">
+                      <span className="font-medium">{getMemberName(filterMemberId)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[#059669]">{money(val)}</span>
+                        <span className="text-[#6B5E64] text-[11px] w-8 text-right">{pct}%</span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 w-full bg-[#F8E7EC] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: "#059669" }}></div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -7369,14 +7493,16 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
         {/* Card Chi tiêu theo thành viên */}
         <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
           <h2 className="font-bold text-[15px] mb-3">Chi tiêu theo thành viên</h2>
-          <p className="text-[11px] text-[#6B5E64] italic mb-3">Dữ liệu theo thành viên sẽ hoàn thiện sau nếu chưa map đủ, nhưng tổng vẫn khớp theo tháng.</p>
-          {Object.keys(expenseByMember).length === 0 ? (
-            <p className="text-[#6B5E64] text-[13px]">Chưa có dữ liệu chi.</p>
+          <p className="text-[14px] font-bold text-[#E11D48] mb-1">Tổng chi tháng: {money(filterMemberId === "all" ? totalExpense : (expenseByMember[filterMemberId] || 0))}</p>
+          
+          {Object.keys(expenseByMember).length === 0 && totalExpense > 0 ? (
+             <p className="text-[11px] text-[#6B5E64] italic mt-2">Dữ liệu theo thành viên sẽ hoàn thiện sau</p>
+          ) : expenses.length === 0 ? (
+            <p className="text-[#6B5E64] text-[13px] mt-3">Chưa có chi tiêu trong tháng.</p>
           ) : filterMemberId === "all" ? (
-            <div className="space-y-3">
-              {(Object.entries(expenseByMember) as [string, number][]).sort((a, b) => b[1] - a[1]).map(([mid, val], idx) => {
+            <div className="space-y-3 mt-4">
+              {(Object.entries(expenseByMember) as [string, number][]).sort((a, b) => b[1] - a[1]).map(([mid, val]) => {
                 const pct = totalExpense > 0 ? Math.round((val / totalExpense) * 100) : 0;
-                const color = STATS_COLORS[(idx + 2) % STATS_COLORS.length];
                 return (
                   <div key={mid}>
                     <div className="flex justify-between items-center text-[13px] mb-1">
@@ -7387,35 +7513,34 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
                       </div>
                     </div>
                     <div className="h-1.5 w-full bg-[#F8E7EC] rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }}></div>
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: "#E11D48" }}></div>
                     </div>
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="space-y-2">
-              <p className="text-[14px] font-bold text-[#E11D48]">Tổng chi: {money(expenseByMember[filterMemberId] || 0)}</p>
-              <p className="text-[12px] text-[#6B5E64] mb-2 mt-2">Top danh mục chi:</p>
-              {sortedCategories.slice(0, 3).map(([name, val]) => (
-                <div key={name} className="flex justify-between text-[13px]">
-                  <span>{name}</span>
-                  <span className="font-bold text-[#E11D48]">{money(val)}</span>
-                </div>
-              ))}
+            <div className="space-y-3 mt-4">
+              {(() => {
+                const val = expenseByMember[filterMemberId] || 0;
+                const pct = totalExpense > 0 ? Math.round((val / totalExpense) * 100) : 0;
+                return (
+                  <div>
+                    <div className="flex justify-between items-center text-[13px] mb-1">
+                      <span className="font-medium">{getMemberName(filterMemberId)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[#E11D48]">{money(val)}</span>
+                        <span className="text-[#6B5E64] text-[11px] w-8 text-right">{pct}%</span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 w-full bg-[#F8E7EC] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: "#E11D48" }}></div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
-        </div>
-
-        {/* Card Tiết kiệm */}
-        <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
-          <div className="flex justify-between items-center">
-            <h2 className="font-bold text-[15px]">Tiết kiệm</h2>
-            <div className="text-right">
-              <p className="text-[12px] text-[#6B5E64] font-medium">Tiết kiệm hiện có</p>
-              <p className="text-[15px] font-bold text-[#800020]">{money(totalCurrentSavings)}</p>
-            </div>
-          </div>
         </div>
 
         {/* Nhắc nhở sắp tới */}
@@ -7752,40 +7877,55 @@ function EmptyState() { return <div className="p-8 text-center text-sm text-slat
 function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshCurrentUser }: any) {
   const ui = useUI();
   const activeMember = data?.members?.find((m: any) => m.id === user.memberId) || user.member;
-  
+  const currentProfileForm = (current?: any) => ({
+    name: current?.name ?? activeMember?.name ?? user.displayName ?? user.fullName ?? "",
+    nickname: current?.nickname ?? activeMember?.nickname ?? "",
+    email: current?.email ?? user.email ?? activeMember?.email ?? "",
+    phone: current?.phone ?? activeMember?.phone ?? "",
+    birthday: current?.birthday ?? activeMember?.birthday ?? "",
+    gender: current?.gender ?? activeMember?.gender ?? "",
+    status: current?.status ?? activeMember?.status ?? "Đang hoạt động",
+    role: current?.role ?? activeMember?.role ?? "",
+    avatarUrl: activeMember?.avatarUrl || activeMember?.avatar || user.avatar || "",
+    coverUrl: getHomeCoverUrl({ ...user, member: activeMember })
+  });
   const [isEditing, setIsEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
   const [coverMenuOpen, setCoverMenuOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
-    name: activeMember?.name || user.displayName || "",
+    name: activeMember?.name || user.displayName || user.fullName || "",
     nickname: activeMember?.nickname || "",
     email: user.email || activeMember?.email || "",
     phone: activeMember?.phone || "",
     birthday: activeMember?.birthday || "",
     gender: activeMember?.gender || "",
-    notes: activeMember?.notes || ""
+    status: activeMember?.status || "Đang hoạt động",
+    role: activeMember?.role || ""
   });
+  const [profileDraft, setProfileDraft] = useState(currentProfileForm);
 
   useEffect(() => {
-    fetch("/api/auth/profile").then(async res => {
-      const data = await readJsonSafe<{ user?: { email?: string } }>(res);
-      if (res.ok && data?.user?.email && !isEditing) {
-        setFormData(prev => ({ ...prev, email: data.user!.email || "" }));
+    fetch("/api/auth/profile", { credentials: "include" }).then(async res => {
+      const result = await readJsonSafe<{ user?: { email?: string } }>(res);
+      if (res.ok && result?.user?.email && !isEditing) {
+        setFormData(prev => ({ ...prev, email: result.user!.email || "" }));
+        setProfileDraft(prev => ({ ...prev, email: result.user!.email || "" }));
       }
-    }).catch(console.error);
-  }, [isEditing]);
+    }).catch(() => {});
+  }, []);
 
-  const avatarInputRef = useRef<HTMLInputElement>(null);
-  const coverInputRef = useRef<HTMLInputElement>(null);
-
-  const displayAvatar = activeMember?.avatarUrl || activeMember?.avatar || user.avatar;
-  const displayCover = getHomeCoverUrl({ ...user, member: activeMember });
-  const inputClass = "w-full min-w-0 max-w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-background)] px-3 py-3 text-sm outline-none focus:border-[#064e46]";
-
-  if (!activeMember) return <FullScreenMobileSheet title="Thông tin cá nhân" close={close}><div className="p-8 text-center text-slate-400">Không có dữ liệu thành viên.</div></FullScreenMobileSheet>;
+  const savedAvatar = activeMember?.avatarUrl || activeMember?.avatar || user.avatar;
+  const savedCover = getHomeCoverUrl({ ...user, member: activeMember });
+  const displayAvatar = isEditing ? profileDraft.avatarUrl : savedAvatar;
+  const displayCover = isEditing ? profileDraft.coverUrl : savedCover;
+  const displayName = formData.name || user.displayName || user.username || "Tài khoản";
+  const roleLabel = user.role === "full_access" ? "Quản lý gia đình" : accessLabel(user.role);
+  const genderLabel = formData.gender === "male" || formData.gender === "nam" ? "Nam" : formData.gender === "female" || formData.gender === "nu" ? "Nữ" : formData.gender === "other" || formData.gender === "khac" ? "Khác" : "Chưa cập nhật";
+  const inputClass = "h-12 w-full rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] px-3 text-[14px] text-[#171018] outline-none focus:border-[#800020] disabled:bg-[#F8F5F2] disabled:text-[#6B5E64]";
 
   async function compressImage(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -7814,6 +7954,36 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
     });
   }
 
+  async function mergeProfileState(nextUser: AuthUser, nextMember?: Member) {
+    const mergedMember = nextMember || activeMember;
+    const localUser = { ...user, ...nextUser, member: mergedMember || nextUser.member };
+    savedUser?.(localUser);
+    if (update && mergedMember) update({ ...data, members: data.members.map((m: any) => m.id === mergedMember.id ? mergedMember : m) });
+    const refreshedUser = await refreshCurrentUser?.();
+    return refreshedUser || localUser;
+  }
+
+  const saveProfileRequest = (payload: any) =>
+    fetch("/api/auth/profile", { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+
+  function beginEditProfile(e?: React.MouseEvent) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setIsSaving(false);
+    setProfileDraft(currentProfileForm(formData));
+    setIsEditing(true);
+  }
+
+  function cancelEditProfile() {
+    setIsSaving(false);
+    setProfileDraft(currentProfileForm(formData));
+    setAvatarMenuOpen(false);
+    setCoverMenuOpen(false);
+    setIsEditing(false);
+  }
+
   async function handleAvatarChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -7821,43 +7991,16 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
     if (!file.type.startsWith("image/")) return ui.toast("Vui lòng chọn file hình ảnh", "error");
     
     try {
-      ui.toast("Đang xử lý ảnh...", "success");
       const base64 = await compressImage(file);
-      const payload = {
-        avatar: base64, avatarUrl: base64,
-        displayName: formData.name || "Quản trị viên",
-        name: formData.name || "Quản trị viên",
-        nickname: formData.nickname,
-        phone: formData.phone,
-        birthday: formData.birthday || null,
-        gender: formData.gender,
-        notes: formData.notes
-      };
-      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const result = await readJsonSafe<{ user?: AuthUser; member?: Member; error?: string }>(response);
-      
-      if (response.ok && result?.user) {
-        if (savedUser) savedUser(result.user);
-        if (update && result.member) update({ ...data, members: data.members.map((m: any) => m.id === result.member!.id ? result.member : m) });
-        if (refreshCurrentUser) await refreshCurrentUser();
-        ui.toast("Đã cập nhật ảnh đại diện", "success");
-      } else {
-        ui.toast(result?.error || "Lỗi khi cập nhật ảnh đại diện", "error");
-      }
+      setProfileDraft(prev => ({ ...prev, avatarUrl: base64 }));
+      setIsEditing(true);
     } catch (e) { ui.toast("Lỗi xử lý ảnh", "error"); }
   }
 
   async function handleAvatarDelete() {
-    if (!await ui.confirm("Xóa ảnh đại diện?", "Bạn có chắc chắn muốn xóa ảnh đại diện hiện tại?")) return;
-    const response = await fetch("/api/auth/avatar", { method: "DELETE" });
-    if (response.ok) {
-      if (savedUser) savedUser({ ...user, avatar: "", member: activeMember ? { ...activeMember, avatar: "", avatarUrl: "" } : undefined });
-      if (update && activeMember) update({ ...data, members: data.members.map((m: any) => m.id === activeMember.id ? { ...activeMember, avatar: "", avatarUrl: "" } : m) });
-      if (refreshCurrentUser) await refreshCurrentUser();
-      ui.toast("Đã xóa ảnh đại diện", "success");
-    } else {
-      ui.toast("Lỗi khi xóa ảnh đại diện", "error");
-    }
+    if (!await ui.confirm("Xóa avatar?", "Bạn có chắc chắn muốn xóa avatar hiện tại?")) return;
+    setProfileDraft(prev => ({ ...prev, avatarUrl: "" }));
+    setIsEditing(true);
   }
 
   async function handleCoverChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -7866,67 +8009,60 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
     if (!file) return;
     if (!file.type.startsWith("image/")) return ui.toast("Vui lòng chọn file hình ảnh", "error");
     try {
-      ui.toast("Đang xử lý ảnh...", "success");
       const base64 = await compressImage(file);
-      const payload = { coverUrl: base64, displayName: formData.name || "Quản trị viên", name: formData.name || "Quản trị viên", nickname: formData.nickname, phone: formData.phone, birthday: formData.birthday || null, gender: formData.gender, notes: formData.notes };
-      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const result = await readJsonSafe<{ user?: AuthUser; member?: Member; error?: string }>(response);
-      if (response.ok && result?.user) {
-        const nextMember = result.member || activeMember;
-        const nextUser = { ...result.user, coverUrl: base64, member: nextMember ? { ...nextMember, coverUrl: base64 } : undefined };
-        if (savedUser) savedUser(nextUser);
-        if (update && result.member) update({ ...data, members: data.members.map((m: any) => m.id === result.member!.id ? result.member : m) });
-        if (refreshCurrentUser) await refreshCurrentUser();
-        ui.toast("Đã cập nhật ảnh bìa", "success");
-      } else {
-        ui.toast(result?.error || "Lỗi khi cập nhật ảnh bìa", "error");
-      }
+      setProfileDraft(prev => ({ ...prev, coverUrl: base64 }));
+      setIsEditing(true);
     } catch (e) { ui.toast("Lỗi xử lý ảnh", "error"); }
   }
 
   async function handleCoverDelete() {
     if (!await ui.confirm("Xóa ảnh bìa?", "Bạn có chắc chắn muốn xóa ảnh bìa hiện tại?")) return;
-    const payload = { coverUrl: "", displayName: formData.name || "Quản trị viên", name: formData.name || "Quản trị viên", nickname: formData.nickname, phone: formData.phone, birthday: formData.birthday || null, gender: formData.gender, notes: formData.notes };
-    const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const result = await readJsonSafe<{ user?: AuthUser; member?: Member; error?: string }>(response);
-    if (response.ok && result?.user) {
-      const nextUser = { ...result.user, coverUrl: "", member: activeMember ? { ...activeMember, coverUrl: "" } : undefined };
-      if (savedUser) savedUser(nextUser);
-      if (update && result.member) update({ ...data, members: data.members.map((m: any) => m.id === result.member!.id ? { ...result.member, coverUrl: "" } : m) });
-      if (refreshCurrentUser) await refreshCurrentUser();
-      ui.toast("Đã xóa ảnh bìa", "success");
-    } else {
-      ui.toast("Lỗi khi xóa ảnh bìa", "error");
-    }
+    setProfileDraft(prev => ({ ...prev, coverUrl: "" }));
+    setIsEditing(true);
   }
 
-  async function handleSave(e?: React.FormEvent) {
-    if (e) e.preventDefault();
-    setLoading(true);
+  async function handleSave(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const cleanName = profileDraft.name.trim();
+    const cleanEmail = profileDraft.email.trim().toLowerCase();
+    const cleanPhone = profileDraft.phone.trim();
+    if (!cleanName) return ui.toast("Tên không được để trống", "error");
+    if (!cleanEmail) return ui.toast("Email không được để trống", "error");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return ui.toast("Email chưa đúng định dạng", "error");
+    if (cleanPhone && !/^[0-9+()\s.-]{8,20}$/.test(cleanPhone)) return ui.toast("Số điện thoại chưa hợp lệ", "error");
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       const payload = {
-        displayName: formData.name, name: formData.name,
-        nickname: formData.nickname, phone: formData.phone, email: formData.email,
-        birthday: formData.birthday || null, gender: formData.gender, notes: formData.notes
+        displayName: cleanName, name: cleanName,
+        nickname: profileDraft.nickname, email: cleanEmail, phone: cleanPhone,
+        birthday: profileDraft.birthday || null, gender: profileDraft.gender,
+        avatar: profileDraft.avatarUrl, avatarUrl: profileDraft.avatarUrl,
+        coverUrl: profileDraft.coverUrl
       };
-      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await saveProfileRequest(payload);
       const result = await readJsonSafe<{ user?: AuthUser; profile?: any; member?: Member; error?: string }>(response);
       if (response.ok && result?.user) {
         if (result.profile && typeof result.profile.email === "string") {
-          setFormData(prev => ({ ...prev, email: result.profile.email }));
+          setProfileDraft(prev => ({ ...prev, email: result.profile.email }));
         }
-        if (savedUser) savedUser(result.user);
-        if (update && result.member) update({ ...data, members: data.members.map((m: any) => m.id === result.member!.id ? result.member : m) });
-        if (refreshCurrentUser) await refreshCurrentUser();
+        const savedEmail = result.profile?.email ?? cleanEmail;
+        const savedUser = { ...result.user, email: savedEmail, avatar: profileDraft.avatarUrl, coverUrl: profileDraft.coverUrl };
+        const savedMember = result.member ? { ...result.member, avatar: profileDraft.avatarUrl, avatarUrl: profileDraft.avatarUrl, coverUrl: profileDraft.coverUrl } : undefined;
+        await mergeProfileState(savedUser, savedMember);
+        setFormData({ ...profileDraft, name: cleanName, phone: cleanPhone, email: savedEmail });
+        setProfileDraft(prev => ({ ...prev, name: cleanName, phone: cleanPhone, email: savedEmail }));
         ui.toast("Đã lưu thông tin", "success");
         setIsEditing(false);
       } else {
-        ui.toast(result?.error || "Lỗi khi lưu thông tin", "error");
+        ui.toast(result?.error || "Không lưu được thông tin cá nhân", "error");
       }
     } catch (err) {
-      ui.toast("Đã xảy ra lỗi", "error");
+      console.warn("[MobileProfileInfoSheet] Failed to save profile", err);
+      ui.toast("Không lưu được thông tin cá nhân", "error");
     } finally {
-      setLoading(false);
+      setIsSaving(false);
     }
   }
 
@@ -7938,52 +8074,67 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
     setCoverMenuOpen(true);
   }
 
-  return <FullScreenMobileSheet title="Thông tin cá nhân" close={isEditing ? () => setIsEditing(false) : close} headerRight={!isEditing ? <button onClick={() => setIsEditing(true)} className="text-sm font-bold text-[#facc15] px-2 py-1">Sửa</button> : <button onClick={handleSave} disabled={loading} className="text-sm font-bold text-[#facc15] px-2 py-1">{loading ? "..." : "Lưu"}</button>}>
+  const infoRows = [
+    ["Họ tên / Tên hiển thị", displayName],
+    ["Email", formData.email || "Chưa cập nhật"],
+    ["Số điện thoại", formData.phone || "Chưa cập nhật"],
+    ["Ngày sinh", formData.birthday ? formatDateVN(formData.birthday) : "Chưa cập nhật"],
+    ["Giới tính", genderLabel],
+    ["Quyền hệ thống", roleLabel],
+    ["Trạng thái", formData.status || "Đang hoạt động"],
+    ["Tên đăng nhập", user.username || "Chưa cập nhật"],
+    ["Vai trò", formData.role || roleLabel]
+  ];
+
+  return <FullScreenMobileSheet title="Thông tin cá nhân" close={isEditing ? cancelEditProfile : close} headerRight={!isEditing ? <button type="button" onClick={beginEditProfile} className="px-3 py-2 text-sm font-bold text-[#800020]">Sửa</button> : <button type="button" onClick={handleSave} disabled={isSaving} className="px-3 py-2 text-sm font-bold text-[#800020] disabled:opacity-50">{isSaving ? "Đang lưu..." : "Lưu"}</button>}>
     <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
     <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={handleCoverChange} />
     
-    <div className="min-h-[100dvh] bg-[#f8fafc] dark:bg-[var(--app-bg)] pb-10">
-      <div className="relative text-center shadow-md min-h-[240px] flex flex-col justify-end pb-8">
-        <div onClick={openCoverMenu} className="absolute inset-0 cursor-pointer">
-          <div className="absolute inset-0 bg-gradient-to-b from-[#064e46] to-[#003f3a]" />
-          {displayCover && <img src={displayCover} className="absolute inset-0 w-full h-full object-cover" alt="Cover" />}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/10" />
-          {!displayCover && <div className="absolute top-4 right-4 text-white/40 text-xs font-medium bg-black/20 px-2 py-1 rounded-md backdrop-blur-sm">Ảnh bìa</div>}
-        </div>
-        <div className="relative z-10 px-4 pointer-events-none mt-12">
-          <div onClick={openAvatarMenu} className="relative inline-block cursor-pointer pointer-events-auto">
-            <AccountAvatar user={{ avatar: displayAvatar, displayName: activeMember.name || user.displayName }} size="size-24 mx-auto border-2 border-white/80 shadow-lg bg-[#003f3a] relative z-10" />
-            {!displayAvatar && <div className="absolute inset-0 z-20 flex flex-col items-center justify-center rounded-full bg-black/40 text-white opacity-0 active:opacity-100 transition-opacity"><span className="text-[10px] font-bold mt-2">Thêm</span></div>}
-          </div>
-          <h2 className="mt-3 text-[22px] font-semibold text-white drop-shadow-md tracking-tight leading-tight">{activeMember.name || user.displayName}</h2>
+    <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[calc(116px+env(safe-area-inset-bottom))] text-[#171018]">
+      <div className="relative min-h-[260px] overflow-hidden bg-[#800020]">
+        <button type="button" onClick={openCoverMenu} className="absolute inset-0 text-left">
+          {displayCover && <img src={displayCover} className="absolute inset-0 h-full w-full object-cover" alt="Ảnh bìa" />}
+          <div className="absolute inset-0 bg-black/35" />
+          <span className="absolute bottom-4 right-4 rounded-full border border-white/25 bg-black/35 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur-sm">Đổi ảnh bìa</span>
+        </button>
+        <div className="relative z-10 flex min-h-[260px] flex-col justify-end px-4 pb-5 pt-10">
+          <button type="button" onClick={openAvatarMenu} className="relative size-24 rounded-full border-4 border-[#FFFFFF] bg-[#F8E7EC] shadow-lg">
+            <AccountAvatar user={{ avatar: displayAvatar, displayName }} size="size-full" />
+            <span className="absolute bottom-0 right-0 grid size-8 place-items-center rounded-full border-2 border-[#FFFFFF] bg-[#800020] text-white shadow-sm"><CameraIcon /></span>
+          </button>
+          <h2 className="mt-3 text-[24px] font-bold leading-tight text-white drop-shadow-sm">{displayName}</h2>
+          <p className="mt-1 text-[13px] font-semibold text-white/85">{roleLabel}</p>
         </div>
       </div>
       
-      <div className="px-4 py-6 space-y-5">
+      <div className="space-y-4 px-4 py-4">
         {!isEditing ? (
-          <>
-            <Field label="Họ tên / Tên hiển thị"><div className="text-sm font-medium">{formData.name}</div></Field>
-            <Field label="Email"><div className="text-sm font-medium">{formData.email || "-"}</div></Field>
-            <Field label="Số điện thoại"><div className="text-sm font-medium">{formData.phone || "-"}</div></Field>
-            <Field label="Ngày sinh"><div className="text-sm font-medium">{formData.birthday ? `${new Date(formData.birthday).getDate().toString().padStart(2, "0")}/${(new Date(formData.birthday).getMonth() + 1).toString().padStart(2, "0")}/${new Date(formData.birthday).getFullYear()}` : "-"}</div></Field>
-            <Field label="Giới tính"><div className="text-sm font-medium">{formData.gender === "nam" ? "Nam" : formData.gender === "nu" ? "Nữ" : "Khác"}</div></Field>
-            <Field label="Quyền hệ thống"><div className="text-sm font-medium">{user.role === "full_access" ? "Quản lý gia đình" : "Thành viên"}</div></Field>
-            <Field label="Trạng thái"><div className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Đang hoạt động</div></Field>
-          </>
+          <div className="rounded-[18px] border border-[#E8DCD5] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+            {infoRows.map(([label, value]) => (
+              <div key={label} className="flex items-start justify-between gap-3 border-b border-[#F8E7EC] py-3 first:pt-0 last:border-0 last:pb-0">
+                <span className="text-[12px] font-semibold text-[#6B5E64]">{label}</span>
+                <span className="max-w-[58%] break-words text-right text-[13px] font-bold text-[#171018]">{value}</span>
+              </div>
+            ))}
+          </div>
         ) : (
-          <form id="profile-form" onSubmit={handleSave} className="space-y-4">
-            <Field label="Họ tên"><input required className={inputClass} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Nhập họ tên" /></Field>
-            <Field label="Email"><input type="email" className={inputClass} value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="Email" /></Field>
-            <Field label="Số điện thoại"><input type="tel" className={inputClass} value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="Số điện thoại" /></Field>
-            <Field label="Ngày sinh"><input type="date" className={inputClass} value={formData.birthday ? formData.birthday.split("T")[0] : ""} onChange={e => setFormData({...formData, birthday: e.target.value})} /></Field>
+          <form id="mobile-profile-info-form" onSubmit={e => e.preventDefault()} className="space-y-4 rounded-[18px] border border-[#E8DCD5] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+            <Field label="Họ tên / Tên hiển thị"><input required className={inputClass} value={profileDraft.name} onChange={e => setProfileDraft({...profileDraft, name: e.target.value})} placeholder="Nhập họ tên" /></Field>
+            <Field label="Email"><input required type="email" className={inputClass} value={profileDraft.email} onChange={e => setProfileDraft({...profileDraft, email: e.target.value})} placeholder="Nhập email" /></Field>
+            <Field label="Số điện thoại"><input type="tel" className={inputClass} value={profileDraft.phone} onChange={e => setProfileDraft({...profileDraft, phone: e.target.value})} placeholder="Số điện thoại" /></Field>
+            <Field label="Ngày sinh"><input type="date" className={inputClass} value={profileDraft.birthday ? profileDraft.birthday.split("T")[0] : ""} onChange={e => setProfileDraft({...profileDraft, birthday: e.target.value})} /></Field>
             <Field label="Giới tính">
-              <select className={inputClass} value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})}>
-                <option value="">Chưa xác định</option>
-                <option value="nam">Nam</option>
-                <option value="nu">Nữ</option>
-                <option value="khac">Khác</option>
+              <select className={inputClass} value={profileDraft.gender} onChange={e => setProfileDraft({...profileDraft, gender: e.target.value})}>
+                <option value="">Chưa cập nhật</option>
+                <option value="male">Nam</option>
+                <option value="female">Nữ</option>
+                <option value="other">Khác</option>
               </select>
             </Field>
+            <div className="mt-2 flex gap-3">
+              <button type="button" onClick={cancelEditProfile} disabled={isSaving} className="h-12 flex-1 rounded-xl border border-[#E8DCD5] bg-white text-[14px] font-bold text-[#800020] disabled:opacity-50">Hủy</button>
+              <button type="button" onClick={handleSave} disabled={isSaving} className="h-12 flex-1 rounded-xl bg-[#800020] text-[14px] font-bold text-white shadow-[0_8px_18px_rgba(128,0,32,0.18)] disabled:opacity-50">{isSaving ? "Đang lưu..." : "Lưu"}</button>
+            </div>
           </form>
         )}
       </div>
@@ -7993,10 +8144,9 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
       isOpen={avatarMenuOpen} 
       close={() => setAvatarMenuOpen(false)} 
       actions={[
-        { label: "Xem ảnh đại diện", onClick: () => setPreviewImage(displayAvatar || null), hidden: !displayAvatar },
-        { label: "Thêm ảnh đại diện", onClick: () => avatarInputRef.current?.click(), hidden: !!displayAvatar },
-        { label: "Đổi ảnh đại diện", onClick: () => avatarInputRef.current?.click(), hidden: !displayAvatar },
-        { label: "Xóa ảnh đại diện", onClick: handleAvatarDelete, textClass: "text-rose-500", hidden: !displayAvatar }
+        { label: "Xem avatar", onClick: () => setPreviewImage(displayAvatar || null), hidden: !displayAvatar },
+        { label: displayAvatar ? "Đổi avatar" : "Thêm avatar", onClick: () => avatarInputRef.current?.click() },
+        { label: "Xóa avatar", onClick: handleAvatarDelete, textClass: "text-[#E11D48]", hidden: !displayAvatar }
       ]} 
     />
     <ActionMenu 
@@ -8004,9 +8154,8 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
       close={() => setCoverMenuOpen(false)} 
       actions={[
         { label: "Xem ảnh bìa", onClick: () => setPreviewImage(displayCover || null), hidden: !displayCover },
-        { label: "Thêm ảnh bìa", onClick: () => coverInputRef.current?.click(), hidden: !!displayCover },
-        { label: "Đổi ảnh bìa", onClick: () => coverInputRef.current?.click(), hidden: !displayCover },
-        { label: "Xóa ảnh bìa", onClick: handleCoverDelete, textClass: "text-rose-500", hidden: !displayCover }
+        { label: displayCover ? "Đổi ảnh bìa" : "Thêm ảnh bìa", onClick: () => coverInputRef.current?.click() },
+        { label: "Xóa ảnh bìa", onClick: handleCoverDelete, textClass: "text-[#E11D48]", hidden: !displayCover }
       ]} 
     />
     {previewImage && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90" onClick={() => setPreviewImage(null)}><img src={previewImage} className="max-h-[90vh] max-w-[90vw] object-contain" alt="Preview" /><button className="absolute top-4 right-4 grid size-10 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20">✕</button></div>}
@@ -8257,7 +8406,7 @@ function MobileHome({
           </div>
 
           <div className="mt-auto space-y-3.5">
-            <button type="button" onClick={openProfile} className="flex h-[60px] w-full items-center gap-3 rounded-2xl bg-[rgba(23,16,24,0.42)] px-3 text-left text-white border border-[rgba(255,255,255,0.16)] shadow-sm backdrop-blur-md active:bg-[rgba(23,16,24,0.5)]">
+            <button type="button" onClick={() => setProfileSheet("info")} className="flex h-[60px] w-full items-center gap-3 rounded-2xl bg-[rgba(23,16,24,0.42)] px-3 text-left text-white border border-[rgba(255,255,255,0.16)] shadow-sm backdrop-blur-md active:bg-[rgba(23,16,24,0.5)]">
               <AccountAvatar user={user} size="size-11" />
               <span className="min-w-0 flex-1">
                 <span className="block text-[11px] font-medium text-white/80">Tài khoản</span>
@@ -8274,24 +8423,6 @@ function MobileHome({
       </section>
 
       <div className="space-y-4 px-3 pt-3 pointer-events-auto">
-        <section className="rounded-[24px] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]">
-          <h2 className="text-[14px] font-semibold text-[#171018] mb-3">Thông tin cá nhân</h2>
-          <div className="grid grid-cols-3 gap-y-4 gap-x-2">
-            {[
-              ["Thông tin", <UserIcon />, () => setProfileSheet("info")],
-              ["Tài khoản", <LockIcon />, () => setProfileSheet("account")],
-              ["Danh thiếp", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 18a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2"></path><rect width="18" height="18" x="3" y="4" rx="2"></rect><circle cx="12" cy="10" r="2"></circle><line x1="8" x2="8" y1="2" y2="4"></line><line x1="16" x2="16" y1="2" y2="4"></line></svg>, () => setProfileSheet("card")],
-              ["Thẻ NH", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="20" height="14" x="2" y="5" rx="2"></rect><line x1="2" x2="22" y1="10" y2="10"></line></svg>, () => setProfileSheet("bank")],
-              ["SIM", <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect><path d="M12 18h.01"></path></svg>, () => setProfileSheet("sim")]
-            ].map(([label, icon, action]: any) => (
-              <button key={label as string} onClick={action} className="flex min-w-0 flex-col items-center justify-start gap-2 rounded-2xl text-center text-[11px] font-medium text-[#171018] active:opacity-70 transition-opacity">
-                <span className="grid size-[40px] shrink-0 place-items-center rounded-full bg-[#F8E7EC] text-[#800020] border border-[#D4AF37] [&>svg]:size-[18px]">{icon}</span>
-                <span className="w-full whitespace-normal leading-tight line-clamp-2 px-0.5">{label}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-
         <section onClick={() => go("finance")} className="cursor-pointer">
           <div className="rounded-[24px] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]">
             <div className="mb-3 flex items-center justify-between">

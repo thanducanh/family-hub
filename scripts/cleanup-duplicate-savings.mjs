@@ -1,80 +1,94 @@
 import pg from 'pg';
 import fs from 'fs';
+import path from 'path';
 
-const env = fs.readFileSync('.env.local', 'utf8');
-const dbUrl = env.split('\n').find(line => line.startsWith('DATABASE_URL=')).split('=')[1].trim().replace(/^"|"$/g, '');
+const envPath = path.resolve('.env.local');
+const env = fs.readFileSync(envPath, 'utf8');
+const dbUrlMatch = env.split('\n').find(line => line.startsWith('DATABASE_URL='));
+if (!dbUrlMatch) {
+  console.error('DATABASE_URL not found in .env.local');
+  process.exit(1);
+}
+const dbUrl = dbUrlMatch.split('=')[1].trim().replace(/^"|"$/g, '');
 const pool = new pg.Pool({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
 
-async function cleanup() {
-  const isApply = process.argv.includes('--apply');
-  console.log(isApply ? "Running in APPLY mode: Deleting records..." : "Running in PREVIEW mode: Dry run only...");
+const applyMode = process.argv.includes('--apply');
 
+async function run() {
   try {
-    // 1. Fetch duplicate groups
-    const query = `
+    console.log(`Starting cleanup... Mode: ${applyMode ? 'APPLY' : 'PREVIEW'}`);
+
+    // Query to find duplicate records
+    const duplicateQuery = `
       SELECT 
-        member_id, year, month, type, holder,
-        json_agg(
-          json_build_object(
-            'id', id, 
-            'created_at', created_at, 
-            'amount', amount
-          ) ORDER BY created_at ASC
-        ) as records
+        member_id, year, month, amount, type, holder, description, 
+        array_agg(id ORDER BY created_at ASC, id ASC) as ids,
+        count(*) as count
       FROM savings_records
-      WHERE type = 'monthly'
-      GROUP BY member_id, year, month, type, holder
+      WHERE amount = 5000000 
+        AND description = 'Tiết kiệm'
+        AND holder = 'Mẹ giữ'
+        AND type = 'monthly'
+      GROUP BY member_id, year, month, amount, type, holder, description
       HAVING count(*) > 1
     `;
 
-    const result = await pool.query(query);
-    
-    if (result.rows.length === 0) {
-      console.log("No duplicates found.");
+    const res = await pool.query(duplicateQuery);
+    const groups = res.rows;
+
+    if (groups.length === 0) {
+      console.log('No duplicates found.');
       return;
     }
 
     let totalDeleted = 0;
 
-    for (const group of result.rows) {
-      console.log(`\nDuplicate Group found: Month ${group.month}/${group.year}, Holder: ${group.holder}, Type: ${group.type}`);
-      const records = group.records;
-      
-      // The first one is the oldest (due to ORDER BY created_at ASC in json_agg)
-      const keepRecord = records[0];
-      const deleteRecords = records.slice(1);
+    for (const group of groups) {
+      const allIds = group.ids;
+      const idToKeep = allIds[0];
+      const idsToDelete = allIds.slice(1);
 
-      console.log(`[KEEP] ID: ${keepRecord.id} | Created: ${keepRecord.created_at} | Amount: ${keepRecord.amount}`);
-      
-      for (const rec of deleteRecords) {
-        console.log(`[DELETE] ID: ${rec.id} | Created: ${rec.created_at} | Amount: ${rec.amount}`);
-      }
+      console.log(`\nGroup (Month: ${group.month}/${group.year}):`);
+      console.log(`- Keep ID: ${idToKeep}`);
+      console.log(`- Will Delete IDs: ${idsToDelete.join(', ')}`);
 
-      if (isApply) {
-        const deleteIds = deleteRecords.map(r => r.id);
-        const deleteQuery = `DELETE FROM savings_records WHERE id = ANY($1::uuid[])`;
-        const deleteResult = await pool.query(deleteQuery, [deleteIds]);
-        console.log(`=> Deleted ${deleteResult.rowCount} records for this group.`);
-        totalDeleted += deleteResult.rowCount;
+      if (applyMode) {
+        // Also fix any transactions that point to the deleted savings_records
+        for (const badId of idsToDelete) {
+          await pool.query(
+            "UPDATE transactions SET linked_savings_id = $1 WHERE linked_savings_id = $2",
+            [idToKeep, badId]
+          );
+        }
+
+        const deleteQuery = `
+          DELETE FROM savings_records 
+          WHERE id = ANY($1::uuid[])
+        `;
+        const delRes = await pool.query(deleteQuery, [idsToDelete]);
+        totalDeleted += delRes.rowCount;
       }
     }
 
-    if (isApply) {
-      console.log(`\nCleanup complete. Total records deleted: ${totalDeleted}`);
+    if (applyMode) {
+      console.log(`\nSuccessfully deleted ${totalDeleted} duplicate records.`);
     } else {
-      console.log(`\nPreview complete. To apply changes, run with --apply.`);
+      console.log(`\nPreview complete. Run with --apply to delete.`);
     }
 
-    // Print remaining savings records for 06/2026
-    const countQuery = `SELECT count(*) FROM savings_records WHERE month = 6 AND year = 2026 AND type = 'monthly'`;
-    const countResult = await pool.query(countQuery);
-    console.log(`Current remaining monthly savings records for 06/2026: ${countResult.rows[0].count}`);
+    // Verify 6/2026 count
+    const verifyRes = await pool.query(`
+      SELECT count(*) as count 
+      FROM savings_records 
+      WHERE month = 6 AND year = 2026 AND amount = 5000000 AND description = 'Tiết kiệm' AND holder = 'Mẹ giữ'
+    `);
+    console.log(`Remaining records for 6/2026: ${verifyRes.rows[0].count}`);
 
   } catch(e) {
-    console.error("Error during cleanup:", e);
+    console.error('Error during cleanup:', e);
   } finally {
     pool.end();
   }
 }
 
-cleanup();
+run();

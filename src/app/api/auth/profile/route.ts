@@ -9,6 +9,7 @@ type ProfileBody = Partial<MemberProfile> & { displayName?: string; email?: stri
 type ProfileUser = PublicUser & { member?: MemberProfile };
 
 async function loadProfile(userId: string): Promise<ProfileUser | null> {
+  await ensureUserAvatarUrlColumn();
   let result = await pool.query(`SELECT ${select} FROM users WHERE id = $1`, [userId]);
   if (!result.rows[0]) return null;
   const profile: ProfileUser = toPublicUser(result.rows[0]);
@@ -61,6 +62,12 @@ export async function PUT(request: NextRequest) {
     const session = await getSessionUser();
     if (!session) return NextResponse.json({ ok: false, error: "Chưa đăng nhập." }, { status: 401 });
     const body = await request.json() as ProfileBody;
+    const currentAccount = await pool.query("SELECT email FROM users WHERE id = $1", [session.id]);
+    const email = (body.email === undefined ? currentAccount.rows[0]?.email : body.email)?.trim().toLowerCase() || "";
+    if (!email) return NextResponse.json({ ok: false, error: "Email không được để trống" }, { status: 400 });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ ok: false, error: "Email chưa đúng định dạng" }, { status: 400 });
+    const emailOwner = await pool.query("SELECT id FROM users WHERE LOWER(email) = $1 AND id <> $2 LIMIT 1", [email, session.id]);
+    if (emailOwner.rows[0]) return NextResponse.json({ ok: false, error: "Email đã được sử dụng" }, { status: 409 });
     if (!session.memberId && body.memberId) await assignOwnMember(session, body.memberId);
     if (session.memberId) {
       if (!body.name?.trim()) return NextResponse.json({ ok: false, error: "Họ tên không được để trống." }, { status: 400 });
@@ -68,19 +75,21 @@ export async function PUT(request: NextRequest) {
       const current = await pool.query("SELECT avatar, avatar_url, cover_url FROM members WHERE id=$1 AND deleted_at IS NULL", [session.memberId]);
       const currentAvatar = current.rows[0]?.avatar_url || current.rows[0]?.avatar || "";
       const currentCover = current.rows[0]?.cover_url || "";
-      const avatar = durableAvatarValue(body.avatarUrl ?? body.avatar, currentAvatar);
+      const avatarInput = body.avatarUrl ?? body.avatar;
+      const avatar = avatarInput === "" ? "" : durableAvatarValue(avatarInput, currentAvatar);
       const coverUrl = body.coverUrl !== undefined ? body.coverUrl : currentCover;
       await pool.query("UPDATE members SET name=$2,nickname=$3,phone=$4,birthday=$5,gender=$6,avatar=$7,avatar_url=$8,cover_url=$9,notes=$10 WHERE id=$1 AND deleted_at IS NULL", [session.memberId, body.name.trim(), body.nickname?.trim() || "", body.phone?.trim() || "", body.birthday || null, body.gender?.trim() || "", avatar, avatar, coverUrl, body.notes?.trim() || ""]);
-      await pool.query("UPDATE users SET email=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.email?.trim() || null]);
+      await pool.query("UPDATE users SET email=$2, updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, email]);
     } else {
       if (!body.displayName?.trim()) return NextResponse.json({ ok: false, error: "Tên hiển thị không được để trống." }, { status: 400 });
       await ensureUserAvatarUrlColumn();
       const current = await pool.query("SELECT avatar, avatar_url, cover_url FROM users WHERE id=$1", [session.id]);
       const currentAvatar = current.rows[0]?.avatar_url || current.rows[0]?.avatar || "";
       const currentCover = current.rows[0]?.cover_url || "";
-      const avatar = durableAvatarValue(body.avatarUrl ?? body.avatar, currentAvatar);
+      const avatarInput = body.avatarUrl ?? body.avatar;
+      const avatar = avatarInput === "" ? "" : durableAvatarValue(avatarInput, currentAvatar);
       const coverUrl = body.coverUrl !== undefined ? body.coverUrl : currentCover;
-      await pool.query("UPDATE users SET display_name=$2,email=$3,avatar=$4,avatar_url=$5,cover_url=$6,updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.displayName.trim(), body.email?.trim() || null, avatar, avatar, coverUrl]);
+      await pool.query("UPDATE users SET display_name=$2,email=$3,avatar=$4,avatar_url=$5,cover_url=$6,updated_at=CURRENT_TIMESTAMP WHERE id=$1", [session.id, body.displayName.trim(), email, avatar, avatar, coverUrl]);
     }
     const profile = await loadProfile(session.id);
     if (!profile) return NextResponse.json({ ok: false, error: "Không tìm thấy tài khoản." }, { status: 404 });
@@ -90,6 +99,7 @@ export async function PUT(request: NextRequest) {
     return response;
   } catch (error) {
     console.error("[PUT /api/auth/profile]", error);
+    if ((error as { code?: string })?.code === "23505") return NextResponse.json({ ok: false, error: "Email đã được sử dụng" }, { status: 409 });
     const message = error instanceof Error ? error.message : "Lỗi máy chủ. Vui lòng thử lại.";
     return NextResponse.json({ ok: false, error: message }, { status: message.startsWith("Lỗi máy chủ") ? 500 : 400 });
   }

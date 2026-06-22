@@ -86,10 +86,10 @@ export async function POST(request: NextRequest) {
   await ensureSavingsCompatibility();
   const item = await request.json();
   
-  if (!item.id && item.type === "monthly") {
+  if (item.type === "monthly") {
     const existingResult = await pool.query(
-      `SELECT id FROM savings_records WHERE member_id IS NOT DISTINCT FROM $1 AND year = $2 AND month = $3 AND type = 'monthly' AND holder = $4`,
-      [item.memberId || null, item.year, item.month, item.holder || "Ngân hàng"]
+      `SELECT id FROM savings_records WHERE member_id IS NOT DISTINCT FROM $1 AND year = $2 AND month = $3 AND type = 'monthly' AND holder = $4 AND amount = $5`,
+      [item.memberId || null, item.year, item.month, item.holder || "Ngân hàng", item.amount || 0]
     );
     if (existingResult.rows.length > 0) {
       item.id = existingResult.rows[0].id;
