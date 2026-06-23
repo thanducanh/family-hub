@@ -1,147 +1,137 @@
 const fs = require('fs');
+let code = fs.readFileSync('src/components/timetree-calendar.tsx', 'utf8');
 
-let content = fs.readFileSync('src/components/family-app.tsx', 'utf-8');
+// 1. Insert robust generateUUID function and update saveEvent
+code = code.replace(
+  /async function saveEvent\(event: React\.FormEvent\) \{[\s\S]*?if \(\!response\.ok \|\| \!result\?\.ok\) \{\s*setError\(result\?\.error \|\| "Không thể lưu sự kiện\."\);\s*return;\s*\}[\s\S]*?const isNew = \!draft\.id;\s*setDraft\(null\);\s*await load\(\);\s*setSelectedDate\(draft\.startDate\);/,
+  `function generateUUID() {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => {
+      const random = typeof crypto !== "undefined" && crypto.getRandomValues ? crypto.getRandomValues(new Uint8Array(1))[0] : Math.random() * 256;
+      return (c ^ random & 15 >> c / 4).toString(16);
+    });
+  }
 
-const replacement = `    {settingsOpen && (
-      <div className="fixed inset-0 z-50 flex flex-col md:items-center md:justify-center bg-[#f8fafc] dark:bg-[var(--app-bg)] md:bg-black/45 md:p-4 animate-in fade-in duration-200">
-        <div className="w-full h-full md:h-auto md:max-w-md md:max-h-[85vh] flex flex-col md:overflow-hidden md:rounded-2xl bg-[#f8fafc] dark:bg-[var(--app-bg)] md:bg-white md:dark:bg-slate-900 md:shadow-2xl animate-in slide-in-from-bottom-8 md:slide-in-from-bottom-4 duration-300 relative">
-          <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white dark:bg-[var(--app-card)] border-b border-slate-200 dark:border-white/10 sticky top-0 z-20 shadow-sm">
-            <button onClick={() => setSettingsOpen(false)} className="text-slate-500">
-              <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-            </button>
-            <h2 className="text-lg font-bold text-slate-800 dark:text-white">Cài đặt</h2>
-          </div>
-          <div className="hidden md:flex items-center justify-between p-5 pb-0">
-            <h2 className="text-lg font-bold text-slate-800 dark:text-white">Cài đặt</h2>
-            <button onClick={() => setSettingsOpen(false)} className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-300">✕</button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 md:p-5 space-y-6">
-            <div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 md:px-0">Ngôn ngữ</h3>
-              <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10">
-                {[{ id: 'vi', label: 'Tiếng Việt' }, { id: 'en', label: 'English' }, { id: 'ja', label: '日本語' }].map(item => (
-                  <button key={item.id} onClick={() => setLanguage && setLanguage(item.id)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5 last:border-0">
-                    <span className={\`text-sm font-medium \${language === item.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}\`}>{item.label}</span>
-                    {language === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 md:px-0">Giao diện</h3>
-              <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10">
-                {[{ id: 'light', label: 'Sáng' }, { id: 'dark', label: 'Tối' }].map(item => (
-                  <button key={item.id} onClick={() => setTheme && setTheme(item.id)} className="flex w-full items-center justify-between px-4 py-4 text-left active:bg-slate-50 dark:active:bg-white/5 border-b border-slate-100 dark:border-white/5 last:border-0">
-                    <span className={\`text-sm font-medium \${theme === item.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}\`}>{item.label}</span>
-                    {theme === item.id && <span className="text-indigo-600 dark:text-indigo-400 font-bold">✓</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-2 md:px-0">Thông báo thiết bị</h3>
-              <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10 p-4">
-                <p className="text-xs text-slate-500 mb-3 leading-relaxed">Nhận thông báo push khi có sự kiện mới hoặc sắp tới. Yêu cầu trình duyệt hỗ trợ.</p>
-                <div className="flex gap-2">
-                  <button onClick={() => {
-                    requestNotificationPermission().then(res => {
-                      if (res) {
-                        alert('Đã cấp quyền thông báo thành công!');
-                        window.location.reload();
-                      } else {
-                        alert('Không thể đăng ký thông báo hoặc bạn đã từ chối.');
-                      }
-                    });
-                  }} className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 transition">Bật thông báo</button>
-                  <button onClick={() => {
-                    fetch('/api/push/send-test', { method: 'POST' })
-                      .then(res => res.json())
-                      .then(data => alert(data.success ? 'Đã gửi thông báo thử nghiệm' : 'Lỗi: ' + data.error))
-                      .catch(() => alert('Lỗi khi gửi test'));
-                  }} className="px-3 py-2 bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300 rounded-lg text-xs font-semibold hover:bg-slate-200 dark:hover:bg-white/20 transition">Gửi thử</button>
-                </div>
-              </div>
-            </div>
-            <div className="pt-2">
-              <button onClick={() => setLogoutConfirmOpen(true)} className="flex w-full items-center justify-center px-4 py-4 rounded-2xl bg-white border border-slate-200 dark:bg-[var(--app-card)] dark:border-white/10 active:bg-rose-50 dark:active:bg-rose-500/10">
-                <span className="text-sm font-bold text-rose-500">Đăng xuất</span>
-              </button>
-            </div>
-            <div className="h-20 md:hidden" />
-          </div>
-        </div>
-      </div>
-    )}`;
+  async function saveEvent(event: React.FormEvent) {
+    event.preventDefault();
+    if (!draft) return;
+    const id = draft.id || generateUUID();
+    
+    let response;
+    let result;
+    try {
+      response = await fetch("/api/events", {
+        method: draft.id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...draft, id })
+      });
+      result = await readJson(response);
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || "Lỗi API");
+      }
+    } catch (err) {
+      console.error("[saveEvent] Error:", err);
+      throw err;
+    }
 
-// We need to carefully remove:
-// 1. the old SettingsOpen block
-// 2. languageSheetOpen block
-// 3. themeSheetOpen block
-// 4. the old logout block
-// And update the title.
+    const isNew = !draft.id;
+    setDraft(null);
+    await load();
+    setSelectedDate(draft.startDate);
+    if (isNew) {
+      setMobileTab("day");
+    }`
+);
 
-const lines = content.split('\n');
+// 2. Fix EventEditorSheet save prop
+code = code.replace(
+  `save={saveEvent => { save(saveEvent); setDraft(null); }}`,
+  `save={save}`
+);
 
-function findBlock(startStr) {
-    let start = -1;
-    for (let i = 0; i < lines.length; i++) {
-        if (lines[i].includes(startStr)) {
-            start = i;
-            break;
+// 3. Fix EventEditorInline (replace alert with inline error)
+code = code.replace(
+  /const \[isSaving, setIsSaving\] = useState\(false\);/,
+  `const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState("");`
+);
+
+code = code.replace(
+  /const handleSave = async \(e: React\.FormEvent\) => \{[\s\S]*?setIsSaving\(true\);\s*try \{\s*await save\(e\);\s*\} catch \(err\) \{\s*console\.error\("Save event failed", err\);\s*alert\("Không lưu được sự kiện"\);\s*\} finally \{\s*setIsSaving\(false\);\s*\}\s*\};/,
+  `const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+    if (!draft.title.trim()) {
+      setFormError("Vui lòng nhập nội dung sự kiện");
+      return;
+    }
+    const startObj = new Date(\`\${draft.startDate}T\${draft.allDay ? "00:00" : draft.startTime}\`);
+    const endObj = new Date(\`\${draft.endDate}T\${draft.allDay ? "23:59" : draft.endTime}\`);
+    if (!draft.allDay && endObj <= startObj) {
+      setFormError("Giờ kết thúc phải lớn hơn giờ bắt đầu");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      if (typeof save === "function") {
+        const promise = save(e);
+        if (promise instanceof Promise) {
+          await promise;
         }
+      }
+    } catch (err) {
+      console.error("Save event failed", err);
+      setFormError("Không lưu được sự kiện");
+    } finally {
+      setIsSaving(false);
     }
-    if (start === -1) return null;
-    let end = start;
-    let count = 0;
-    // We are looking for matching brackets, but since this is JSX it's easier to look for }
-    // Actually, in the current code, the sheets end with `</Sheet>` then `    )}`
-    while (end < lines.length) {
-        if (lines[end].includes('</Sheet>')) {
-            end++; // The next line is `    )}`
-            if (lines[end] && lines[end].includes(')}')) {
-                return { start, end };
-            }
-            return { start, end: end - 1 };
+  };`
+);
+
+code = code.replace(
+  /const handleSave = async \(e: React\.FormEvent\) => \{[\s\S]*?setIsSaving\(true\);\s*await save\(e\);\s*setIsSaving\(false\);\s*\};/,
+  `const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+    if (!draft.title.trim()) {
+      setFormError("Vui lòng nhập nội dung sự kiện");
+      return;
+    }
+    const startObj = new Date(\`\${draft.startDate}T\${draft.allDay ? "00:00" : draft.startTime}\`);
+    const endObj = new Date(\`\${draft.endDate}T\${draft.allDay ? "23:59" : draft.endTime}\`);
+    if (!draft.allDay && endObj <= startObj) {
+      setFormError("Giờ kết thúc phải lớn hơn giờ bắt đầu");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      if (typeof save === "function") {
+        const promise = save(e);
+        if (promise instanceof Promise) {
+          await promise;
         }
-        end++;
+      }
+    } catch (err) {
+      console.error("Save event failed", err);
+      setFormError("Không lưu được sự kiện");
+    } finally {
+      setIsSaving(false);
     }
-    return null;
-}
+  };`
+);
 
-const settingsBlock = findBlock('{settingsOpen && <Sheet close={() => setSettingsOpen(false)}>');
-if (settingsBlock) {
-    lines.splice(settingsBlock.start, settingsBlock.end - settingsBlock.start + 1, replacement);
-}
+// Add formError display
+code = code.replace(
+  /<div className="flex flex-col gap-4">/,
+  `<div className="flex flex-col gap-4">
+          {formError && (
+            <div className="bg-[#FFF1F2] border border-[#E8DCD5] rounded-xl p-3 shadow-sm">
+              <p className="text-[#E11D48] text-[13px] font-medium">{formError}</p>
+            </div>
+          )}`
+);
 
-// Re-find languageSheetOpen block since lines changed
-const langBlock = findBlock('{languageSheetOpen && setLanguage && (');
-if (langBlock) {
-    lines.splice(langBlock.start, langBlock.end - langBlock.start + 1);
-}
-
-// Re-find themeSheetOpen block since lines changed
-const themeBlock = findBlock('{themeSheetOpen && setTheme && (');
-if (themeBlock) {
-    lines.splice(themeBlock.start, themeBlock.end - themeBlock.start + 1);
-}
-
-// Remove old logout block
-let logoutStart = -1;
-for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes('<button onClick={() => setLogoutConfirmOpen(true)} className="flex w-full items-center justify-center px-4 py-4 text-center active:bg-rose-50 dark:active:bg-rose-500/10">')) {
-        logoutStart = i - 1; // It starts with `<div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[var(--app-card)] mb-6">`
-        break;
-    }
-}
-if (logoutStart !== -1) {
-    lines.splice(logoutStart, 5); // 5 lines for the block
-}
-
-// Fix Cài đặt (Ngôn ngữ, Giao diện)
-let labelIdx = lines.findIndex(l => l.includes('Cài đặt (Ngôn ngữ, Giao diện)'));
-if (labelIdx >= 0) {
-    lines[labelIdx] = lines[labelIdx].replace('Cài đặt (Ngôn ngữ, Giao diện)', 'Cài đặt');
-}
-
-fs.writeFileSync('src/components/family-app.tsx', lines.join('\n'), 'utf-8');
-console.log('Successfully patched UI');
+fs.writeFileSync('src/components/timetree-calendar.tsx', code, 'utf8');
+console.log("Done");

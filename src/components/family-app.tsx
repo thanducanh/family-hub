@@ -266,10 +266,44 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   const [theme, setTheme] = useState<Theme>("system");
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [editor, setEditor] = useState<Editor>(null);
-  const [notifications, setNotifications] = useState<CalendarNotification[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function loadNotifs() {
+      if (typeof window === "undefined") return;
+      const uid = user?.id || user?.memberId || "guest";
+      const key = `familyHubNotifications:${uid}`;
+      let localItems = [];
+      try { localItems = JSON.parse(localStorage.getItem(key) || "[]"); } catch(e){}
+      
+      try {
+        const res = await fetch("/api/notifications");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && data.notifications) {
+            // merge local items not in API yet, or just use API + local?
+            // User requested fallback, let's prefer API
+            const apiItems = data.notifications;
+            const apiIds = new Set(apiItems.map((x:any) => x.id));
+            const uniqueLocal = localItems.filter((x:any) => !apiIds.has(x.id));
+            setNotifications([...uniqueLocal, ...apiItems].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+            return;
+          }
+        }
+      } catch(e) {}
+      setNotifications(localItems);
+    }
+    loadNotifs();
+
+    const handleNewNotif = (e: any) => {
+      setNotifications(prev => [e.detail, ...prev]);
+    };
+    window.addEventListener("app_notification_created", handleNewNotif);
+    return () => window.removeEventListener("app_notification_created", handleNewNotif);
+  }, [user]);
   const [mobileShowMembers, setMobileShowMembers] = useState(false);
   
-  const unreadNotificationsCount = user ? notifications.filter(n => isCalendarNotificationUnread(n, user)).length : 0;
+  const unreadNotificationsCount = notifications.filter(n => !n.read && !(n as any).isRead).length;
 
   useEffect(() => {
     if (typeof navigator !== 'undefined' && 'setAppBadge' in navigator) {
@@ -568,12 +602,12 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" || screen === "settings" || screen === "system" ? "pb-0" : "pb-[100px] md:pb-0"} ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
     <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} language={language} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
-    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" || screen === "system" || screen === "dashboard" ? "hidden md:block" : "block"}`}>
+    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" || screen === "system" || screen === "dashboard" || screen === "notifications" ? "hidden md:block" : "block"}`}>
       <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
         <label className={`relative w-full max-w-md ${screen === "finance" ? "hidden md:block" : "block"}`}><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
         <div className="relative ml-auto flex items-center gap-1 md:gap-2">
           <button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="hidden md:grid size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><ThemeIcon dark={theme === "dark"} /></button>
-          <button aria-label="Thông báo" onClick={() => go("notifications")} className="hidden md:grid relative size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><BellIcon />{notifications.some(item => isCalendarNotificationUnread(item, user)) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => isCalendarNotificationUnread(item, user)).length}</span>}</button>
+          <button aria-label="Thông báo" onClick={() => go("notifications")} className="hidden md:grid relative size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><BellIcon />{notifications.some(item => (!item.read && !(item as any).isRead)) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => (!item.read && !(item as any).isRead)).length}</span>}</button>
           <button aria-label="Mở menu tài khoản" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(open => !open)} className="hidden md:flex items-center gap-1 rounded-full p-1 text-left hover:bg-slate-50 dark:hover:bg-white/5 md:gap-2">
             <span className="grid size-9 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm md:size-10"><AccountAvatar user={headerUser} /></span><span className="max-w-24 truncate text-sm font-medium hidden sm:block md:max-w-32">{headerUser.displayName}</span><span className="hidden sm:block"><ChevronDownIcon /></span>
           </button>
@@ -582,7 +616,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       </div>
     </header>
     <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
-    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" || screen === "settings" || screen === "system" || screen === "dashboard" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && screen !== "system" && screen !== "dashboard" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
+    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" || screen === "settings" || screen === "system" || screen === "dashboard" || screen === "notifications" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && screen !== "system" && screen !== "dashboard" && screen !== "notifications" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
     {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
@@ -2345,7 +2379,7 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
   const doneCount = data.tasks.filter(item => item.status === "done").length;
   const completion = data.tasks.length ? Math.round(doneCount / data.tasks.length * 100) : 0;
 
-  const unreadCount = notifications.filter(item => isCalendarNotificationUnread(item, user)).length;
+  const unreadCount = notifications.filter(item => (!item.read && !(item as any).isRead)).length;
 
   return <div className="grid grid-cols-12 gap-4 md:gap-6">
     <div className="col-span-12 grid gap-4 md:gap-6 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">{metrics.map(([label, value, color, hint]) => <MetricCard key={label} label={label} value={value} color={color} hint={hint} />)}</div>
@@ -2365,7 +2399,7 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
         <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
           {notifications.length ? (
             notifications.slice(0, 5).map(item => {
-              const unread = isCalendarNotificationUnread(item, user);
+              const unread = (!item.read && !(item as any).isRead);
               return (
                 <div key={item.id} className={`p-2.5 rounded-xl border border-[var(--app-border)] text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${unread ? "bg-orange-50/40 dark:bg-orange-400/5 font-semibold" : ""}`} onClick={() => go("notifications")}>
                   <div className="flex justify-between items-start gap-2">
@@ -2395,275 +2429,58 @@ function CategoryChart({ data }: { data: [string, number][] }) {
   const colors = ["bg-rose-400", "bg-orange-400", "bg-violet-400", "bg-sky-400", "bg-emerald-400"];
   return <Card className="p-5"><b>Chi tiêu theo danh mục</b>{total ? <><div className="mt-4 flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">{data.map(([label, value], index) => <span key={label} className={`h-full ${colors[index % colors.length]}`} style={{ width: `${value / total * 100}%` }} />)}</div><div className="mt-4 space-y-3">{data.slice(0, 5).map(([label, value], index) => <div key={label} className="flex justify-between text-xs"><span><i className={`mr-2 inline-block size-2 rounded-full ${colors[index % colors.length]}`} />{label}</span><b>{money(value)}</b></div>)}</div></> : <div className="mt-5">Chưa có dữ liệu</div>}</Card>; }
 function CompletionChart({ value, done, total }: { value: number; done: number; total: number }) { return <Card className="p-5"><div className="flex items-center justify-between"><b>Tỷ lệ hoàn thành công việc</b><b className="text-[var(--app-success,theme(colors.emerald.500))]">{value}%</b></div><div className="mt-8 grid place-items-center"><div className="grid size-36 place-items-center rounded-full bg-[var(--app-metric-bg,theme(colors.emerald.50))] text-3xl font-bold text-[var(--app-success,theme(colors.emerald.500))] ring-8 ring-[var(--app-metric-bg,theme(colors.emerald.100))] dark:bg-[var(--app-metric-bg-dark,theme(colors.emerald.400/10))] dark:ring-[var(--app-metric-bg-dark,theme(colors.emerald.400/20))]">{value}%</div></div><p className="mt-8 text-center text-xs text-[var(--app-muted,theme(colors.slate.400))]">{total ? `${done}/${total} công việc đã hoàn thành` : "Chưa có dữ liệu công việc"}</p></Card>; }
-function NotificationsView({ user, notifications, setNotifications }: { user: AuthUser; notifications: CalendarNotification[]; setNotifications: React.Dispatch<React.SetStateAction<CalendarNotification[]>> }) {
-  const [selected, setSelected] = useState<CalendarNotification | null>(null);
-  const [pushStatus, setPushStatus] = useState<"checking" | "subscribed" | "unsubscribed" | "denied">("checking");
-  const [isSubscribing, setIsSubscribing] = useState(false);
-
-  useEffect(() => {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      setPushStatus("denied");
-      return;
-    }
-    navigator.serviceWorker.getRegistration().then(reg => {
-      if (!reg) {
-        setPushStatus("unsubscribed");
-        return;
-      }
-      reg.pushManager.getSubscription().then(sub => {
-        if (sub) setPushStatus("subscribed");
-        else setPushStatus("unsubscribed");
-      });
-    });
-  }, []);
-
-  const handleSubscribePush = async () => {
-    try {
-      setIsSubscribing(true);
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        setPushStatus("denied");
-        alert("Bạn đã từ chối quyền gửi thông báo.");
-        return;
-      }
-      
-      const reg = await navigator.serviceWorker.register("/sw.js");
-      await reg.update();
-      
-      const vapidRes = await fetch("/api/vapid-public-key");
-      const { publicKey } = await vapidRes.json();
-      if (!publicKey) throw new Error("Không lấy được VAPID key");
-      
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: publicKey
-      });
-      
-      const res = await fetch("/api/push-subscriptions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint: sub.endpoint, keys: sub.toJSON().keys })
-      });
-      
-      if (res.ok) {
-        setPushStatus("subscribed");
-        alert("Đăng ký nhận thông báo thành công!");
-      } else {
-        throw new Error("Lỗi khi lưu subscription");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Có lỗi xảy ra khi đăng ký nhận thông báo.");
-    } finally {
-      setIsSubscribing(false);
-    }
-  };
-
-  const handleMarkRead = (item: CalendarNotification) => {
-    markNotificationRead(item.id, user);
-    setNotifications(loadVisibleCalendarNotifications(user));
-    if (selected && selected.id === item.id) {
-      setSelected(prev => prev ? { ...prev, read: true, readUserIds: [...(prev.readUserIds || []), user.id] } : null);
-    }
-  };
-
-  const handleMarkAllRead = () => {
-    markCalendarNotificationsRead(user);
-    setNotifications(loadVisibleCalendarNotifications(user));
+function NotificationsView({ user, notifications, setNotifications }: { user: AuthUser; notifications: any[]; setNotifications: React.Dispatch<React.SetStateAction<any[]>> }) {
+  const markAllAsRead = () => {
+    const updated = notifications.map(n => ({ ...n, read: true, isRead: true }));
+    setNotifications(updated);
+    
+    // Save to local storage
+    const uid = user?.id || user?.memberId || "guest";
+    const key = `familyHubNotifications:${uid}`;
+    localStorage.setItem(key, JSON.stringify(updated));
   };
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      {pushStatus === "unsubscribed" && (
-        <Card className="p-4 bg-indigo-50/50 dark:bg-indigo-500/10 border-indigo-100 dark:border-indigo-500/20">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div>
-              <h3 className="font-semibold text-indigo-900 dark:text-indigo-100 text-sm">Bật thông báo trên điện thoại</h3>
-              <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1">Nhận thông báo push khi có sự kiện mới hoặc sắp tới.</p>
-            </div>
-            <button
-              onClick={handleSubscribePush}
-              disabled={isSubscribing}
-              className="whitespace-nowrap px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition disabled:opacity-50"
-            >
-              {isSubscribing ? "Đang xử lý..." : "Bật thông báo"}
-            </button>
-          </div>
-        </Card>
-      )}
-      
-    <div className="grid grid-cols-12 gap-4 md:gap-6">
-      {/* Mobile Detail Overlay */}
-      {selected && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/45 md:hidden">
-          <div className="w-full max-h-[85vh] overflow-y-auto rounded-t-3xl border border-[var(--app-border)] bg-[var(--app-card)] p-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-2xl">
-            <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-slate-300" />
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <button onClick={() => setSelected(null)} className="text-sm font-semibold text-indigo-600 flex items-center gap-1">
-                  ← Quay lại
-                </button>
-                <span className="text-xs font-bold text-slate-400">Chi tiết thông báo</span>
-              </div>
-              <div className="border-t border-[var(--app-border)] pt-4 space-y-3">
-                <h3 className="font-bold text-base text-slate-800 dark:text-white">{selected.title || "Thông báo"}</h3>
-                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{selected.message}</p>
-                <div className="text-xs space-y-1.5 text-slate-400 bg-slate-50 dark:bg-white/5 p-3 rounded-xl">
-                  <p><b>Người tạo:</b> {selected.actorName || "Family Hub"}</p>
-                  <p><b>Thời gian tạo:</b> {new Date(selected.createdAt).toLocaleString("vi-VN")}</p>
-                  <p><b>Trạng thái:</b> {isCalendarNotificationUnread(selected, user) ? "Chưa đọc" : "Đã đọc"}</p>
-                </div>
-                {isCalendarNotificationUnread(selected, user) && (
-                  <button
-                    onClick={() => handleMarkRead(selected)}
-                    className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
-                  >
-                    Đánh dấu đã đọc
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PC Detail Panel */}
-      {selected && (
-        <div className="hidden md:block md:col-span-4 xl:col-span-4">
-          <Card className="p-5 space-y-4 sticky top-24">
-            <div className="flex justify-between items-center">
-              <button onClick={() => setSelected(null)} className="text-xs font-semibold text-indigo-600 flex items-center gap-1 hover:underline">
-                ← Đóng chi tiết
-              </button>
-              <span className="text-xs font-bold text-slate-400">Chi tiết</span>
-            </div>
-            <div className="border-t border-[var(--app-border)] pt-4 space-y-3">
-              <h3 className="font-bold text-base text-slate-800 dark:text-white leading-snug">{selected.title || "Thông báo"}</h3>
-              <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{selected.message}</p>
-              <div className="text-xs space-y-1.5 text-slate-400 bg-slate-50 dark:bg-white/5 p-3 rounded-xl">
-                <p><b>Người tạo:</b> {selected.actorName || "Family Hub"}</p>
-                <p><b>Thời gian tạo:</b> {new Date(selected.createdAt).toLocaleString("vi-VN")}</p>
-                <p><b>Trạng thái:</b> {isCalendarNotificationUnread(selected, user) ? "Chưa đọc" : "Đã đọc"}</p>
-              </div>
-              {isCalendarNotificationUnread(selected, user) && (
-                <button
-                  onClick={() => handleMarkRead(selected)}
-                  className="w-full rounded-xl bg-indigo-600 py-2.5 text-xs font-semibold text-white transition hover:bg-indigo-700"
-                >
-                  Đánh dấu đã đọc
-                </button>
-              )}
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* Notifications List - 1 column layout */}
-      <div className={`col-span-12 ${selected ? "md:col-span-8 xl:col-span-8" : ""}`}>
-        <Card className="p-4 md:p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-sm md:text-base">Tất cả thông báo</h2>
-            <button onClick={handleMarkAllRead} className="text-xs font-semibold text-indigo-600 hover:underline">
-              Đánh dấu tất cả đã đọc
-            </button>
-          </div>
-          <div className="space-y-2">
-            {notifications.length ? (
-              notifications.map(item => {
-                const unread = isCalendarNotificationUnread(item, user);
-                
-                if (item.source_type === "event" && item.metadata) {
-                  const meta = item.metadata;
-                  return (
-                    <div
-                      key={item.id}
-                      onClick={() => setSelected(item)}
-                      className={`p-3 md:p-4 rounded-xl border border-[var(--app-border)] cursor-pointer transition hover:bg-slate-50 dark:hover:bg-white/5 flex flex-col gap-2 ${
-                        unread ? "bg-orange-50/30 dark:bg-orange-400/5 ring-1 ring-orange-200/50 dark:ring-orange-500/10" : ""
-                      } ${selected?.id === item.id ? "ring-2 ring-indigo-500 bg-slate-50/50 dark:bg-white/5" : ""}`}
-                    >
-                      <div className="flex justify-between items-start gap-2 mb-1">
-                        <div className="flex items-center gap-2">
-                          <div className="bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 grid size-6 place-items-center rounded-full shrink-0 scale-75">
-                            <CalendarIcon />
-                          </div>
-                          <h4 className={`text-xs md:text-sm text-slate-800 dark:text-white truncate ${unread ? "font-bold" : "font-semibold"}`}>
-                            {item.title || "Thông báo sự kiện"}
-                          </h4>
-                        </div>
-                        <span className="text-[9px] md:text-[10px] text-slate-400 shrink-0 mt-0.5">
-                          {formatDateVN(item.createdAt)}
-                        </span>
-                      </div>
-                      
-                      <div className="grid grid-cols-[110px_1fr] gap-x-2 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-[var(--app-border)]">
-                        <div className="text-slate-500">Sự kiện:</div>
-                        <div className="font-semibold text-slate-800 dark:text-slate-200">{meta.eventTitle}</div>
-                        
-                        <div className="text-slate-500">Thời gian:</div>
-                        <div>
-                          <span className="font-medium text-indigo-600 dark:text-indigo-400">
-                            {meta.startTime ? `${meta.startTime} ` : ""}
-                          </span>
-                          {new Date(meta.eventDate).toLocaleDateString("vi-VN", { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                        </div>
-                        
-                        <div className="text-slate-500">Lịch:</div>
-                        <div>{meta.calendarName}</div>
-                        
-                        {meta.relatedMembers && (
-                          <>
-                            <div className="text-slate-500">Người liên quan:</div>
-                            <div className="text-slate-700 dark:text-slate-300">{meta.relatedMembers}</div>
-                          </>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-[10px] md:text-[11px] text-slate-400 pt-1">
-                        <span>Tạo bởi: <span className="font-medium text-slate-600 dark:text-slate-300">{meta.creatorName || "Family Hub"}</span></span>
-                        <span className={unread ? "text-orange-500 font-bold bg-orange-100 dark:bg-orange-500/20 px-2 py-0.5 rounded-full" : "text-slate-400"}>
-                          {unread ? "Chưa đọc" : "Đã đọc"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() => setSelected(item)}
-                    className={`p-3 md:p-4 rounded-xl border border-[var(--app-border)] cursor-pointer transition hover:bg-slate-50 dark:hover:bg-white/5 flex flex-col gap-1.5 ${
-                      unread ? "bg-orange-50/30 dark:bg-orange-400/5 ring-1 ring-orange-200/50 dark:ring-orange-500/10" : ""
-                    } ${selected?.id === item.id ? "ring-2 ring-indigo-500 bg-slate-50/50 dark:bg-white/5" : ""}`}
-                  >
-                    <div className="flex justify-between items-start gap-2">
-                      <h4 className={`text-xs md:text-sm text-slate-800 dark:text-white truncate ${unread ? "font-bold" : "font-semibold"}`}>
-                        {item.title || "Thông báo"}
-                      </h4>
-                      <span className="text-[9px] md:text-[10px] text-slate-400 shrink-0">
-                        {formatDateVN(item.createdAt)}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                      {item.message}
-                    </p>
-                    <div className="flex items-center justify-between text-[10px] md:text-[11px] text-slate-400 border-t border-[var(--app-border)] pt-2 mt-1">
-                      <span>Người tạo: {item.actorName || "Family Hub"}</span>
-                      <span className={unread ? "text-orange-500 font-bold" : "text-slate-400"}>
-                        {unread ? "Chưa đọc" : "Đã đọc"}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="text-center py-10 text-xs md:text-sm text-slate-400">Chưa có thông báo</div>
-            )}
-          </div>
-        </Card>
+    <div className="flex flex-col h-full bg-[#F8F5F2]">
+      <div className="flex items-center justify-between px-4 py-3 bg-[#FFFFFF] border-b border-[#E8DCD5] shrink-0 sticky top-0 z-10 shadow-sm">
+        <h2 className="text-[16px] md:text-lg font-bold text-[#800020] tracking-tight">Thông báo</h2>
+        {notifications.some(n => !n.read && !(n as any).isRead) && (
+          <button onClick={markAllAsRead} className="px-3 py-1.5 text-[11px] font-bold text-[#800020] border border-[#D4AF37] rounded-full hover:bg-[#D4AF37] hover:text-white transition-colors">
+            Đánh dấu đã đọc
+          </button>
+        )}
       </div>
-    </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-2.5 pb-24">
+        {notifications.length ? (
+          notifications.map(item => {
+            const unread = !item.read && !(item as any).isRead;
+            return (
+              <div key={item.id} className={`p-3 rounded-[12px] border ${unread ? 'bg-[#F8E7EC] border-[#E8DCD5]' : 'bg-[#FFFFFF] border-[#E8DCD5]'} shadow-sm flex gap-3 transition-colors`}>
+                <div className="size-9 rounded-full bg-[#800020] shrink-0 flex items-center justify-center shadow-inner">
+                  <svg className="size-4 stroke-[#D4AF37] stroke-2 fill-none" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] bg-[#800020] text-white rounded-full px-1.5 py-0.5 font-bold uppercase tracking-wider">{item.module || "Hệ thống"}</span>
+                    {unread && <span className="size-2 rounded-full bg-[#E11D48] shrink-0" />}
+                  </div>
+                  <h3 className="font-semibold text-[13px] md:text-[14px] text-[#171018] leading-snug mb-1">{item.title}</h3>
+                  <p className="text-[#6B5E64] text-[12px] leading-relaxed line-clamp-2">{item.message}</p>
+                  <p className="text-[11px] text-[#6B5E64]/70 mt-1 font-medium">{new Date(item.createdAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}</p>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="py-12 flex flex-col items-center justify-center text-[#6B5E64] bg-[#FFFFFF] rounded-[12px] border border-[#E8DCD5] shadow-sm">
+            <div className="size-12 rounded-full bg-[#E8DCD5]/50 flex items-center justify-center mb-3">
+              <svg className="size-6 stroke-[#800020] stroke-[1.5] fill-none opacity-50" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            </div>
+            <p className="text-[14px] font-bold text-[#171018]">Chưa có thông báo</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -8575,7 +8392,7 @@ function MobileHome({
   const sameMonth = (value: string) => { const date = parseDate(value, now); return Boolean(date && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()); };
   const todayTasks = toArray<Task>(data.tasks).filter(task => isDueToday(task, now)).length;
   const todayEvents = toArray<EventItem>(data.events).filter(event => sameDay(event.date)).length;
-  const unread = notifications.filter(item => isCalendarNotificationUnread(item, user)).length;
+  const unread = notifications.filter(item => (!item.read && !(item as any).isRead)).length;
   
   const actions = [
     ["Thành viên", <UsersIcon />, () => setShowMembers(true)], ["Lịch", <CalendarIcon />, () => go("calendar")], ["Thu chi", <WalletIcon />, () => go("finance")],

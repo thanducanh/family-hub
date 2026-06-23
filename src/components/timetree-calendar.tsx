@@ -275,14 +275,40 @@ function generateFixedEvents(year: number, members: Member[]): CalendarEvent[] {
   return fixed;
 }
 
-export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user?: Actor; t?: any }) {
+export function TimeTreeCalendar({ members, user, t, onSaveEvent }: { members: Member[]; user?: Actor; t?: any; onSaveEvent?: (event: any) => Promise<any> | any }) {
   const [anchor, setAnchor] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(todayIso());
   const [view, setView] = useState<CalendarView>("monthly");
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [customLists, setCustomLists] = useState<CustomList[]>([]);
   const [hiddenLists, setHiddenLists] = useState<string[]>([]);
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+    const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [localEvents, setLocalEvents] = useState<CalendarEvent[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const uid = user?.id || user?.memberId || "guest";
+        const saved = localStorage.getItem(`familyHubCalendarEvents:${uid}`);
+        if (saved) return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const uid = user?.id || user?.memberId || "guest";
+      localStorage.setItem(`familyHubCalendarEvents:${uid}`, JSON.stringify(localEvents));
+    }
+  }, [localEvents, user]);
+
+  const persistLocalEvent = (event: any) => {
+    setLocalEvents(prev => {
+      const exists = prev.some(item => item.id === event.id);
+      if (exists) return prev.map(item => item.id === event.id ? event : item);
+      return [...prev, event];
+    });
+  };
+
   const [enabled, setEnabled] = useState<string[]>([]);
   const [enabledTypes, setEnabledTypes] = useState<EventType[]>(["family", "personal", "birthday", "holiday", "work", "study", "reminder", "payment", "other"]);
   const [showLunar, setShowLunar] = useState(true);
@@ -316,6 +342,8 @@ export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user
     if (storedCustomLists) { try { setCustomLists(JSON.parse(storedCustomLists)); } catch(e){} }
     const storedHidden = localStorage.getItem("familyhub_calendar_visibility");
     if (storedHidden) { try { setHiddenLists(JSON.parse(storedHidden)); } catch(e){} }
+
+    
 
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -385,7 +413,12 @@ export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user
   }, [anchor, members]);
 
   const allEvents = useMemo(() => {
-    const projectedEvents = events.flatMap(ev => {
+    const projectedEvents = (() => {
+      const map = new Map();
+      events.forEach(e => map.set(e.id, e));
+      localEvents.forEach(e => map.set(e.id, e));
+      return Array.from(map.values());
+    })().flatMap(ev => {
       if (ev.repeatRule === "yearly") {
         const y = anchor.getFullYear();
         const m = ev.startDate.substring(5);
@@ -399,7 +432,7 @@ export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user
       return ev;
     });
     return [...projectedEvents, ...fixedEvents];
-  }, [events, fixedEvents, anchor]);
+  }, [events, localEvents, fixedEvents, anchor]);
 
   const visibleEvents = useMemo(() => allEvents.filter(item => {
     if (item.calendarId === "fixed-birthday" || item.calendarId === "fixed-holiday") return true;
@@ -501,30 +534,125 @@ export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user
   function goMonth(delta: number) {
     setAnchor(current => new Date(current.getFullYear(), current.getMonth() + delta, 1));
   }
+  
+async function pushAppNotification(notif: any, user: any) {
+  const finalNotif = { ...notif, createdAt: new Date().toISOString(), read: false, id: notif.id || crypto.randomUUID() };
+  try {
+    const res = await fetch("/api/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(finalNotif)
+    });
+    if (!res.ok) throw new Error("API fail");
+  } catch(e) {
+    // Fallback to local
+    const uid = user?.id || user?.memberId || "guest";
+    const key = `familyHubNotifications:${uid}`;
+    let items = [];
+    try { items = JSON.parse(localStorage.getItem(key) || "[]"); } catch(err){}
+    items.unshift(finalNotif);
+    localStorage.setItem(key, JSON.stringify(items));
+  }
+  // Dispatch custom event so family-app can update UI immediately
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("app_notification_created", { detail: finalNotif }));
+  }
+}
+
+  function generateUUID() {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => {
+      const random = typeof crypto !== "undefined" && crypto.getRandomValues ? crypto.getRandomValues(new Uint8Array(1))[0] : Math.random() * 256;
+      return (Number(c) ^ random & 15 >> Number(c) / 4).toString(16);
+    });
+  }
+
   async function saveEvent(event: React.FormEvent) {
     event.preventDefault();
     if (!draft) return;
-    const id = draft.id || crypto.randomUUID();
-    const response = await fetch("/api/events", {
-      method: draft.id ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...draft, id })
-    });
-    const result = await readJson<{ ok: boolean; data?: { id: string }; error?: string }>(response);
-    if (!response.ok || !result?.ok) {
-      setError(result?.error || "Không thể lưu sự kiện.");
-      return;
-    }
-    const isNew = !draft.id;
-    setDraft(null);
-    await load();
-    setSelectedDate(draft.startDate);
+    const id = draft.id || generateUUID();
     
+    const startObj = new Date(`${draft.startDate}T${draft.allDay ? "00:00" : draft.startTime}`);
+    const endObj = new Date(`${draft.endDate}T${draft.allDay ? "23:59" : draft.endTime}`);
+    const startIso = startObj.toISOString();
+    const endIso = endObj.toISOString();
+
+    const eventToSave = {
+      ...draft,
+      id,
+      title: draft.title.trim(),
+      content: draft.title.trim(),
+      date: draft.startDate,
+      start: startIso,
+      end: endIso,
+      startAt: startIso,
+      endAt: endIso,
+      startsAt: startIso,
+      endsAt: endIso,
+      allDay: draft.allDay,
+      repeat: draft.repeatRule,
+      reminder: draft.reminderMinutes,
+      labelColor: draft.labelColor,
+      color: draft.labelColor,
+      note: draft.note || "",
+      source: "local"
+    };
+
+    let isNew = !draft.id;
+
+    try {
+      if (typeof onSaveEvent === "function") {
+        const result = await onSaveEvent(eventToSave);
+        if (result && typeof result === "object" && Object.keys(result).length > 0) {
+          persistLocalEvent(result);
+        } else {
+          console.warn("[saveEvent] API returned empty result, saving local fallback", result);
+          persistLocalEvent(eventToSave);
+        }
+      } else {
+        const response = await fetch("/api/events", {
+          method: draft.id ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(eventToSave)
+        });
+        const result = await response.json().catch(() => ({}));
+        if (response.ok && result?.ok && Object.keys(result).length > 0) {
+          persistLocalEvent(eventToSave); // Should ideally be result data, but falling back
+        } else {
+          console.warn("[saveEvent] API returned empty result or error, saving local fallback", result);
+          persistLocalEvent(eventToSave);
+        }
+      }
+    } catch (error) {
+      console.warn("[saveEvent] API unavailable, saving local fallback", error);
+      persistLocalEvent(eventToSave);
+    }
+
+    setDraft(null);
+    setSelectedDate(draft.startDate);
+    if (isNew) {
+      setMobileTab("day");
+    }
+
     // Notification
+    const msg = `${user?.displayName || "Ai đó"} đã ${isNew ? "tạo" : "sửa"} sự kiện lịch "${draft.title}"`;
+    const notifObj = {
+      title: "Cập nhật lịch",
+      message: msg,
+      module: "Lịch",
+      type: isNew ? "calendar_event_created" : "calendar_event_updated",
+      createdByName: user?.displayName || "Ai đó",
+      userId: user?.id,
+      relatedId: eventToSave.id,
+      relatedType: "event"
+    };
+    pushAppNotification(notifObj, user);
+    
+    // System notification fallback if settings allow
     const settings = getNotificationSettings();
     if (settings.calendar) {
-      const msg = `${user?.displayName || "Ai đó"} đã ${isNew ? "tạo" : "cập nhật"} sự kiện lịch "${draft.title}"`;
-      addLocalNotification({ title: "Lịch", message: msg, createdByName: user?.displayName || "Ai đó", sourceType: "calendar_events", sourceId: id });
       triggerSystemNotification("Cập nhật lịch", { body: msg });
     }
   }
@@ -537,13 +665,23 @@ export function TimeTreeCalendar({ members, user, t }: { members: Member[]; user
     }
     setDetail(null);
     setDraft(null);
+    setLocalEvents(prev => prev.filter(e => e.id !== item.id));
     await load();
     
     // Notification
+    const msg = `${user?.displayName || "Ai đó"} đã xóa sự kiện lịch "${item.title}"`;
+    pushAppNotification({
+      title: "Xóa sự kiện",
+      message: msg,
+      module: "Lịch",
+      type: "calendar_event_deleted",
+      createdByName: user?.displayName || "Ai đó",
+      userId: user?.id,
+      relatedId: item.id,
+      relatedType: "event"
+    }, user);
     const settings = getNotificationSettings();
     if (settings.calendar) {
-      const msg = `${user?.displayName || "Ai đó"} đã xóa sự kiện lịch "${item.title}"`;
-      addLocalNotification({ title: "Lịch", message: msg, createdByName: user?.displayName || "Ai đó", sourceType: "calendar_events", sourceId: item.id });
       triggerSystemNotification("Xóa sự kiện lịch", { body: msg });
     }
   }
@@ -1006,6 +1144,7 @@ function FilterContent({ calendars, events, enabled, setEnabled, enabledTypes, s
 
 function EventEditorInline({ draft, calendars, customLists = [], members, user, setDraft, save, close, remove }: { draft: EventDraft; calendars: Calendar[]; customLists?: CustomList[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; close: () => void; remove?: () => void }) {
   const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const colors = [
     { value: "#800020", label: "Wine Red" },
@@ -1013,6 +1152,13 @@ function EventEditorInline({ draft, calendars, customLists = [], members, user, 
     { value: "#059669", label: "Green" },
     { value: "#E11D48", label: "Red" },
     { value: "#2563EB", label: "Blue" },
+    { value: "#7C3AED", label: "Purple" },
+    { value: "#F97316", label: "Orange" },
+    { value: "#DB2777", label: "Pink" },
+    { value: "#0891B2", label: "Cyan" },
+    { value: "#475569", label: "Slate" },
+    { value: "#92400E", label: "Brown" },
+    { value: "#171018", label: "Black" },
   ];
 
   useEffect(() => {
@@ -1023,14 +1169,15 @@ function EventEditorInline({ draft, calendars, customLists = [], members, user, 
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError("");
     if (!draft.title.trim()) {
-      alert("Vui lòng nhập nội dung sự kiện");
+      setFormError("Vui lòng nhập nội dung sự kiện");
       return;
     }
     const startObj = new Date(`${draft.startDate}T${draft.allDay ? "00:00" : draft.startTime}`);
     const endObj = new Date(`${draft.endDate}T${draft.allDay ? "23:59" : draft.endTime}`);
     if (endObj < startObj) {
-      alert("Thời gian kết thúc không được nhỏ hơn bắt đầu");
+      setFormError("Giờ kết thúc phải lớn hơn giờ bắt đầu");
       return;
     }
     setIsSaving(true);
@@ -1055,6 +1202,11 @@ function EventEditorInline({ draft, calendars, customLists = [], members, user, 
 
       <div className="flex-1 overflow-y-auto pb-[100px] px-4 pt-4">
         <div className="flex flex-col gap-4">
+          {formError && (
+            <div className="bg-[#FFF1F2] border border-[#E8DCD5] rounded-xl p-3 shadow-sm">
+              <p className="text-[#E11D48] text-[13px] font-medium">{formError}</p>
+            </div>
+          )}
           <div className="bg-[#FFFFFF] rounded-xl border border-[#E8DCD5] p-3 shadow-sm focus-within:border-[#800020] focus-within:ring-1 focus-within:ring-[#800020]">
             <input 
               autoFocus 
@@ -1118,16 +1270,17 @@ function EventEditorInline({ draft, calendars, customLists = [], members, user, 
 
           <div className="bg-[#FFFFFF] rounded-xl border border-[#E8DCD5] p-3 shadow-sm">
             <span className="block text-[12px] text-[#6B5E64] font-medium uppercase tracking-wide mb-3">Màu sự kiện</span>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-2">
               {colors.map(c => (
                 <button 
                   key={c.value} 
                   type="button" 
                   onClick={() => setDraft({ ...draft, labelColor: c.value })}
-                  className={`size-8 rounded-full flex items-center justify-center transition-transform ${draft.labelColor === c.value ? "scale-110 ring-2 ring-offset-2 ring-[#D4AF37]" : ""}`}
+                  className={`size-[30px] shrink-0 rounded-full flex items-center justify-center transition-transform ${draft.labelColor === c.value ? "scale-105 ring-2 ring-offset-2 ring-[#D4AF37]" : ""}`}
                   style={{ backgroundColor: c.value }}
+                  aria-label={c.label}
                 >
-                  {draft.labelColor === c.value && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                  {draft.labelColor === c.value && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
                 </button>
               ))}
             </div>
@@ -1220,7 +1373,7 @@ function EventDetailInline({ item, calendars, members, edit, remove, markDone, c
 function EventEditorSheet({ draft, calendars, customLists, members, user, setDraft, save, remove }: { draft: EventDraft; calendars: Calendar[]; customLists?: CustomList[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; remove?: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 dark:bg-slate-950">
-      <EventEditorInline draft={draft} calendars={calendars} customLists={customLists} members={members} user={user} setDraft={setDraft} save={saveEvent => { save(saveEvent); setDraft(null); }} close={() => setDraft(null)} remove={remove ? () => { remove(); setDraft(null); } : undefined} />
+      <EventEditorInline draft={draft} calendars={calendars} customLists={customLists} members={members} user={user} setDraft={setDraft} save={save} close={() => setDraft(null)} remove={remove ? () => { remove(); setDraft(null); } : undefined} />
     </div>
   );
 }
@@ -1459,11 +1612,22 @@ function MobileCalendarView({
                  const evColor = e.color || eventTypeMeta(e.type)?.color || "#800020";
                  const evMemberIds: string[] = isTodo ? (e.assignedMemberIds || []) : (e.memberIds || e.assignedMemberIds || e.relatedMemberIds || e.participants || e.assignees || []);
                  const evMembers: Member[] = evMemberIds.map((id: string) => members.find((m: Member) => m.id === id)).filter(Boolean) as Member[];
-                 const calLabel = isTodo ? "To-do" : (e.calendarId === "fixed-birthday" || e.calendarId === "birthday"
+                 let calLabel = isTodo ? "To-do" : (e.calendarId === "fixed-birthday" || e.calendarId === "birthday"
                    ? "Sinh nhật"
                    : e.calendarId === "fixed-holiday" || e.calendarId === "holiday"
                    ? "Ngày lễ"
                    : calendars.find((c: any) => c.id === e.calendarId)?.name || eventTypeMeta(e.type)?.label || "Sự kiện");
+                 if (calLabel === "Khác") {
+                   const r = e.reminderMinutes ?? e.reminder;
+                   const rep = e.repeatRule ?? e.repeat;
+                   if (r === 0 || r > 0) {
+                     calLabel = r === 0 ? "Nhắc đúng giờ" : r === 60 ? "Nhắc trước 1 giờ" : r === 1440 ? "Nhắc trước 1 ngày" : `Nhắc trước ${r} phút`;
+                   } else if (rep && rep !== "none") {
+                     calLabel = rep === "weekly" ? "Lặp hàng tuần" : rep === "monthly" ? "Lặp hàng tháng" : rep === "yearly" ? "Lặp hàng năm" : "Lặp lại";
+                   } else {
+                     calLabel = "Sự kiện";
+                   }
+                 }
                  const timeLabel = e.allDay
                    ? "Cả ngày"
                    : e.startTime && e.endTime
