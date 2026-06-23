@@ -1,9 +1,16 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies, headers } from "next/headers";
+import { pool } from "@/lib/db";
 
 export type UserRole = "full_access" | "self_only";
 export interface SessionUser { id: string; username: string; displayName: string; avatar: string; coverUrl?: string; role: UserRole; mustChangePassword: boolean; memberId: string; }
 interface SessionDetails extends SessionUser { expiresAt: number; }
+type PermissionViewMode = "self_only" | "all" | "custom";
+type MemberPermissions = {
+  modules?: Record<string, boolean>;
+  viewMode?: PermissionViewMode;
+  visibleMemberIds?: string[];
+};
 const COOKIE_NAME = "family_hub_session";
 const SHORT_SESSION_SECONDS = 60 * 60 * 8;
 const REMEMBER_SESSION_SECONDS = 60 * 60 * 24 * 30;
@@ -68,11 +75,40 @@ export async function refreshedSessionCookie(user: SessionUser) {
   return { name: COOKIE_NAME, value: createSessionTokenUntil(user, expiresAt), httpOnly: true, sameSite: "lax" as const, secure: process.env.COOKIE_SECURE === "true", path: "/", maxAge: Math.max(0, Math.floor((expiresAt - Date.now()) / 1000)) };
 }
 
-export function buildDataFilter(user: SessionUser | null, tablePrefix: string = '', paramIndexStart: number = 1, memberIdCol: string = 'member_id') {
+function normalizePermissions(value: unknown): MemberPermissions {
+  if (!value || typeof value !== "object") return {};
+  const input = value as MemberPermissions;
+  const viewMode = input.viewMode === "all" || input.viewMode === "custom" || input.viewMode === "self_only" ? input.viewMode : undefined;
+  const visibleMemberIds = Array.isArray(input.visibleMemberIds) ? input.visibleMemberIds.map(String).filter(Boolean) : undefined;
+  const modules = input.modules && typeof input.modules === "object" ? input.modules : undefined;
+  return { modules, viewMode, visibleMemberIds };
+}
+
+async function memberPermissions(memberId: string): Promise<MemberPermissions> {
+  try {
+    await pool.query("ALTER TABLE members ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb");
+    const result = await pool.query("SELECT permissions FROM members WHERE id = $1 AND deleted_at IS NULL", [memberId]);
+    return normalizePermissions(result.rows[0]?.permissions);
+  } catch (error) {
+    console.error("[memberPermissions]", error);
+    return {};
+  }
+}
+
+export async function buildDataFilter(user: SessionUser | null, tablePrefix: string = '', paramIndexStart: number = 1, memberIdCol: string = 'member_id', moduleKey?: string) {
   if (!user) return { where: '1=0', params: [] };
   const isAdmin = user.role === 'full_access';
   if (isAdmin) return { where: '1=1', params: [] };
   if (!user.memberId) return { where: '1=0', params: [] }; // Cannot see anything if no memberId and not admin
   const prefix = tablePrefix ? `${tablePrefix}.` : '';
+  const permissions = await memberPermissions(user.memberId);
+  if (moduleKey && permissions.modules?.[moduleKey] === false) return { where: '1=0', params: [] };
+  if (permissions.viewMode === "all") return { where: '1=1', params: [] };
+  if (permissions.viewMode === "custom") {
+    const ids = Array.from(new Set([user.memberId, ...(permissions.visibleMemberIds || [])].filter(Boolean)));
+    if (!ids.length) return { where: '1=0', params: [] };
+    const placeholders = ids.map((_, index) => `$${paramIndexStart + index}`).join(", ");
+    return { where: `${prefix}${memberIdCol} IN (${placeholders})`, params: ids };
+  }
   return { where: `${prefix}${memberIdCol} = $${paramIndexStart}`, params: [user.memberId] };
 }

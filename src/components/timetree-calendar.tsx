@@ -1005,209 +1005,150 @@ function FilterContent({ calendars, events, enabled, setEnabled, enabledTypes, s
 }
 
 function EventEditorInline({ draft, calendars, customLists = [], members, user, setDraft, save, close, remove }: { draft: EventDraft; calendars: Calendar[]; customLists?: CustomList[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; close: () => void; remove?: () => void }) {
-  const [activePopup, setActivePopup] = useState<string | null>(null);
-  const selectable = user?.role === "self_only" ? members.filter(member => member.id === user.memberId) : members;
-  const set = <K extends keyof EventDraft>(key: K, value: EventDraft[K]) => setDraft({ ...draft, [key]: value });
+  const [isSaving, setIsSaving] = useState(false);
+
+  const colors = [
+    { value: "#800020", label: "Wine Red" },
+    { value: "#D4AF37", label: "Gold" },
+    { value: "#059669", label: "Green" },
+    { value: "#E11D48", label: "Red" },
+    { value: "#2563EB", label: "Blue" },
+  ];
+
+  useEffect(() => {
+    if (!draft.labelColor) {
+      setDraft({ ...draft, labelColor: "#800020" });
+    }
+  }, [draft, setDraft]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!draft.title.trim()) {
+      alert("Vui lòng nhập nội dung sự kiện");
+      return;
+    }
+    const startObj = new Date(`${draft.startDate}T${draft.allDay ? "00:00" : draft.startTime}`);
+    const endObj = new Date(`${draft.endDate}T${draft.allDay ? "23:59" : draft.endTime}`);
+    if (endObj < startObj) {
+      alert("Thời gian kết thúc không được nhỏ hơn bắt đầu");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await save(e);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
-    <div className="flex h-full flex-col bg-slate-50 dark:bg-slate-950 relative w-full overflow-hidden">
-      
-      {/* Main Form Layer */}
-      <div className={`absolute inset-0 flex flex-col bg-slate-50 dark:bg-slate-950 transition-transform duration-300 ease-in-out ${activePopup ? '-translate-x-[30%] opacity-0 pointer-events-none' : 'translate-x-0 opacity-100'}`}>
-        <div className="flex items-center justify-between px-3 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 shrink-0">
-          <button type="button" onClick={close} className="p-1 text-slate-400 hover:text-slate-800"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-          <span className="font-bold text-[13px] uppercase tracking-wider">{draft.id ? "Edit Event" : "Create Event"}</span>
-          <button type="button" onClick={save as any} className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-bold shadow-sm hover:bg-indigo-700">Save</button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto pb-8">
-           <div className="flex px-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 mb-2">
-              <button className="flex-1 py-2 text-sm font-bold text-indigo-600 border-b-2 border-indigo-600">Event</button>
-              <button className="flex-1 py-2 text-sm font-bold text-slate-400 hover:text-slate-600">Memo</button>
-           </div>
-
-           <div className="bg-white dark:bg-slate-900 px-4 py-3 mb-2 shadow-sm">
-              <input autoFocus className="w-full text-lg font-bold placeholder:text-slate-300 outline-none bg-transparent" placeholder="Event title" value={draft.title} onChange={e => set("title", e.target.value)} />
-           </div>
-
-           <div className="bg-white dark:bg-slate-900 mb-2 shadow-sm border-y border-slate-200 dark:border-white/5">
-              <Row label="Danh sách" value={
-                draft.calendarId === "birthday" ? "Sinh nhật" : 
-                draft.calendarId === "holiday" ? "Ngày lễ" : 
-                customLists?.find(c => c.id === draft.calendarId)?.name || "Không phân loại"
-              } onClick={() => setActivePopup("Label")} />
-           </div>
-
-           <div className="bg-white dark:bg-slate-900 mb-2 shadow-sm border-y border-slate-200 dark:border-white/5">
-              <Row label="All-day" right={<input type="checkbox" checked={draft.allDay} onChange={e => setDraft({ ...draft, allDay: e.target.checked })} className="size-4" />} />
-              <Row label="Starts" value={formatDateVN(draft.startDate) + (draft.allDay ? "" : ` ${draft.startTime}`)} onClick={() => setActivePopup("Starts")} />
-              <Row label="Ends" value={formatDateVN(draft.endDate) + (draft.allDay ? "" : ` ${draft.endTime}`)} onClick={() => setActivePopup("Ends")} />
-              <Row label="Repeat" value={repeatOptions.find(o => o.value === draft.repeatRule)?.label || "Không"} onClick={() => setActivePopup("Repeat")} />
-              <Row label="Remind" value={reminderOptions.find(o => o.value === draft.reminderMinutes)?.label || "Không"} onClick={() => setActivePopup("Remind")} />
-           </div>
-
-           <div className="bg-white dark:bg-slate-900 mb-2 shadow-sm border-y border-slate-200 dark:border-white/5">
-              <Row label="Members" value={draft.memberIds.length ? `${draft.memberIds.length} người` : "Không"} onClick={() => setActivePopup("Members")} />
-              <Row label="Location" value={draft.location || "Thêm địa điểm"} onClick={() => setActivePopup("Location")} />
-              <Row label="Note" value={draft.note ? "Có ghi chú" : "Thêm ghi chú"} onClick={() => setActivePopup("Note")} />
-           </div>
-
-           <div className="bg-white dark:bg-slate-900 shadow-sm border-y border-slate-200 dark:border-white/5">
-              <Row label="Visibility" value={draft.visibility === "private" ? "Chỉ mình tôi" : "Tất cả"} onClick={() => setActivePopup("Visibility")} />
-           </div>
-
-           {remove && (
-             <div className="mt-6 px-4">
-                <button type="button" onClick={remove} className="w-full py-2 bg-white dark:bg-slate-900 text-rose-500 font-bold text-sm rounded shadow-sm border border-rose-100 dark:border-rose-900">Delete Event</button>
-             </div>
-           )}
-        </div>
+    <div className="flex h-full flex-col bg-[#F8F5F2] w-full overflow-hidden absolute inset-0 z-50">
+      <div className="flex items-center justify-between px-4 py-3 bg-[#F8F5F2] border-b border-[#E8DCD5] shrink-0">
+        <button type="button" onClick={close} className="p-1 text-[#6B5E64] hover:text-[#171018]">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <span className="font-bold text-[15px] text-[#171018]">{draft.id ? "Sửa sự kiện" : "Tạo sự kiện"}</span>
+        <button type="button" onClick={handleSave} disabled={isSaving} className="px-4 py-1.5 bg-[#800020] text-white rounded-full text-[13px] font-bold shadow-sm disabled:opacity-50 min-w-[70px]">
+          {isSaving ? "Đang lưu..." : "Lưu"}
+        </button>
       </div>
 
-      {/* Sub Panel Picker Layer */}
-      <div className={`absolute inset-0 flex flex-col bg-slate-50 dark:bg-slate-950 z-20 transition-transform duration-300 ease-in-out ${activePopup ? 'translate-x-0 shadow-[-10px_0_20px_-10px_rgba(0,0,0,0.1)]' : 'translate-x-full'}`}>
-        <div className="flex items-center justify-between px-3 py-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/10 shrink-0 shadow-sm relative z-10">
-          <button onClick={() => setActivePopup(null)} className="p-1 text-slate-500 hover:text-slate-800 flex items-center gap-0.5">
-             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-             <span className="text-[13px] font-bold">Back</span>
-          </button>
-          <span className="font-bold text-[13px] uppercase tracking-wider text-slate-600 dark:text-slate-400 absolute left-1/2 -translate-x-1/2">{activePopup}</span>
-          <button onClick={() => setActivePopup(null)} className="p-1 text-indigo-600 font-bold text-[13px]">Done</button>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-950">
-           {activePopup === "Calendar" && (
-             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
-               {calendars.map(c => (
-                  <div key={c.id} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { set("calendarId", c.id); setActivePopup(null); }}>
-                    <div className="size-4 rounded-full" style={{ backgroundColor: c.color }} />
-                    <span className="font-medium text-sm flex-1">{c.name}</span>
-                    {draft.calendarId === c.id && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
-                  </div>
-               ))}
-             </div>
-           )}
+      <div className="flex-1 overflow-y-auto pb-[100px] px-4 pt-4">
+        <div className="flex flex-col gap-4">
+          <div className="bg-[#FFFFFF] rounded-xl border border-[#E8DCD5] p-3 shadow-sm focus-within:border-[#800020] focus-within:ring-1 focus-within:ring-[#800020]">
+            <input 
+              autoFocus 
+              className="w-full text-[15px] font-medium placeholder:text-[#6B5E64]/60 outline-none bg-transparent text-[#171018]" 
+              placeholder="Nhập nội dung sự kiện" 
+              value={draft.title} 
+              onChange={e => setDraft({ ...draft, title: e.target.value })} 
+            />
+          </div>
 
-           {activePopup === "Label" && (
-             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
-               <div className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setDraft({ ...draft, type: "other", calendarId: "uncategorized" }); setActivePopup(null); }}>
-                 <div className="size-4 rounded-full bg-slate-300" />
-                 <span className="font-medium text-sm flex-1">Không phân loại</span>
-                 {draft.calendarId === "uncategorized" && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
-               </div>
+          <div className="bg-[#FFFFFF] rounded-xl border border-[#E8DCD5] shadow-sm flex flex-col overflow-hidden">
+            <label className="flex items-center justify-between p-3 border-b border-[#E8DCD5] cursor-pointer">
+              <span className="text-[14px] text-[#171018] font-medium">Cả ngày</span>
+              <input type="checkbox" checked={draft.allDay} onChange={e => setDraft({ ...draft, allDay: e.target.checked })} className="size-5 rounded border-[#E8DCD5] text-[#800020] focus:ring-[#800020] cursor-pointer" />
+            </label>
 
-               <div className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setDraft({ ...draft, type: "birthday", calendarId: "birthday", repeatRule: "yearly" }); setActivePopup(null); }}>
-                 <div className="size-4 rounded-full" style={{ backgroundColor: "#f43f5e" }} />
-                 <span className="font-medium text-sm flex-1">Sinh nhật</span>
-                 {draft.calendarId === "birthday" && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
-               </div>
-
-               <div className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setDraft({ ...draft, type: "holiday", calendarId: "holiday" }); setActivePopup(null); }}>
-                 <div className="size-4 rounded-full" style={{ backgroundColor: "#22c55e" }} />
-                 <span className="font-medium text-sm flex-1">Ngày lễ</span>
-                 {draft.calendarId === "holiday" && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
-               </div>
-               
-               {customLists && customLists.length > 0 && customLists.map(c => (
-                  <div key={c.id} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { setDraft({ ...draft, calendarId: c.id, type: "other" as EventType }); setActivePopup(null); }}>
-                    <div className="size-4 rounded-full" style={{ backgroundColor: c.color }} />
-                    <span className="font-medium text-sm flex-1">{c.name}</span>
-                    {draft.calendarId === c.id && <svg width="16" height="16" className="text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>}
-                  </div>
-               ))}
-             </div>
-           )}
-
-           {activePopup === "Repeat" && (
-             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
-               {repeatOptions.map(o => (
-                  <div key={o.value} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { set("repeatRule", o.value); setActivePopup(null); }}>
-                    <span className="font-medium text-sm flex-1">{o.label}</span>
-                    <div className={`size-5 rounded-full border-2 flex items-center justify-center ${draft.repeatRule === o.value ? "border-indigo-600" : "border-slate-300"}`}>
-                      {draft.repeatRule === o.value && <div className="size-2.5 bg-indigo-600 rounded-full" />}
-                    </div>
-                  </div>
-               ))}
-             </div>
-           )}
-
-           {activePopup === "Remind" && (
-             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
-               {reminderOptions.map(o => (
-                  <div key={o.value} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { set("reminderMinutes", o.value); setActivePopup(null); }}>
-                    <span className="font-medium text-sm flex-1">{o.label}</span>
-                    <div className={`size-5 rounded-full border-2 flex items-center justify-center ${draft.reminderMinutes === o.value ? "border-indigo-600" : "border-slate-300"}`}>
-                      {draft.reminderMinutes === o.value && <div className="size-2.5 bg-indigo-600 rounded-full" />}
-                    </div>
-                  </div>
-               ))}
-             </div>
-           )}
-
-           {(activePopup === "Starts" || activePopup === "Ends") && (
-              <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5 p-4 space-y-4">
-                 <div>
-                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Ngày</label>
-                   <input type="date" className={input} value={activePopup === "Starts" ? draft.startDate : draft.endDate} onChange={e => {
-                      const val = e.target.value;
-                      if (activePopup === "Starts") {
-                         setDraft({ ...draft, startDate: val, endDate: val > (draft.endDate||"") ? val : draft.endDate });
-                      } else {
-                         set("endDate", val);
-                      }
-                   }} />
-                 </div>
-                 {!draft.allDay && (
-                   <div className="pt-2">
-                     <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Giờ</label>
-                     <input type="time" className={input} value={activePopup === "Starts" ? draft.startTime : draft.endTime} onChange={e => set(activePopup === "Starts" ? "startTime" : "endTime", e.target.value)} />
-                   </div>
-                 )}
+            <div className="flex flex-col p-3 border-b border-[#E8DCD5] gap-2">
+              <span className="text-[12px] text-[#6B5E64] font-medium uppercase tracking-wide">Bắt đầu</span>
+              <div className="flex items-center gap-2">
+                <input type="date" value={draft.startDate} onChange={e => setDraft({ ...draft, startDate: e.target.value, endDate: e.target.value > draft.endDate ? e.target.value : draft.endDate })} className="flex-1 h-10 rounded-lg border border-[#E8DCD5] bg-[#F8F5F2] px-3 text-[14px] font-medium outline-none text-[#171018] focus:border-[#800020]" />
+                {!draft.allDay && (
+                  <input type="time" value={draft.startTime} onChange={e => setDraft({ ...draft, startTime: e.target.value })} className="w-24 h-10 rounded-lg border border-[#E8DCD5] bg-[#F8F5F2] px-2 text-[14px] font-medium outline-none text-[#171018] focus:border-[#800020]" />
+                )}
               </div>
-           )}
+            </div>
 
-           {activePopup === "Location" && (
-              <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5 p-4">
-                 <input autoFocus className={input} placeholder="Nhập địa điểm..." value={draft.location} onChange={e => set("location", e.target.value)} />
+            <div className="flex flex-col p-3 gap-2">
+              <span className="text-[12px] text-[#6B5E64] font-medium uppercase tracking-wide">Kết thúc</span>
+              <div className="flex items-center gap-2">
+                <input type="date" value={draft.endDate} onChange={e => setDraft({ ...draft, endDate: e.target.value })} className="flex-1 h-10 rounded-lg border border-[#E8DCD5] bg-[#F8F5F2] px-3 text-[14px] font-medium outline-none text-[#171018] focus:border-[#800020]" />
+                {!draft.allDay && (
+                  <input type="time" value={draft.endTime} onChange={e => setDraft({ ...draft, endTime: e.target.value })} className="w-24 h-10 rounded-lg border border-[#E8DCD5] bg-[#F8F5F2] px-2 text-[14px] font-medium outline-none text-[#171018] focus:border-[#800020]" />
+                )}
               </div>
-           )}
+            </div>
+          </div>
 
-           {activePopup === "Note" && (
-              <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5 p-4 flex flex-col h-[50vh]">
-                 <textarea autoFocus className="w-full flex-1 rounded-xl border border-slate-200 p-3 text-sm resize-none outline-none focus:border-indigo-500 dark:bg-slate-800 dark:border-white/10 dark:text-white" placeholder="Thêm ghi chú..." value={draft.note} onChange={e => set("note", e.target.value)} />
-              </div>
-           )}
+          <div className="bg-[#FFFFFF] rounded-xl border border-[#E8DCD5] shadow-sm flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between p-3 border-b border-[#E8DCD5]">
+              <span className="text-[14px] text-[#171018] font-medium">Lặp lại</span>
+              <select value={draft.repeatRule} onChange={e => setDraft({ ...draft, repeatRule: e.target.value })} className="bg-transparent text-[14px] font-medium text-[#800020] outline-none text-right cursor-pointer">
+                <option value="none">Không</option>
+                <option value="weekly">Hàng tuần</option>
+                <option value="monthly">Hàng tháng</option>
+                <option value="yearly">Hàng năm</option>
+              </select>
+            </div>
+            
+            <div className="flex items-center justify-between p-3">
+              <span className="text-[14px] text-[#171018] font-medium">Thông báo</span>
+              <select value={draft.reminderMinutes} onChange={e => setDraft({ ...draft, reminderMinutes: Number(e.target.value) })} className="bg-transparent text-[14px] font-medium text-[#800020] outline-none text-right cursor-pointer">
+                <option value={-1}>Không</option>
+                <option value={0}>Đúng giờ</option>
+                <option value={5}>Trước 5 phút</option>
+                <option value={15}>Trước 15 phút</option>
+                <option value={60}>Trước 1 giờ</option>
+                <option value={1440}>Trước 1 ngày</option>
+              </select>
+            </div>
+          </div>
 
-           {activePopup === "Members" && (
-             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
-               {selectable.map(m => (
-                  <label key={m.id} className="flex items-center gap-3 py-3 px-4 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer border-b border-slate-100 dark:border-white/5 last:border-0">
-                     <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">{memberName(m)[0]}</span>
-                     <span className="flex-1 text-sm font-medium">{memberName(m)}</span>
-                     <input type="checkbox" checked={draft.memberIds.includes(m.id)} onChange={(e) => {
-                        const next = e.target.checked ? [...draft.memberIds, m.id] : draft.memberIds.filter(id => id !== m.id);
-                        setDraft({ ...draft, memberIds: next, relatedMemberIds: next });
-                     }} className="size-5 rounded border-slate-300" />
-                  </label>
-               ))}
-             </div>
-           )}
+          <div className="bg-[#FFFFFF] rounded-xl border border-[#E8DCD5] p-3 shadow-sm">
+            <span className="block text-[12px] text-[#6B5E64] font-medium uppercase tracking-wide mb-3">Màu sự kiện</span>
+            <div className="flex items-center gap-4">
+              {colors.map(c => (
+                <button 
+                  key={c.value} 
+                  type="button" 
+                  onClick={() => setDraft({ ...draft, labelColor: c.value })}
+                  className={`size-8 rounded-full flex items-center justify-center transition-transform ${draft.labelColor === c.value ? "scale-110 ring-2 ring-offset-2 ring-[#D4AF37]" : ""}`}
+                  style={{ backgroundColor: c.value }}
+                >
+                  {draft.labelColor === c.value && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                </button>
+              ))}
+            </div>
+          </div>
 
-           {activePopup === "Visibility" && (
-             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-white/5">
-               {[
-                  { value: "all", label: "Tất cả thành viên" },
-                  { value: "private", label: "Chỉ mình tôi" }
-               ].map(o => (
-                  <div key={o.value} className="py-3 px-4 border-b border-slate-100 dark:border-white/5 last:border-0 flex items-center gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5" onClick={() => { set("visibility", o.value as "all"|"private"); setActivePopup(null); }}>
-                    <span className="font-medium text-sm flex-1">{o.label}</span>
-                    <div className={`size-5 rounded-full border-2 flex items-center justify-center ${draft.visibility === o.value ? "border-indigo-600" : "border-slate-300"}`}>
-                      {draft.visibility === o.value && <div className="size-2.5 bg-indigo-600 rounded-full" />}
-                    </div>
-                  </div>
-               ))}
-             </div>
-           )}
+          <div className="bg-[#FFFFFF] rounded-xl border border-[#E8DCD5] shadow-sm flex flex-col p-3">
+            <span className="block text-[12px] text-[#6B5E64] font-medium uppercase tracking-wide mb-2">Ghi chú</span>
+            <textarea 
+              className="w-full h-24 text-[14px] text-[#171018] placeholder:text-[#6B5E64]/60 outline-none bg-transparent resize-none" 
+              placeholder="Thêm ghi chú..." 
+              value={draft.note} 
+              onChange={e => setDraft({ ...draft, note: e.target.value })} 
+            />
+          </div>
+
+          {remove && draft.id && (
+            <button type="button" onClick={remove} className="w-full py-3 bg-[#FFFFFF] text-[#E11D48] font-bold text-[14px] rounded-xl shadow-sm border border-[#E8DCD5] mt-2 active:scale-95 transition-transform">
+              Xóa sự kiện
+            </button>
+          )}
+          
         </div>
       </div>
     </div>

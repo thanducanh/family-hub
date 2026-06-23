@@ -36,6 +36,7 @@ export async function GET() {
       coverUrl: member?.coverUrl || account?.cover_url || user.coverUrl,
       email: account?.email || "",
       memberId: member?.id || user.memberId || "",
+      permissions: member?.permissions || {},
       member: member ?? undefined,
     };
     const response = NextResponse.json({ ok: true, user: mergedUser, member });

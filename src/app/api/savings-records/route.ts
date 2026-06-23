@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   const yearStr = request.nextUrl.searchParams.get("year");
   const year = yearStr ? Number(yearStr) : null;
 
-  const filter = buildDataFilter(user, '', 1, 'member_id');
+  const filter = await buildDataFilter(user, '', 1, 'member_id', 'finance');
 
   const savingsQuery = year
     ? `SELECT id, member_id, year, month, amount, type, holder, description, note, created_at, updated_at FROM savings_records WHERE ${filter.where} AND year = $${filter.params.length + 1} ORDER BY month DESC, created_at DESC`

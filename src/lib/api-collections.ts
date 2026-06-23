@@ -301,7 +301,8 @@ export function collectionHandlers(collection: Collection) {
       let where = '1=1';
       let params: any[] = [];
       if (collection !== 'members') {
-         const filter = buildDataFilter(user, '', 1, 'member_id');
+         const moduleKey = collection === "transactions" ? "finance" : collection === "events" ? "calendar" : collection;
+         const filter = await buildDataFilter(user, '', 1, 'member_id', moduleKey);
          where = filter.where;
          params = filter.params;
          

@@ -13,13 +13,15 @@ export interface MemberProfile {
   gender: string;
   notes: string;
   color: string;
+  permissions?: Record<string, unknown>;
 }
 
-export const memberProfileFields = "id, name, nickname, avatar, avatar_url, cover_url, phone, birthday, gender, notes, color";
+export const memberProfileFields = "id, name, nickname, avatar, avatar_url, cover_url, phone, birthday, gender, notes, color, permissions";
 
 export async function ensureMemberAvatarUrlColumn() {
   await pool.query("ALTER TABLE members ADD COLUMN IF NOT EXISTS avatar_url TEXT");
   await pool.query("ALTER TABLE members ADD COLUMN IF NOT EXISTS cover_url TEXT");
+  await pool.query("ALTER TABLE members ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb");
   await pool.query("UPDATE members SET avatar_url = avatar WHERE (avatar_url IS NULL OR avatar_url = '') AND avatar IS NOT NULL AND avatar <> ''");
 }
 
@@ -60,5 +62,6 @@ export function toMemberProfile(row: Record<string, unknown>): MemberProfile {
     gender: String(row.gender ?? ""),
     notes: String(row.notes ?? ""),
     color: String(row.color ?? ""),
+    permissions: typeof row.permissions === "object" && row.permissions !== null ? row.permissions as Record<string, unknown> : {},
   };
 }

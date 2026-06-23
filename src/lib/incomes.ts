@@ -130,7 +130,7 @@ import type { SessionUser } from "@/lib/auth";
 
 export async function fetchIncomeData(year: number, user: SessionUser | null = null) {
   try {
-    const { where, params } = buildDataFilter(user, 'r', 1, 'member_id');
+    const { where, params } = await buildDataFilter(user, 'r', 1, 'member_id', 'finance');
     const result = await pool.query(
       `SELECT r.*, m.name AS member_name, CONCAT_WS(' · ', NULLIF(j.title, ''), NULLIF(j.company, '')) AS job_name
        FROM income_records r
@@ -155,9 +155,11 @@ export async function fetchIncomeData(year: number, user: SessionUser | null = n
 
     // Tính yearlySummaries (mảng rỗng vì không dùng bảng đó nữa)
     const yearlySummaries: IncomeYearlySummaryRow[] = [];
-    const jobsResult = await pool.query('SELECT * FROM member_jobs ORDER BY start_year DESC NULLS LAST, created_at DESC');
+    const jobFilter = await buildDataFilter(user, '', 1, 'member_id', 'finance');
+    const jobsResult = await pool.query(`SELECT * FROM member_jobs WHERE ${jobFilter.where} ORDER BY start_year DESC NULLS LAST, created_at DESC`, jobFilter.params);
     const jobs = jobsResult.rows.map(toMemberJob);
-    const membersResult = await pool.query("SELECT id, name FROM members WHERE deleted_at IS NULL ORDER BY name ASC");
+    const memberFilter = await buildDataFilter(user, '', 1, 'id', 'finance');
+    const membersResult = await pool.query(`SELECT id, name FROM members WHERE deleted_at IS NULL AND ${memberFilter.where} ORDER BY name ASC`, memberFilter.params);
     return {
       members: membersResult.rows.map(row => ({ id: String(row.id), name: String(row.name || "") })),
       sources: [],

@@ -4,6 +4,7 @@ import { pool } from "@/lib/db";
 import { durableAvatarValue, ensureMemberAvatarUrlColumn, normalizeBirthday, toMemberProfile } from "@/lib/member-profile";
 
 const fields = "id, name, nickname, birthday, gender, phone, avatar, avatar_url, notes, color";
+const selectFields = `${fields}, permissions`;
 
 function toDate(value: unknown) {
   return normalizeBirthday(value) || null;
@@ -31,10 +32,11 @@ export async function GET(request: NextRequest) {
   const actor = await getSessionUser();
   if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   await ensureMemberAvatarUrlColumn();
+  await pool.query("ALTER TABLE members ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb");
   
   const id = new URL(request.url).searchParams.get("id");
   if (id) {
-    const result = await pool.query(`SELECT ${fields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [id]);
+    const result = await pool.query(`SELECT ${selectFields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [id]);
     const member = result.rows[0];
     if (!member) return NextResponse.json({ ok: false, error: "Không tìm thấy thành viên." }, { status: 404 });
     return NextResponse.json({ ok: true, data: memberResponse(member) });
@@ -43,11 +45,11 @@ export async function GET(request: NextRequest) {
   if (actor.role === "self_only") {
     const memberId = await linkedMemberId(actor.id);
     if (!memberId) return NextResponse.json({ ok: true, data: [] });
-    const result = await pool.query(`SELECT ${fields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [memberId]);
+    const result = await pool.query(`SELECT ${selectFields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [memberId]);
     const list = result.rows.map(row => memberResponse(row));
     return NextResponse.json({ ok: true, data: list });
   }
-  const result = await pool.query(`SELECT ${fields} FROM members WHERE deleted_at IS NULL ORDER BY name`);
+  const result = await pool.query(`SELECT ${selectFields} FROM members WHERE deleted_at IS NULL ORDER BY name`);
   const accounts = await pool.query("SELECT id, username, email, display_name, role, active, is_system, member_id, created_at, updated_at FROM users WHERE member_id IS NOT NULL");
   const accountByMember = new Map(accounts.rows.map(account => [String(account.member_id), {
     id: String(account.id), username: String(account.username), email: String(account.email ?? ""), displayName: String(account.display_name),

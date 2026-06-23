@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const filter = buildDataFilter(user, '', 1, 'member_id');
+    const filter = await buildDataFilter(user, '', 1, 'member_id', 'finance');
 
     const result = await pool.query(
       `SELECT id, member_id as "memberId", to_char(trade_date, 'YYYY-MM-DD') as "tradeDate", stock_code as "stockCode", action, quantity::float, price::float, fee::float, note, created_at as "createdAt", updated_at as "updatedAt"

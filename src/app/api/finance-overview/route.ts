@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
   const year = Number.isFinite(yearParam) && yearParam > 0 ? yearParam : new Date().getFullYear();
 
   try {
-    const filter = buildDataFilter(user, '', 2, 'member_id');
+    const filter = await buildDataFilter(user, '', 2, 'member_id', 'finance');
     const settings = await getFinanceSettings();
     const hasExpenseDate = await hasColumn("transactions", "expense_date");
     const transactionDateExpr = hasExpenseDate
@@ -184,7 +184,7 @@ export async function GET(req: NextRequest) {
     const estimatedAssets = currentCash + currentSavings + currentInvestment;
 
     const yearStartDate = `${year}-01-01`;
-    const filter3 = buildDataFilter(user, '', 3, 'member_id');
+    const filter3 = await buildDataFilter(user, '', 3, 'member_id', 'finance');
     const beforeYearQuery = await pool.query(
       `SELECT
         (SELECT COALESCE(SUM(amount), 0) FROM income_records WHERE status = 'Đã nhận' AND make_date(year::integer, month::integer, 1) >= $1::date AND make_date(year::integer, month::integer, 1) < $2::date AND ${filter3.where}) as total_income,

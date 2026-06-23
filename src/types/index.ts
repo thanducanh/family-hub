@@ -25,7 +25,9 @@ export type NoteKind = "general" | "member";
 
 export type Gender = "male" | "female" | "other" | "";
 export interface LinkedAccount { id: string; username: string; email: string; displayName: string; role: "full_access" | "self_only"; active: boolean; isSystem: boolean; memberId: string; createdAt: string; updatedAt: string; coverUrl?: string; }
-export interface Member { id: string; name: string; nickname: string; birthday: string; gender: Gender; phone: string; avatar: string; avatarUrl?: string; avatarPreview?: string; coverUrl?: string; notes: string; color: string; user?: LinkedAccount | null; }
+export type MemberPermissionModule = "finance" | "calendar" | "tasks" | "notes" | "members" | "stats" | "settings";
+export interface MemberPermissions { viewMode: "self_only" | "all" | "custom"; visibleMemberIds: string[]; modules: Record<string, boolean>; }
+export interface Member { id: string; name: string; nickname: string; birthday: string; gender: Gender; phone: string; avatar: string; avatarUrl?: string; avatarPreview?: string; coverUrl?: string; notes: string; color: string; user?: LinkedAccount | null; permissions?: MemberPermissions; }
 export type MemberSimCarrier = string;
 export type MemberSimType = string;
 export type MemberSimStatus = string;
