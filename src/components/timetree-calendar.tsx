@@ -646,7 +646,10 @@ async function pushAppNotification(notif: any, user: any) {
       createdByName: user?.displayName || "Ai đó",
       userId: user?.id,
       relatedId: eventToSave.id,
-      relatedType: "event"
+      relatedType: "event",
+      dedupeKey: isNew 
+        ? `calendar:event-created:${eventToSave.id}`
+        : `calendar:event-updated:${eventToSave.id}:${(eventToSave as any).updatedAt || new Date().getTime()}`
     };
     pushAppNotification(notifObj, user);
     
@@ -678,7 +681,8 @@ async function pushAppNotification(notif: any, user: any) {
       createdByName: user?.displayName || "Ai đó",
       userId: user?.id,
       relatedId: item.id,
-      relatedType: "event"
+      relatedType: "event",
+      dedupeKey: `calendar:event-deleted:${item.id}`
     }, user);
     const settings = getNotificationSettings();
     if (settings.calendar) {

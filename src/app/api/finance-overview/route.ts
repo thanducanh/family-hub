@@ -51,6 +51,20 @@ async function ensureSavingsRecordsTable() {
   `);
 }
 
+async function ensureAdjustmentsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS finance_adjustments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      month INTEGER NOT NULL,
+      year INTEGER NOT NULL,
+      amount NUMERIC NOT NULL DEFAULT 0,
+      note TEXT NOT NULL DEFAULT '',
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
 async function getFinanceSettings() {
   try {
     await ensureFinanceSettingsTable();
@@ -103,7 +117,8 @@ export async function GET(req: NextRequest) {
     await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reimbursed_at DATE");
     const realExpenseCondition = "COALESCE(counts_for_personal_expense, CASE WHEN category IN ('Tiết kiệm', 'Thanh toán hộ') THEN false ELSE true END) = true";
 
-    const [incomeRecordsResult, expensesResult, savingsInExpenseResult, investmentsBuyResult, investmentsSellResult] = await Promise.all([
+    await ensureAdjustmentsTable();
+    const [incomeRecordsResult, expensesResult, savingsInExpenseResult, investmentsBuyResult, investmentsSellResult, adjustmentsResult] = await Promise.all([
       pool.query(`SELECT month, SUM(amount) as total FROM income_records WHERE status = 'Đã nhận' AND year = $1 AND ${filter.where} GROUP BY month`, [year, ...filter.params]),
       pool.query(
         `SELECT EXTRACT(MONTH FROM ${transactionDateExpr}) as month, SUM(amount) as total
@@ -127,11 +142,12 @@ export async function GET(req: NextRequest) {
       ),
       pool.query(`SELECT EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price + fee) as total FROM investment_transactions WHERE action = 'buy' AND EXTRACT(YEAR FROM trade_date) = $1 AND ${filter.where} GROUP BY EXTRACT(MONTH FROM trade_date)`, [year, ...filter.params]),
       pool.query(`SELECT EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price - fee) as total FROM investment_transactions WHERE action = 'sell' AND EXTRACT(YEAR FROM trade_date) = $1 AND ${filter.where} GROUP BY EXTRACT(MONTH FROM trade_date)`, [year, ...filter.params]),
+      pool.query(`SELECT month, SUM(amount) as total FROM finance_adjustments WHERE year = $1 GROUP BY month`, [year]),
     ]);
 
-    const dataMap: Record<number, { month: number; income: number; expense: number; savingsInExpense: number; investmentBuy: number; investmentSell: number; netInvestment: number }> = {};
+    const dataMap: Record<number, { month: number; income: number; expense: number; savingsInExpense: number; investmentBuy: number; investmentSell: number; netInvestment: number; adjustment: number }> = {};
     for (let month = 1; month <= 12; month += 1) {
-      dataMap[month] = { month, income: 0, expense: 0, savingsInExpense: 0, investmentBuy: 0, investmentSell: 0, netInvestment: 0 };
+      dataMap[month] = { month, income: 0, expense: 0, savingsInExpense: 0, investmentBuy: 0, investmentSell: 0, netInvestment: 0, adjustment: 0 };
     }
 
     for (const row of incomeRecordsResult.rows) {
@@ -149,22 +165,28 @@ export async function GET(req: NextRequest) {
     for (const row of investmentsSellResult.rows) {
       if (dataMap[Number(row.month)]) dataMap[Number(row.month)].investmentSell += Number(row.total || 0);
     }
+    for (const row of adjustmentsResult.rows) {
+      if (dataMap[Number(row.month)]) dataMap[Number(row.month)].adjustment += Number(row.total || 0);
+    }
 
     const cashQuery = await pool.query(
       `SELECT
         (SELECT COALESCE(SUM(amount), 0) FROM income_records WHERE status = 'Đã nhận' AND make_date(year::integer, month::integer, 1) >= $1::date AND ${filter.where}) as total_income,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND ${realExpenseCondition} AND ${transactionDateExpr} >= $1::date AND ${filter.where}) as total_expense,
         (SELECT COALESCE(SUM(quantity * price + fee), 0) FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date AND ${filter.where}) as total_invest_buy,
-        (SELECT COALESCE(SUM(quantity * price - fee), 0) FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND ${filter.where}) as total_invest_sell`,
+        (SELECT COALESCE(SUM(quantity * price - fee), 0) FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND ${filter.where}) as total_invest_sell,
+        (SELECT COALESCE(SUM(amount), 0) FROM finance_adjustments WHERE make_date(year::integer, month::integer, 1) >= make_date((EXTRACT(YEAR FROM $1::date))::integer, (EXTRACT(MONTH FROM $1::date))::integer, 1)) as total_adjustment`,
       [settings.trackingStartDate, ...filter.params]
     );
 
     const row = cashQuery.rows[0] || {};
+    const totalAdjustment = Number(row.total_adjustment || 0);
     const currentCash = settings.openingCashBalance
       + Number(row.total_income || 0)
       - Number(row.total_expense || 0)
       - Number(row.total_invest_buy || 0)
-      + Number(row.total_invest_sell || 0);
+      + Number(row.total_invest_sell || 0)
+      + totalAdjustment;
 
     const assetsQuery = await pool.query(
       `SELECT
@@ -190,7 +212,8 @@ export async function GET(req: NextRequest) {
         (SELECT COALESCE(SUM(amount), 0) FROM income_records WHERE status = 'Đã nhận' AND make_date(year::integer, month::integer, 1) >= $1::date AND make_date(year::integer, month::integer, 1) < $2::date AND ${filter3.where}) as total_income,
         (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND ${realExpenseCondition} AND ${transactionDateExpr} >= $1::date AND ${transactionDateExpr} < $2::date AND ${filter3.where}) as total_expense,
         (SELECT COALESCE(SUM(quantity * price + fee), 0) FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date AND trade_date < $2::date AND ${filter3.where}) as total_invest_buy,
-        (SELECT COALESCE(SUM(quantity * price - fee), 0) FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND trade_date < $2::date AND ${filter3.where}) as total_invest_sell`,
+        (SELECT COALESCE(SUM(quantity * price - fee), 0) FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND trade_date < $2::date AND ${filter3.where}) as total_invest_sell,
+        (SELECT COALESCE(SUM(amount), 0) FROM finance_adjustments WHERE make_date(year::integer, month::integer, 1) >= make_date((EXTRACT(YEAR FROM $1::date))::integer, (EXTRACT(MONTH FROM $1::date))::integer, 1) AND make_date(year::integer, month::integer, 1) < $2::date) as total_adjustment`,
       [settings.trackingStartDate, yearStartDate, ...filter3.params]
     );
     const beforeYear = beforeYearQuery.rows[0] || {};
@@ -198,11 +221,12 @@ export async function GET(req: NextRequest) {
       + Number(beforeYear.total_income || 0)
       - Number(beforeYear.total_expense || 0)
       - Number(beforeYear.total_invest_buy || 0)
-      + Number(beforeYear.total_invest_sell || 0);
+      + Number(beforeYear.total_invest_sell || 0)
+      + Number(beforeYear.total_adjustment || 0);
     const monthlyData = Object.values(dataMap).sort((a, b) => a.month - b.month).map(item => {
       const afterExpense = item.income - item.expense;
       const netInvestment = item.investmentBuy - item.investmentSell;
-      const monthlyCashFlow = afterExpense - item.investmentBuy + item.investmentSell;
+      const monthlyCashFlow = afterExpense - item.investmentBuy + item.investmentSell + item.adjustment;
       const inTrackingRange = year > settings.trackingStartYear || (year === settings.trackingStartYear && item.month >= settings.trackingStartMonth);
       if (inTrackingRange) cumulativeCash += monthlyCashFlow;
       return { ...item, netInvestment, afterExpense, monthlyCashFlow, cumulativeCash };

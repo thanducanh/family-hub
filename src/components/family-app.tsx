@@ -281,12 +281,28 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
         if (res.ok) {
           const data = await res.json();
           if (data.ok && data.notifications) {
-            // merge local items not in API yet, or just use API + local?
-            // User requested fallback, let's prefer API
-            const apiItems = data.notifications;
-            const apiIds = new Set(apiItems.map((x:any) => x.id));
-            const uniqueLocal = localItems.filter((x:any) => !apiIds.has(x.id));
-            setNotifications([...uniqueLocal, ...apiItems].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+            const getNotifKey = (n: any) => n.dedupeKey || n.id;
+            const map = new Map();
+            for (const api of data.notifications || []) {
+              map.set(getNotifKey(api), api);
+            }
+            for (const local of localItems || []) {
+              const key = getNotifKey(local);
+              const existing = map.get(key);
+              if (!existing) {
+                map.set(key, local);
+                continue;
+              }
+              const readAt = local.readAt || existing.readAt || null;
+              map.set(key, {
+                ...existing,
+                ...local,
+                readAt,
+                read: Boolean(readAt),
+                isRead: Boolean(readAt),
+              });
+            }
+            setNotifications(Array.from(map.values()).sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
             return;
           }
         }
@@ -296,7 +312,12 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     loadNotifs();
 
     const handleNewNotif = (e: any) => {
-      setNotifications(prev => [e.detail, ...prev]);
+      setNotifications(prev => {
+        const getNotifKey = (n: any) => n.dedupeKey || n.id;
+        const newKey = getNotifKey(e.detail);
+        if (prev.some(n => getNotifKey(n) === newKey)) return prev;
+        return [e.detail, ...prev];
+      });
     };
     window.addEventListener("app_notification_created", handleNewNotif);
     return () => window.removeEventListener("app_notification_created", handleNewNotif);
@@ -2324,7 +2345,34 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
 }
 
 function LoadingSkeleton() {
-  return <main className="min-h-screen animate-pulse bg-[var(--app-background)] px-5 py-6 text-[var(--app-foreground)] md:pl-72 md:pr-8"><div className="mx-auto max-w-7xl"><div className="h-4 w-28 rounded bg-rose-200 dark:bg-white/10" /><div className="mt-3 h-8 w-48 rounded bg-slate-200 dark:bg-white/10" /><div className="mt-8 grid gap-4 lg:grid-cols-[1.3fr_.7fr]"><div className="h-36 rounded-3xl bg-rose-200 dark:bg-white/10" /><div className="grid grid-cols-2 gap-3"><div className="rounded-3xl bg-slate-200 dark:bg-white/10" /><div className="rounded-3xl bg-slate-200 dark:bg-white/10" /></div></div><div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{Array.from({ length: 6 }, (_, index) => <div key={index} className="h-20 rounded-3xl bg-slate-200 dark:bg-white/10" />)}</div><div className="mt-6 grid gap-4 lg:grid-cols-2"><div className="h-48 rounded-3xl bg-slate-200 dark:bg-white/10" /><div className="h-48 rounded-3xl bg-slate-200 dark:bg-white/10" /></div></div></main>;
+  return (
+    <main className="min-h-screen bg-[#F8F5F2] px-5 py-6 md:pl-72 md:pr-8">
+      <div className="mx-auto max-w-7xl animate-pulse">
+        <div className="flex justify-center mt-10 mb-8">
+          <div className="relative size-12">
+            <div className="absolute inset-0 rounded-full border-4 border-[#E8DCD5]" />
+            <div className="absolute inset-0 rounded-full border-4 border-[#800020] border-t-[#D4AF37] animate-spin" />
+          </div>
+        </div>
+        <div className="h-4 w-28 rounded bg-[#E8DCD5]" />
+        <div className="mt-3 h-8 w-48 rounded bg-[#E8DCD5]" />
+        <div className="mt-8 grid gap-4 lg:grid-cols-[1.3fr_.7fr]">
+          <div className="h-36 rounded-3xl bg-[#EFE7E2]" />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-3xl bg-[#E8DCD5]" />
+            <div className="rounded-3xl bg-[#E8DCD5]" />
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {Array.from({ length: 6 }, (_, index) => <div key={index} className="h-20 rounded-3xl bg-[#E8DCD5]" />)}
+        </div>
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          <div className="h-48 rounded-3xl bg-[#E8DCD5]" />
+          <div className="h-48 rounded-3xl bg-[#E8DCD5]" />
+        </div>
+      </div>
+    </main>
+  );
 }
 
 function MobileNav({ screen, profileOpen, go, openProfile, language }: { screen: Screen; profileOpen: boolean; go: (s: Screen) => void; openProfile: () => void; language: Language }) {
@@ -2607,20 +2655,20 @@ function NotificationsView({ user, notifications, setNotifications, go }: { user
               <div 
                 key={item.id} 
                 onClick={() => markNotificationRead(item)}
-                className={`p-[10px] rounded-[12px] border cursor-pointer ${unread ? 'bg-[#F8E7EC] border-[#E8DCD5]' : 'bg-[#FFFFFF] border-[#E8DCD5]'} shadow-[0_2px_8px_rgba(128,0,32,0.04)] flex gap-3 transition-colors`}
+                className={`p-[10px] rounded-[12px] border cursor-pointer ${unread ? 'bg-[#F8E7EC] border-[#D4AF37]/50' : 'bg-[#FFFFFF] border-[#E8DCD5]'} flex gap-3 transition-colors mb-2 shadow-sm`}
               >
-                <div className={`size-[32px] rounded-full bg-[#800020] shrink-0 flex items-center justify-center shadow-inner ${unread ? '' : 'opacity-80'}`}>
+                <div className={`size-[30px] rounded-full bg-[#800020] shrink-0 flex items-center justify-center ${unread ? 'shadow-md shadow-[#800020]/20' : 'opacity-80'}`}>
                   <svg className="size-[14px] stroke-[#D4AF37] stroke-2 fill-none" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className={`text-[9px] bg-[#800020] text-white rounded-full px-1.5 py-0.5 font-bold uppercase tracking-wider ${unread ? '' : 'opacity-80'}`}>{item.module || item.type || "Hệ thống"}</span>
-                    {unread && <span className="size-[7px] rounded-full bg-[#E11D48] shrink-0" />}
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className={`text-[9px] bg-[#F8F5F2] text-[#6B5E64] border border-[#E8DCD5] rounded-full px-[6px] py-[4px] font-bold uppercase tracking-wider ${unread ? '' : 'opacity-80'}`}>{item.module || item.type || "Hệ thống"}</span>
+                    <span className="text-[10px] text-[#6B5E64] font-medium whitespace-nowrap">{new Date(item.createdAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}</span>
                   </div>
-                  <h3 className="font-semibold text-[13px] text-[#171018] leading-tight mb-0.5">{item.title}</h3>
-                  <p className="text-[#6B5E64] text-[11px] leading-snug line-clamp-2">{item.message}</p>
-                  <p className="text-[10px] text-[#6B5E64]/70 mt-1 font-medium">{new Date(item.createdAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}</p>
+                  <h3 className={`font-bold text-[13px] leading-tight mb-0.5 ${unread ? 'text-[#800020]' : 'text-[#171018]'}`}>{item.title}</h3>
+                  <p className={`text-[11px] leading-snug line-clamp-2 ${unread ? 'text-[#171018] font-medium' : 'text-[#6B5E64]'}`}>{item.message}</p>
                 </div>
+                {unread && <div className="mt-1 size-[6px] rounded-full bg-[#E11D48] shrink-0" />}
               </div>
             );
           })
@@ -3490,16 +3538,7 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
     });
   }, [appData?.transactions, incomes, month, year]);
 
-  const monthIncsTotal = monthItems.filter(i => i._isIncome).reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
-  const monthExpsTotal = monthItems.filter(i => !i._isIncome).reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
-  const monthSavingsTotal = toArray(appData?.transactions)
-    .filter((item: any) => (String(item.type).toLowerCase() === "expense" || Number(item.amount) < 0) && isSavingTransaction(item))
-    .filter((item: any) => {
-      const date = getFinanceDate(item);
-      return !Number.isNaN(date.getTime()) && date.getMonth() === month - 1 && date.getFullYear() === year;
-    })
-    .reduce((sum: number, item: any) => sum + Math.abs(Number(item.amount) || 0), 0);
-  const availableThisMonth = monthIncsTotal - monthExpsTotal - monthSavingsTotal;
+  const availableThisMonth = calculateMonthlyUsableBalance(month, year, toArray(appData?.transactions), toArray(incomes), "all");
 
   const displayList = monthItems.filter(item => subTab === "all" || (subTab === "income" ? item._isIncome : !item._isIncome));
   const groupedItems = displayList.reduce((groups: Record<string, any[]>, item: any) => {
@@ -3519,9 +3558,9 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
     </div>
 
     <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-4 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
-      <p className="mb-1 text-[13px] font-medium text-[#6B5E64]">Tiền có thể dùng</p>
+      <p className="mb-1 text-[13px] font-medium text-[#6B5E64]">Có thể dùng tháng này</p>
       <b className={`block break-words text-[clamp(23px,7.5vw,31px)] font-bold leading-tight tracking-tight ${availableThisMonth >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{money(availableThisMonth)}</b>
-      <p className="mb-3 mt-2 text-[11px] leading-4 text-[#6B5E64]">Tiền đang có: <span className="font-semibold text-[#171018]">{loadingOverview ? "..." : (overviewDataCache[year] ? money(totalMoneyOnHand) : "-")}</span></p>
+      <p className="mb-3 mt-2 text-[11px] leading-4 text-[#6B5E64]">Tiền đang có hiện tại: <span className="font-semibold text-[#171018]">{loadingOverview ? "..." : (overviewDataCache[year] ? money(totalMoneyOnHand) : "-")}</span></p>
       
       <div className="grid grid-cols-3 border-t border-[#E8DCD5] pt-3 gap-1">
         {([['all', 'Chi tiết'], ['income', 'Thu nhập'], ['expense', 'Chi tiêu']] as const).map(([value, label]) => (
@@ -7089,6 +7128,29 @@ export function getMonthlyFinanceSummary(
   };
 }
 
+export function calculateMonthlyUsableBalance(
+  month: number,
+  year: number,
+  transactions: any[],
+  incomes: any[],
+  memberId: string = "all"
+) {
+  const summary = getMonthlyFinanceSummary(transactions, incomes, month, year, memberId);
+  const savings = toArray(transactions)
+    .filter((t: any) => (String(t.type).toLowerCase() === "expense" || Number(t.amount) < 0) && isSavingTransaction(t))
+    .filter((t: any) => {
+      const d = getFinanceDate(t);
+      const mid = t.memberId || t.member_id || t.userId || t.user_id;
+      return !Number.isNaN(d.getTime()) && d.getMonth() === month - 1 && d.getFullYear() === year
+        && (memberId === "all" || !mid || mid === memberId);
+    })
+    .reduce((sum: number, t: any) => sum + Math.abs(Number(t.amount) || 0), 0);
+
+  const investment = 0;
+  const adjustment = 0;
+  return summary.incomeTotal - summary.expenseTotal - savings - investment + adjustment;
+}
+
 function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
   const [activeTab, setActiveTab] = useState<"tong-quan" | "thanh-vien" | "danh-muc">("tong-quan");
   const [filterMemberId, setFilterMemberId] = useState<string>("all");
@@ -7182,7 +7244,7 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
   // TAB 1: Tổng quan
   const currentSummary = getMonthlyFinanceSummary(data.transactions || [], incomesRecords, selectedMonth, selectedYear, "all");
   const currentSavings = getSavings(selectedMonth, selectedYear, "all");
-  const currentRemaining = currentSummary.incomeTotal - currentSummary.expenseTotal - currentSavings;
+  const currentRemaining = calculateMonthlyUsableBalance(selectedMonth, selectedYear, data.transactions || [], incomesRecords, "all");
 
   const overview12Months = yearMonths.map(m => {
     const sum = getMonthlyFinanceSummary(data.transactions || [], incomesRecords, m, selectedYear, "all");
@@ -7192,7 +7254,7 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
       Thu: sum.incomeTotal,
       Chi: sum.expenseTotal,
       TietKiem: sav,
-      ConLai: sum.incomeTotal - sum.expenseTotal - sav
+      ConLai: calculateMonthlyUsableBalance(m, selectedYear, data.transactions || [], incomesRecords, "all")
     };
   });
   const overviewChartMax = Math.max(...overview12Months.flatMap(item => [item.Thu, item.Chi, item.TietKiem]), 1);
@@ -8435,6 +8497,199 @@ function MobileProfileBusinessCardSheet({ user, data, close }: any) {
   </FullScreenMobileSheet>;
 }
 
+function FinanceSettingsSheet({ close }: { close: () => void }) {
+  const ui = useUI();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"settings" | "adjustments">("settings");
+  const [settings, setSettings] = useState({
+    trackingStartMonth: new Date().getMonth() + 1,
+    trackingStartYear: new Date().getFullYear(),
+    openingCashBalance: 0,
+    openingSavingsBalance: 0,
+    openingInvestmentBalance: 0,
+  });
+  const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [adjForm, setAdjForm] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), amount: "", note: "" });
+  const [adjFilter, setAdjFilter] = useState<"all" | "year">("year");
+
+  const mobileInputClass = "h-12 w-full min-w-0 max-w-full rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] px-3 text-[14px] text-[#171018] outline-none focus:border-[#800020] disabled:bg-[#F8F5F2] disabled:text-[#6B5E64]";
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/finance-settings");
+      if (res.ok) {
+        const json = await readJsonSafe<any>(res);
+        if (json?.data) {
+          setSettings({
+            trackingStartMonth: json.data.trackingStartMonth,
+            trackingStartYear: json.data.trackingStartYear,
+            openingCashBalance: json.data.openingCashBalance,
+            openingSavingsBalance: json.data.openingSavingsBalance,
+            openingInvestmentBalance: json.data.openingInvestmentBalance,
+          });
+        }
+      }
+      loadAdjustments();
+    } catch (e) { }
+    setLoading(false);
+  }
+
+  async function loadAdjustments() {
+    try {
+      const res = await fetch("/api/finance-adjustments");
+      if (res.ok) {
+        const json = await readJsonSafe<any>(res);
+        if (json?.data) setAdjustments(json.data);
+      }
+    } catch (e) { }
+  }
+
+  async function saveSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const res = await fetch("/api/finance-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+      if (res.ok) ui.toast("Đã lưu thiết lập đầu kỳ");
+      else ui.toast("Lỗi khi lưu thiết lập", "error");
+    } catch (e) {
+      ui.toast("Lỗi kết nối", "error");
+    }
+    setSaving(false);
+  }
+
+  async function addAdjustment(e: React.FormEvent) {
+    e.preventDefault();
+    setAdjusting(true);
+    try {
+      const res = await fetch("/api/finance-adjustments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...adjForm, amount: Number(adjForm.amount) }),
+      });
+      if (res.ok) {
+        ui.toast("Đã thêm điều chỉnh");
+        setAdjForm({ ...adjForm, amount: "", note: "" });
+        loadAdjustments();
+      } else {
+        ui.toast("Lỗi khi thêm điều chỉnh", "error");
+      }
+    } catch (e) {
+      ui.toast("Lỗi kết nối", "error");
+    }
+    setAdjusting(false);
+  }
+
+  async function deleteAdjustment(id: string) {
+    if (!await ui.confirm("Xóa điều chỉnh", "Bạn có chắc muốn xóa điều chỉnh này?")) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/finance-adjustments/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        ui.toast("Đã xóa");
+        setAdjustments(prev => prev.filter(a => a.id !== id));
+      } else {
+        ui.toast("Lỗi khi xóa", "error");
+      }
+    } catch (e) {
+      ui.toast("Lỗi kết nối", "error");
+    }
+    setDeletingId(null);
+  }
+
+  const currentYear = new Date().getFullYear();
+  const displayAdjustments = adjFilter === "year" ? adjustments.filter(a => a.year === currentYear) : adjustments;
+
+  return <FullScreenMobileSheet close={close} title="Thiết lập đầu kỳ">
+    <div className="flex bg-[#FFFFFF] border-b border-[#E8DCD5]">
+      <button onClick={() => setTab("settings")} className={`flex-1 py-3 text-[13px] font-bold ${tab === "settings" ? "text-[#800020] border-b-[3px] border-[#800020]" : "text-[#6B5E64]"}`}>Cơ bản</button>
+      <button onClick={() => setTab("adjustments")} className={`flex-1 py-3 text-[13px] font-bold ${tab === "adjustments" ? "text-[#800020] border-b-[3px] border-[#800020]" : "text-[#6B5E64]"}`}>Điều chỉnh</button>
+    </div>
+    
+    <div className="p-4">
+      {loading ? <p className="text-center text-sm text-[#6B5E64] py-10">Đang tải...</p> : tab === "settings" ? (
+        <form onSubmit={saveSettings} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Tháng bắt đầu">
+              <select className={mobileInputClass} value={settings.trackingStartMonth} onChange={e => setSettings({ ...settings, trackingStartMonth: Number(e.target.value) })}>
+                {Array.from({ length: 12 }).map((_, i) => <option key={i + 1} value={i + 1}>Tháng {i + 1}</option>)}
+              </select>
+            </Field>
+            <Field label="Năm bắt đầu">
+              <input type="number" className={mobileInputClass} value={settings.trackingStartYear} onChange={e => setSettings({ ...settings, trackingStartYear: Number(e.target.value) })} />
+            </Field>
+          </div>
+          <Field label="Số tiền mặt ban đầu">
+            <input type="number" className={mobileInputClass} value={settings.openingCashBalance} onChange={e => setSettings({ ...settings, openingCashBalance: Number(e.target.value) })} />
+          </Field>
+          <Field label="Tiết kiệm ban đầu">
+            <input type="number" className={mobileInputClass} value={settings.openingSavingsBalance} onChange={e => setSettings({ ...settings, openingSavingsBalance: Number(e.target.value) })} />
+          </Field>
+          <Field label="Đầu tư ban đầu">
+            <input type="number" className={mobileInputClass} value={settings.openingInvestmentBalance} onChange={e => setSettings({ ...settings, openingInvestmentBalance: Number(e.target.value) })} />
+          </Field>
+          <button disabled={saving} className="w-full rounded-2xl bg-[#800020] py-3.5 mt-2 text-[15px] font-bold text-white shadow-md active:scale-[.98] disabled:opacity-50">
+            {saving ? "Đang lưu..." : "Lưu thiết lập"}
+          </button>
+        </form>
+      ) : (
+        <div className="space-y-5">
+          <form onSubmit={addAdjustment} className="rounded-2xl bg-[#FFFFFF] border border-[#E8DCD5] p-3 shadow-sm space-y-3">
+            <h3 className="text-[13px] font-bold text-[#171018]">Thêm điều chỉnh</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <select className={mobileInputClass} value={adjForm.month} onChange={e => setAdjForm({ ...adjForm, month: Number(e.target.value) })}>
+                {Array.from({ length: 12 }).map((_, i) => <option key={i + 1} value={i + 1}>Tháng {i + 1}</option>)}
+              </select>
+              <input type="number" className={mobileInputClass} value={adjForm.year} onChange={e => setAdjForm({ ...adjForm, year: Number(e.target.value) })} />
+            </div>
+            <input required type="number" placeholder="Số tiền (vd: 500000)" className={mobileInputClass} value={adjForm.amount} onChange={e => setAdjForm({ ...adjForm, amount: e.target.value })} />
+            <input required placeholder="Nội dung điều chỉnh" className={mobileInputClass} value={adjForm.note} onChange={e => setAdjForm({ ...adjForm, note: e.target.value })} />
+            <button disabled={adjusting || !adjForm.amount} className="w-full rounded-xl bg-[#800020] py-2 text-[13px] font-bold text-white shadow-sm disabled:opacity-50">
+              {adjusting ? "Đang thêm..." : "Thêm điều chỉnh"}
+            </button>
+          </form>
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[14px] font-bold text-[#171018]">Lịch sử điều chỉnh</h3>
+              <select className="bg-transparent text-[12px] font-bold text-[#800020]" value={adjFilter} onChange={e => setAdjFilter(e.target.value as any)}>
+                <option value="year">Năm {currentYear}</option>
+                <option value="all">Tất cả</option>
+              </select>
+            </div>
+            {displayAdjustments.length === 0 ? <p className="text-center text-[12px] text-[#6B5E64] py-4">Chưa có điều chỉnh nào</p> : (
+              <div className="space-y-2">
+                {displayAdjustments.map(adj => (
+                  <div key={adj.id} className="flex items-center justify-between rounded-xl bg-[#FFFFFF] border border-[#E8DCD5] p-3 shadow-sm">
+                    <div>
+                      <b className={`block text-[13px] ${Number(adj.amount) >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{Number(adj.amount) >= 0 ? "+" : ""}{money(adj.amount)}</b>
+                      <p className="text-[11px] text-[#6B5E64]">T{adj.month}/{adj.year} • {adj.note}</p>
+                    </div>
+                    <button onClick={() => deleteAdjustment(adj.id)} disabled={deletingId === adj.id} className="p-2 text-[#E11D48] active:opacity-50 disabled:opacity-50">
+                      <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  </FullScreenMobileSheet>;
+}
+
 function MobileHome({
   data,
   user,
@@ -8467,6 +8722,7 @@ function MobileHome({
   const [homeFinance, setHomeFinance] = useState<any>(null);
   const [homeFinanceStatus, setHomeFinanceStatus] = useState<"loading" | "ready" | "unauthorized" | "error">("loading");
   const [profileSheet, setProfileSheet] = useState<"info" | "account" | "card" | "bank" | "sim" | null>(null);
+  const [financeSettingsOpen, setFinanceSettingsOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -8621,7 +8877,7 @@ function MobileHome({
               <span className="text-xl font-light text-white/80">›</span>
             </button>
             <div className="grid grid-cols-2 gap-3 pointer-events-auto">
-              <button type="button" onClick={() => setShowMembers(true)} className="h-11 min-w-0 rounded-full bg-[#800020] px-3 text-[13px] font-bold text-white shadow-sm active:scale-[.99]">Thành viên</button>
+              <button type="button" onClick={() => setFinanceSettingsOpen(true)} className="h-11 min-w-0 rounded-full bg-[#800020] px-3 text-[13px] font-bold text-white shadow-sm active:scale-[.99]">Đầu kỳ</button>
               <button type="button" onClick={() => go("system")} className="h-11 min-w-0 rounded-full bg-[#FFFFFF] border border-[#800020] px-3 text-[13px] font-bold text-[#800020] shadow-sm active:scale-[.99]">Hệ thống</button>
             </div>
           </div>
