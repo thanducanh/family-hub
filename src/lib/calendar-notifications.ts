@@ -186,36 +186,38 @@ export function addAccountPasswordNotification(userId: string, message: string, 
   }).catch(console.error);
 }
 export function markCalendarNotificationsRead(user?: CalendarNotificationUser) {
+  const now = new Date().toISOString();
   const next = loadCalendarNotifications().map(item => {
-    if (!user) return { ...item, read: true };
+    if (!user) return { ...item, read: true, readAt: now };
     if (!canSee(item, user)) return item;
     const readUserIds = unique([...readIds(item), user.id]);
-    return { ...item, readUserIds, read_user_ids: readUserIds, read: item.read || false };
+    return { ...item, readUserIds, read_user_ids: readUserIds, read: true, readAt: now };
   });
   localStorage.setItem(key, JSON.stringify(next));
   window.dispatchEvent(new CustomEvent(notificationEvent));
 
   // Sync to database
-  fetch("/api/notifications", {
-    method: "PUT",
+  fetch("/api/notifications/mark-read", {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({})
   }).catch(console.error);
 }
 
 export function markNotificationRead(id: string, user?: CalendarNotificationUser) {
+  const now = new Date().toISOString();
   const next = loadCalendarNotifications().map(item => {
     if (item.id !== id) return item;
-    if (!user) return { ...item, read: true };
+    if (!user) return { ...item, read: true, readAt: now };
     const readUserIds = unique([...readIds(item), user.id]);
-    return { ...item, readUserIds, read_user_ids: readUserIds, read: true };
+    return { ...item, readUserIds, read_user_ids: readUserIds, read: true, readAt: now };
   });
   localStorage.setItem(key, JSON.stringify(next));
   window.dispatchEvent(new CustomEvent(notificationEvent));
 
   // Sync to database
-  fetch("/api/notifications", {
-    method: "PUT",
+  fetch("/api/notifications/mark-read", {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id })
   }).catch(console.error);

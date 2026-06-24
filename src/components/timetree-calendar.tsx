@@ -1145,6 +1145,25 @@ function FilterContent({ calendars, events, enabled, setEnabled, enabledTypes, s
 function EventEditorInline({ draft, calendars, customLists = [], members, user, setDraft, save, close, remove }: { draft: EventDraft; calendars: Calendar[]; customLists?: CustomList[]; members: Member[]; user?: Actor; setDraft: (draft: EventDraft | null) => void; save: (event: React.FormEvent) => void; close: () => void; remove?: () => void }) {
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [repeatSheetOpen, setRepeatSheetOpen] = useState(false);
+  const [reminderSheetOpen, setReminderSheetOpen] = useState(false);
+
+  const repeatSheetOptions = [
+    { value: "none", label: "Không lặp lại" },
+    { value: "daily", label: "Hàng ngày" },
+    { value: "weekly", label: "Hàng tuần" },
+    { value: "monthly", label: "Hàng tháng" },
+    { value: "yearly", label: "Hàng năm" }
+  ];
+
+  const reminderSheetOptions = [
+    { value: -1, label: "Không nhắc" },
+    { value: 0, label: "Đúng giờ" },
+    { value: 5, label: "Trước 5 phút" },
+    { value: 15, label: "Trước 15 phút" },
+    { value: 60, label: "Trước 1 giờ" },
+    { value: 1440, label: "Trước 1 ngày" }
+  ];
 
   const colors = [
     { value: "#800020", label: "Wine Red" },
@@ -1245,27 +1264,21 @@ function EventEditorInline({ draft, calendars, customLists = [], members, user, 
           </div>
 
           <div className="bg-[#FFFFFF] rounded-xl border border-[#E8DCD5] shadow-sm flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between p-3 border-b border-[#E8DCD5]">
+            <button type="button" onClick={() => setRepeatSheetOpen(true)} className="flex items-center justify-between p-3 border-b border-[#E8DCD5]">
               <span className="text-[14px] text-[#171018] font-medium">Lặp lại</span>
-              <select value={draft.repeatRule} onChange={e => setDraft({ ...draft, repeatRule: e.target.value })} className="bg-transparent text-[14px] font-medium text-[#800020] outline-none text-right cursor-pointer">
-                <option value="none">Không</option>
-                <option value="weekly">Hàng tuần</option>
-                <option value="monthly">Hàng tháng</option>
-                <option value="yearly">Hàng năm</option>
-              </select>
-            </div>
+              <div className="flex items-center gap-1 text-[14px] font-medium text-[#800020]">
+                <span>{repeatSheetOptions.find(o => o.value === draft.repeatRule)?.label || "Không"}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </div>
+            </button>
             
-            <div className="flex items-center justify-between p-3">
+            <button type="button" onClick={() => setReminderSheetOpen(true)} className="flex items-center justify-between p-3">
               <span className="text-[14px] text-[#171018] font-medium">Thông báo</span>
-              <select value={draft.reminderMinutes} onChange={e => setDraft({ ...draft, reminderMinutes: Number(e.target.value) })} className="bg-transparent text-[14px] font-medium text-[#800020] outline-none text-right cursor-pointer">
-                <option value={-1}>Không</option>
-                <option value={0}>Đúng giờ</option>
-                <option value={5}>Trước 5 phút</option>
-                <option value={15}>Trước 15 phút</option>
-                <option value={60}>Trước 1 giờ</option>
-                <option value={1440}>Trước 1 ngày</option>
-              </select>
-            </div>
+              <div className="flex items-center gap-1 text-[14px] font-medium text-[#800020]">
+                <span>{reminderSheetOptions.find(o => o.value === draft.reminderMinutes)?.label || "Không"}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </div>
+            </button>
           </div>
 
           <div className="bg-[#FFFFFF] rounded-xl border border-[#E8DCD5] p-3 shadow-sm">
@@ -1304,6 +1317,54 @@ function EventEditorInline({ draft, calendars, customLists = [], members, user, 
           
         </div>
       </div>
+
+      {repeatSheetOpen && (
+        <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/40" onMouseDown={() => setRepeatSheetOpen(false)}>
+          <div onMouseDown={e => e.stopPropagation()} className="bg-[#FFFFFF] rounded-t-2xl pb-8 pt-4 px-4 flex flex-col animate-in slide-in-from-bottom-10">
+            <div className="flex justify-center mb-4">
+              <div className="w-10 h-1.5 rounded-full bg-[#E8DCD5]" />
+            </div>
+            <h3 className="text-[16px] font-bold text-[#171018] mb-4 text-center">Lặp lại</h3>
+            <div className="flex flex-col gap-1">
+              {repeatSheetOptions.map(o => (
+                <button 
+                  key={o.value} 
+                  type="button"
+                  onClick={() => { setDraft({ ...draft, repeatRule: o.value }); setRepeatSheetOpen(false); }}
+                  className={`flex items-center justify-between p-3 rounded-xl ${draft.repeatRule === o.value ? "bg-[#F8E7EC] text-[#800020] font-bold" : "text-[#171018] hover:bg-[#F8F5F2]"}`}
+                >
+                  <span className="text-[15px]">{o.label}</span>
+                  {draft.repeatRule === o.value && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reminderSheetOpen && (
+        <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/40" onMouseDown={() => setReminderSheetOpen(false)}>
+          <div onMouseDown={e => e.stopPropagation()} className="bg-[#FFFFFF] rounded-t-2xl pb-8 pt-4 px-4 flex flex-col animate-in slide-in-from-bottom-10">
+            <div className="flex justify-center mb-4">
+              <div className="w-10 h-1.5 rounded-full bg-[#E8DCD5]" />
+            </div>
+            <h3 className="text-[16px] font-bold text-[#171018] mb-4 text-center">Thông báo</h3>
+            <div className="flex flex-col gap-1">
+              {reminderSheetOptions.map(o => (
+                <button 
+                  key={o.value} 
+                  type="button"
+                  onClick={() => { setDraft({ ...draft, reminderMinutes: o.value }); setReminderSheetOpen(false); }}
+                  className={`flex items-center justify-between p-3 rounded-xl ${draft.reminderMinutes === o.value ? "bg-[#F8E7EC] text-[#800020] font-bold" : "text-[#171018] hover:bg-[#F8F5F2]"}`}
+                >
+                  <span className="text-[15px]">{o.label}</span>
+                  {draft.reminderMinutes === o.value && <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

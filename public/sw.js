@@ -48,10 +48,11 @@ self.addEventListener("push", (event) => {
 
   const title = data.title || "Family Hub";
   const options = {
-    body: data.body || "",
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
+    body: data.body || data.message || "",
+    icon: "/icon-192x192.png", // Next.js default typically or adjust based on actual manifest
+    badge: "/icon-192x192.png",
     data: data.data || { url: "/?screen=notifications" },
+    vibrate: [200, 100, 200]
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -75,22 +76,18 @@ self.addEventListener("notificationclick", (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
-      // Find a window that is already open
       let matchingClient = null;
       for (let i = 0; i < windowClients.length; i++) {
         const windowClient = windowClients[i];
         if (windowClient.url.includes(self.location.origin)) {
           matchingClient = windowClient;
-          // If exact match, we prefer this one
           if (windowClient.url === urlToOpen) break;
         }
       }
 
       if (matchingClient) {
-        // If a window is already open, focus it and navigate to the target URL
         return matchingClient.focus().then(() => matchingClient.navigate(urlToOpen));
       } else {
-        // Otherwise open a new window
         return clients.openWindow(urlToOpen);
       }
     })
