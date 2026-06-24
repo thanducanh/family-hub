@@ -303,7 +303,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   }, [user]);
   const [mobileShowMembers, setMobileShowMembers] = useState(false);
   
-  const unreadNotificationsCount = notifications.filter(n => !n.read && !(n as any).readAt && !(n as any).isRead).length;
+  const unreadNotificationsCount = notifications.filter(n => !(n as any).readAt).length;
 
   useEffect(() => {
     if (typeof navigator !== 'undefined' && 'setAppBadge' in navigator) {
@@ -621,7 +621,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
     screen === "chat" ? <ComingSoonModule title={t("chat")} /> :
     screen === "calendar" ? <Calendar data={data} user={user} /> :
     screen === "notes" ? <Notes data={data} open={setEditor} t={t} /> :
-    screen === "notifications" ? <NotificationsView user={user} notifications={notifications} setNotifications={setNotifications} /> :
+    screen === "notifications" ? <NotificationsView user={user} notifications={notifications} setNotifications={setNotifications} go={go} /> :
     screen === "system" ? <MobileSystemScreen go={go} user={user} /> :
     (
       <>
@@ -680,7 +680,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
         <label className={`relative w-full max-w-md ${screen === "finance" ? "hidden md:block" : "block"}`}><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
         <div className="relative ml-auto flex items-center gap-1 md:gap-2">
           <button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="hidden md:grid size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><ThemeIcon dark={theme === "dark"} /></button>
-          <button aria-label="Thông báo" onClick={() => go("notifications")} className="hidden md:grid relative size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><BellIcon />{notifications.some(item => (!item.read && !(item as any).readAt && !(item as any).isRead)) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => (!item.read && !(item as any).readAt && !(item as any).isRead)).length}</span>}</button>
+          <button aria-label="Thông báo" onClick={() => go("notifications")} className="hidden md:grid relative size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><BellIcon />{notifications.some(item => !(item as any).readAt) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => !(item as any).readAt).length}</span>}</button>
           <button aria-label="Mở menu tài khoản" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(open => !open)} className="hidden md:flex items-center gap-1 rounded-full p-1 text-left hover:bg-slate-50 dark:hover:bg-white/5 md:gap-2">
             <span className="grid size-9 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm md:size-10"><AccountAvatar user={headerUser} /></span><span className="max-w-24 truncate text-sm font-medium hidden sm:block md:max-w-32">{headerUser.displayName}</span><span className="hidden sm:block"><ChevronDownIcon /></span>
           </button>
@@ -2472,7 +2472,7 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
         <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
           {notifications.length ? (
             notifications.slice(0, 5).map(item => {
-              const unread = (!item.read && !(item as any).readAt && !(item as any).isRead);
+              const unread = !(item as any).readAt;
               return (
                 <div key={item.id} className={`p-2.5 rounded-xl border border-[var(--app-border)] text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${unread ? "bg-orange-50/40 dark:bg-orange-400/5 font-semibold" : ""}`} onClick={() => go("notifications")}>
                   <div className="flex justify-between items-start gap-2">
@@ -2502,7 +2502,7 @@ function CategoryChart({ data }: { data: [string, number][] }) {
   const colors = ["bg-rose-400", "bg-orange-400", "bg-violet-400", "bg-sky-400", "bg-emerald-400"];
   return <Card className="p-5"><b>Chi tiêu theo danh mục</b>{total ? <><div className="mt-4 flex h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">{data.map(([label, value], index) => <span key={label} className={`h-full ${colors[index % colors.length]}`} style={{ width: `${value / total * 100}%` }} />)}</div><div className="mt-4 space-y-3">{data.slice(0, 5).map(([label, value], index) => <div key={label} className="flex justify-between text-xs"><span><i className={`mr-2 inline-block size-2 rounded-full ${colors[index % colors.length]}`} />{label}</span><b>{money(value)}</b></div>)}</div></> : <div className="mt-5">Chưa có dữ liệu</div>}</Card>; }
 function CompletionChart({ value, done, total }: { value: number; done: number; total: number }) { return <Card className="p-5"><div className="flex items-center justify-between"><b>Tỷ lệ hoàn thành công việc</b><b className="text-[var(--app-success,theme(colors.emerald.500))]">{value}%</b></div><div className="mt-8 grid place-items-center"><div className="grid size-36 place-items-center rounded-full bg-[var(--app-metric-bg,theme(colors.emerald.50))] text-3xl font-bold text-[var(--app-success,theme(colors.emerald.500))] ring-8 ring-[var(--app-metric-bg,theme(colors.emerald.100))] dark:bg-[var(--app-metric-bg-dark,theme(colors.emerald.400/10))] dark:ring-[var(--app-metric-bg-dark,theme(colors.emerald.400/20))]">{value}%</div></div><p className="mt-8 text-center text-xs text-[var(--app-muted,theme(colors.slate.400))]">{total ? `${done}/${total} công việc đã hoàn thành` : "Chưa có dữ liệu công việc"}</p></Card>; }
-function NotificationsView({ user, notifications, setNotifications }: { user: AuthUser; notifications: any[]; setNotifications: React.Dispatch<React.SetStateAction<any[]>> }) {
+function NotificationsView({ user, notifications, setNotifications, go }: { user: AuthUser; notifications: any[]; setNotifications: React.Dispatch<React.SetStateAction<any[]>>; go: (s: Screen) => void }) {
   const [permissionState, setPermissionState] = useState<string>("default");
 
   useEffect(() => {
@@ -2540,34 +2540,57 @@ function NotificationsView({ user, notifications, setNotifications }: { user: Au
 
   const markAllAsRead = async () => {
     const now = new Date().toISOString();
-    const updated = notifications.map(n => ({ ...n, read: true, isRead: true, readAt: now }));
+    const updated = notifications.map(n => ({ ...n, read: true, isRead: true, readAt: n.readAt || now }));
     setNotifications(updated);
     
-    // Save to local storage
     const uid = user?.id || user?.memberId || "guest";
     const key = `familyHubNotifications:${uid}`;
     localStorage.setItem(key, JSON.stringify(updated));
 
-    // Try API
     try {
       await fetch("/api/notifications/mark-read", { method: "PATCH", headers: { "Content-Type": "application/json" } });
     } catch (e) {}
   };
 
+  const markNotificationRead = async (item: any) => {
+    if (!item.readAt) {
+      const now = new Date().toISOString();
+      const updated = notifications.map(n => n.id === item.id ? { ...n, read: true, isRead: true, readAt: now } : n);
+      setNotifications(updated);
+      
+      const uid = user?.id || user?.memberId || "guest";
+      const key = `familyHubNotifications:${uid}`;
+      localStorage.setItem(key, JSON.stringify(updated));
+
+      try {
+        await fetch(`/api/notifications/${item.id}/read`, { method: "PATCH", headers: { "Content-Type": "application/json" } });
+      } catch (e) {}
+    }
+    if (item.actionUrl) {
+       try {
+         const url = new URL(item.actionUrl, window.location.origin);
+         const screen = url.searchParams.get("screen");
+         if (screen) {
+           go(screen as any);
+         }
+       } catch (e) {}
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-[#F8F5F2]">
       <div className="flex items-center justify-between px-4 py-3 bg-[#FFFFFF] border-b border-[#E8DCD5] shrink-0 sticky top-0 z-10 shadow-sm">
-        <h2 className="text-[16px] md:text-lg font-bold text-[#800020] tracking-tight">Thông báo</h2>
-        {notifications.some(n => !n.read && !(n as any).readAt && !(n as any).isRead) && (
-          <button onClick={markAllAsRead} className="px-3 py-1.5 text-[11px] font-bold text-[#800020] border border-[#D4AF37] rounded-full hover:bg-[#D4AF37] hover:text-white transition-colors">
+        <h2 className="text-[16px] font-bold text-[#800020] tracking-tight">Thông báo</h2>
+        {notifications.some(n => !(n as any).readAt) && (
+          <button onClick={markAllAsRead} className="h-[34px] px-[12px] text-[13px] font-bold text-[#800020] border border-[#D4AF37] rounded-full hover:bg-[#D4AF37] hover:text-white transition-colors">
             Đánh dấu đã đọc
           </button>
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-2.5 pb-24">
+      <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-2">
         {permissionState !== "granted" && (
-          <div className="p-3 mb-4 rounded-xl border border-[#D4AF37]/30 bg-[#FFFDF5] shadow-sm flex items-center justify-between gap-3">
+          <div className="p-3 mb-2 rounded-[12px] border border-[#D4AF37]/30 bg-[#FFFDF5] shadow-sm flex items-center justify-between gap-3">
             <p className="text-[12px] text-[#6B5E64] font-medium leading-tight">
               Bật thông báo thiết bị để nhận nhắc lịch và tin tức mới nhất.
             </p>
@@ -2579,30 +2602,34 @@ function NotificationsView({ user, notifications, setNotifications }: { user: Au
         
         {notifications.length ? (
           notifications.map(item => {
-            const unread = !item.read && !(item as any).readAt && !(item as any).isRead;
+            const unread = !(item as any).readAt;
             return (
-              <div key={item.id} className={`p-3 rounded-[12px] border ${unread ? 'bg-[#F8E7EC] border-[#E8DCD5]' : 'bg-[#FFFFFF] border-[#E8DCD5]'} shadow-sm flex gap-3 transition-colors`}>
-                <div className="size-[34px] rounded-full bg-[#800020] shrink-0 flex items-center justify-center shadow-inner">
-                  <svg className="size-4 stroke-[#D4AF37] stroke-2 fill-none" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+              <div 
+                key={item.id} 
+                onClick={() => markNotificationRead(item)}
+                className={`p-[10px] rounded-[12px] border cursor-pointer ${unread ? 'bg-[#F8E7EC] border-[#E8DCD5]' : 'bg-[#FFFFFF] border-[#E8DCD5]'} shadow-[0_2px_8px_rgba(128,0,32,0.04)] flex gap-3 transition-colors`}
+              >
+                <div className={`size-[32px] rounded-full bg-[#800020] shrink-0 flex items-center justify-center shadow-inner ${unread ? '' : 'opacity-80'}`}>
+                  <svg className="size-[14px] stroke-[#D4AF37] stroke-2 fill-none" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] bg-[#800020] text-white rounded-full px-1.5 py-0.5 font-bold uppercase tracking-wider">{item.module || item.type || "Hệ thống"}</span>
-                    {unread && <span className="size-2 rounded-full bg-[#E11D48] shrink-0" />}
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className={`text-[9px] bg-[#800020] text-white rounded-full px-1.5 py-0.5 font-bold uppercase tracking-wider ${unread ? '' : 'opacity-80'}`}>{item.module || item.type || "Hệ thống"}</span>
+                    {unread && <span className="size-[7px] rounded-full bg-[#E11D48] shrink-0" />}
                   </div>
-                  <h3 className="font-semibold text-[13px] md:text-[14px] text-[#171018] leading-snug mb-1">{item.title}</h3>
-                  <p className="text-[#6B5E64] text-[12px] leading-relaxed line-clamp-2">{item.message}</p>
-                  <p className="text-[11px] text-[#6B5E64]/70 mt-1 font-medium">{new Date(item.createdAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}</p>
+                  <h3 className="font-semibold text-[13px] text-[#171018] leading-tight mb-0.5">{item.title}</h3>
+                  <p className="text-[#6B5E64] text-[11px] leading-snug line-clamp-2">{item.message}</p>
+                  <p className="text-[10px] text-[#6B5E64]/70 mt-1 font-medium">{new Date(item.createdAt).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}</p>
                 </div>
               </div>
             );
           })
         ) : (
-          <div className="py-12 flex flex-col items-center justify-center text-[#6B5E64] bg-[#FFFFFF] rounded-[12px] border border-[#E8DCD5] shadow-sm">
-            <div className="size-12 rounded-full bg-[#E8DCD5]/50 flex items-center justify-center mb-3">
-              <svg className="size-6 stroke-[#800020] stroke-[1.5] fill-none opacity-50" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <div className="py-10 flex flex-col items-center justify-center text-[#6B5E64] bg-[#FFFFFF] rounded-[12px] border border-[#E8DCD5] shadow-sm">
+            <div className="size-10 rounded-full bg-[#E8DCD5]/50 flex items-center justify-center mb-2">
+              <svg className="size-5 stroke-[#800020] stroke-[1.5] fill-none opacity-50" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
             </div>
-            <p className="text-[14px] font-bold text-[#171018]">Chưa có thông báo</p>
+            <p className="text-[13px] font-bold text-[#171018]">Chưa có thông báo</p>
           </div>
         )}
       </div>
@@ -7287,39 +7314,41 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
         {activeTab === "tong-quan" && (
            <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
              <div className="grid grid-cols-2 gap-3">
-               <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-3 shadow-sm">
-                 <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Tổng thu</p>
-                 <p className="text-[15px] font-bold text-[#059669]">{money(currentSummary.incomeTotal)}</p>
+               <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-xl p-3 shadow-[0_2px_8px_rgba(128,0,32,0.04)]">
+                 <p className="text-[11px] text-[#6B5E64] font-medium mb-1 uppercase tracking-wider">Tổng thu</p>
+                 <p className="text-[14px] font-bold text-[#059669] truncate">{money(currentSummary.incomeTotal)}</p>
                </div>
-               <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-3 shadow-sm">
-                 <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Tổng chi</p>
-                 <p className="text-[15px] font-bold text-[#E11D48]">{money(currentSummary.expenseTotal)}</p>
+               <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-xl p-3 shadow-[0_2px_8px_rgba(128,0,32,0.04)]">
+                 <p className="text-[11px] text-[#6B5E64] font-medium mb-1 uppercase tracking-wider">Tổng chi</p>
+                 <p className="text-[14px] font-bold text-[#E11D48] truncate">{money(currentSummary.expenseTotal)}</p>
                </div>
-               <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-3 shadow-sm">
-                 <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Tiết kiệm</p>
-                 <p className="text-[15px] font-bold text-[#D4AF37]">{money(currentSavings)}</p>
+               <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-xl p-3 shadow-[0_2px_8px_rgba(128,0,32,0.04)]">
+                 <p className="text-[11px] text-[#6B5E64] font-medium mb-1 uppercase tracking-wider">Tiết kiệm</p>
+                 <p className="text-[14px] font-bold text-[#D4AF37] truncate">{money(currentSavings)}</p>
                </div>
-               <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-3 shadow-sm">
-                 <p className="text-[12px] text-[#6B5E64] font-medium mb-1">Còn lại</p>
-                 <p className={`text-[15px] font-bold ${currentRemaining >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{money(currentRemaining)}</p>
+               <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-xl p-3 shadow-[0_2px_8px_rgba(128,0,32,0.04)]">
+                 <p className="text-[11px] text-[#6B5E64] font-medium mb-1 uppercase tracking-wider">Còn lại</p>
+                 <p className={`text-[14px] font-bold truncate ${currentRemaining >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{money(currentRemaining)}</p>
                </div>
              </div>
 
-             <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-sm overflow-hidden">
+             <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-xl p-4 shadow-[0_2px_8px_rgba(128,0,32,0.04)] overflow-hidden">
                <div className="mb-4 flex items-center justify-between text-[11px] font-bold text-[#6B5E64]">
-                 <span className="text-[14px] text-[#171018]">Biểu đồ 12 tháng</span>
+                 <span className="text-[13px] text-[#171018]">Biểu đồ 12 tháng</span>
                  <div className="flex gap-2">
                    <span><span className="text-[#059669]">■</span> Thu</span>
                    <span><span className="text-[#E11D48]">■</span> Chi</span>
+                   <span><span className="text-[#D4AF37]">■</span> TK</span>
                  </div>
                </div>
                <div className="overflow-x-auto no-scrollbar pb-2">
-                 <div className="min-w-[400px] grid h-32 grid-cols-12 items-end gap-2">
+                 <div className="min-w-[460px] grid h-32 grid-cols-12 items-end gap-2">
                    {overview12Months.map(item => (
                      <div key={item.month} className="flex flex-col items-center justify-end h-full">
-                       <div className="flex items-end justify-center gap-[2px] w-full h-[100px]">
-                         <span className="w-1/2 max-w-[12px] rounded-t-sm bg-[#059669]" style={{ height: `${item.Thu ? Math.max(2, (item.Thu / overviewChartMax) * 100) : 0}%` }} title={`Thu: ${money(item.Thu)}`} />
-                         <span className="w-1/2 max-w-[12px] rounded-t-sm bg-[#E11D48]" style={{ height: `${item.Chi ? Math.max(2, (item.Chi / overviewChartMax) * 100) : 0}%` }} title={`Chi: ${money(item.Chi)}`} />
+                       <div className="flex items-end justify-center gap-[1px] w-full h-[100px]">
+                         <span className="flex-1 max-w-[8px] rounded-t-sm bg-[#059669]" style={{ height: `${item.Thu ? Math.max(2, (item.Thu / overviewChartMax) * 100) : 0}%` }} title={`Thu: ${money(item.Thu)}`} />
+                         <span className="flex-1 max-w-[8px] rounded-t-sm bg-[#E11D48]" style={{ height: `${item.Chi ? Math.max(2, (item.Chi / overviewChartMax) * 100) : 0}%` }} title={`Chi: ${money(item.Chi)}`} />
+                         <span className="flex-1 max-w-[8px] rounded-t-sm bg-[#D4AF37]" style={{ height: `${item.TietKiem ? Math.max(2, (item.TietKiem / overviewChartMax) * 100) : 0}%` }} title={`TK: ${money(item.TietKiem)}`} />
                        </div>
                        <span className="mt-2 text-[10px] font-semibold text-[#6B5E64]">T{item.month}</span>
                      </div>
@@ -7328,17 +7357,24 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
                </div>
              </div>
 
-             <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-[16px] p-4 shadow-sm">
-               <h2 className="font-bold text-[15px] text-[#171018] mb-3">Danh sách tháng</h2>
-               <div className="space-y-2">
+             <div>
+               <h2 className="font-bold text-[14px] text-[#171018] mb-3 ml-1">Danh sách tháng</h2>
+               <div className="space-y-3">
                  {overview12Months.map(item => (
-                   <div key={item.month} className="flex justify-between items-center py-2 border-b border-[#F8F5F2] last:border-0">
-                     <span className="font-bold text-[13px] text-[#6B5E64] w-10">T{item.month}</span>
-                     <div className="flex-1 grid grid-cols-3 text-right text-[12px] font-semibold">
-                       <span className="text-[#059669]">{item.Thu > 0 ? money(item.Thu) : "-"}</span>
-                       <span className="text-[#E11D48]">{item.Chi > 0 ? money(item.Chi) : "-"}</span>
-                       <span className={item.ConLai >= 0 ? "text-[#059669]" : "text-[#E11D48]"}>{money(item.ConLai)}</span>
+                   <div key={item.month} className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-xl p-3 shadow-[0_2px_8px_rgba(128,0,32,0.04)]">
+                     <div className="flex justify-between items-center mb-2 border-b border-[#F8F5F2] pb-2">
+                       <span className="font-bold text-[14px] text-[#171018]">T{item.month}</span>
+                       <span className={`font-bold text-[13px] ${item.ConLai >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>Còn lại: {money(item.ConLai)}</span>
                      </div>
+                     {item.Thu === 0 && item.Chi === 0 && item.TietKiem === 0 ? (
+                       <div className="text-[12px] text-[#6B5E64] italic">Chưa có dữ liệu</div>
+                     ) : (
+                       <div className="grid grid-cols-3 gap-2 text-center text-[12px] font-semibold">
+                         <div><p className="text-[#6B5E64] font-normal mb-1">Thu</p><p className="text-[#059669] truncate">{money(item.Thu)}</p></div>
+                         <div><p className="text-[#6B5E64] font-normal mb-1">Chi</p><p className="text-[#E11D48] truncate">{money(item.Chi)}</p></div>
+                         <div><p className="text-[#6B5E64] font-normal mb-1">TK</p><p className="text-[#D4AF37] truncate">{money(item.TietKiem)}</p></div>
+                       </div>
+                     )}
                    </div>
                  ))}
                </div>
@@ -8503,7 +8539,7 @@ function MobileHome({
   const sameMonth = (value: string) => { const date = parseDate(value, now); return Boolean(date && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()); };
   const todayTasks = toArray<Task>(data.tasks).filter(task => isDueToday(task, now)).length;
   const todayEvents = toArray<EventItem>(data.events).filter(event => sameDay(event.date)).length;
-  const unread = notifications.filter(item => (!item.read && !(item as any).readAt && !(item as any).isRead)).length;
+  const unread = notifications.filter(item => !(item as any).readAt).length;
   
   const actions = [
     ["Thành viên", <UsersIcon />, () => setShowMembers(true)], ["Lịch", <CalendarIcon />, () => go("calendar")], ["Thu chi", <WalletIcon />, () => go("finance")],
