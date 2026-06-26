@@ -109,6 +109,11 @@ function addDays(value: string, days: number) {
   date.setDate(date.getDate() + days);
   return iso(date);
 }
+
+let __timetreeCalendarCache: {
+  calendars?: Calendar[];
+  eventsByMonth: Record<string, CalendarEvent[]>;
+} = { eventsByMonth: {} };
 function monthCells(anchor: Date) {
   const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const start = new Date(first);
@@ -448,7 +453,18 @@ export function TimeTreeCalendar({ members, user, t, onSaveEvent }: { members: M
   const selectedEvents = useMemo(() => visibleEvents.filter(item => item.startDate === selectedDate).sort(sortEvents), [selectedDate, visibleEvents]);
   const agendaEvents = useMemo(() => visibleEvents.filter(item => item.startDate >= iso(new Date(anchor.getFullYear(), anchor.getMonth(), 1)) && item.startDate <= iso(new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0))).sort(sortEvents), [anchor, visibleEvents]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    const monthKey = `${anchor.getMonth() + 1}-${anchor.getFullYear()}`;
+    if (!force && __timetreeCalendarCache.calendars && __timetreeCalendarCache.eventsByMonth[monthKey]) {
+      const nextCalendars = __timetreeCalendarCache.calendars;
+      const nextEvents = __timetreeCalendarCache.eventsByMonth[monthKey];
+      setCalendars(nextCalendars);
+      setEvents(nextEvents);
+      setEnabled(current => current.length ? current.filter(id => nextCalendars.some(calendar => calendar.id === id)) : nextCalendars.map(calendar => calendar.id));
+      setError("");
+      return;
+    }
+
     const [calendarResponse, eventResponse] = await Promise.all([
       fetch("/api/calendars", { cache: "no-store" }),
       fetch(`/api/events?month=${anchor.getMonth() + 1}&year=${anchor.getFullYear()}`, { cache: "no-store" })
@@ -460,8 +476,13 @@ export function TimeTreeCalendar({ members, user, t, onSaveEvent }: { members: M
       return;
     }
     const nextCalendars = calendarResult?.data || [];
+    const nextEvents = eventResult?.data || [];
+    
+    __timetreeCalendarCache.calendars = nextCalendars;
+    __timetreeCalendarCache.eventsByMonth[monthKey] = nextEvents;
+
     setCalendars(nextCalendars);
-    setEvents(eventResult?.data || []);
+    setEvents(nextEvents);
     setEnabled(current => current.length ? current.filter(id => nextCalendars.some(calendar => calendar.id === id)) : nextCalendars.map(calendar => calendar.id));
     setError("");
   }, [anchor]);
@@ -629,6 +650,9 @@ async function pushAppNotification(notif: any, user: any) {
       console.warn("[saveEvent] API unavailable, saving local fallback", error);
       persistLocalEvent(eventToSave);
     }
+    
+    // Clear cache to force refetch next time
+    __timetreeCalendarCache.eventsByMonth = {};
 
     setDraft(null);
     setSelectedDate(draft.startDate);
@@ -669,7 +693,8 @@ async function pushAppNotification(notif: any, user: any) {
     setDetail(null);
     setDraft(null);
     setLocalEvents(prev => prev.filter(e => e.id !== item.id));
-    await load();
+    __timetreeCalendarCache.eventsByMonth = {};
+    await load(true);
     
     // Notification
     const msg = `${user?.displayName || "Ai đó"} đã xóa sự kiện lịch "${item.title}"`;
@@ -701,7 +726,8 @@ async function pushAppNotification(notif: any, user: any) {
       return;
     }
     setDetail(null);
-    await load();
+    __timetreeCalendarCache.eventsByMonth = {};
+    await load(true);
   }
 
   const gridLayoutClass = ""; // Not used anymore

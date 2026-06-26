@@ -59,6 +59,8 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
   if (collection === "tasks") return { ...item, member_id: item.memberId || null, due_date_ui: toDatabaseDate(item.dueDate) };
   if (collection === "transactions") {
     const paymentAccountId = item.paymentAccountId || item.payment_account_id || item.bankAccountId || item.bank_account_id || null;
+    const metadata = asRecord(item.metadata);
+    const simId = item.simId || item.sim_id || item.linkedSimId || item.linked_sim_id || metadata.simId || metadata.linkedSimId || metadata.sim_id || metadata.linked_sim_id || null;
     const savingsApplied = String(item.category || "") === "Tiết kiệm" && String(item.type || "") === "expense";
     
     let counts_for_personal_expense = item.countsForPersonalExpense ?? item.counts_for_personal_expense ?? true;
@@ -85,7 +87,7 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
       transaction_time: item.transactionTime || item.transaction_time || null, 
       bank_account_id: paymentAccountId, 
       payment_account_id: paymentAccountId, 
-      sim_id: item.simId || item.sim_id || null, 
+      sim_id: simId, 
       sim_topup_applied: Boolean(item.simTopupApplied || item.sim_topup_applied), 
       savings_applied: Boolean(item.savingsApplied || item.savings_applied || savingsApplied), 
       savings_holder: item.savingsHolder || item.savings_holder || item.subcategory || null, 
@@ -136,6 +138,45 @@ function fromDb(collection: Collection, item: Record<string, unknown>) {
   return item;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function firstPresent(...values: unknown[]) {
+  return values.find(value => value !== undefined && value !== null && String(value) !== "");
+}
+
+function compactText(value: unknown) {
+  return String(value || "").toLowerCase().replace(/\s+/g, "").replace(/-/g, "/");
+}
+
+function transactionSimId(row: Record<string, unknown>) {
+  const metadata = asRecord(row.metadata);
+  return firstPresent(row.sim_id, row.simId, row.linkedSimId, row.linked_sim_id, metadata.simId, metadata.linkedSimId, metadata.sim_id, metadata.linked_sim_id);
+}
+
+function transactionAmount(row: Record<string, unknown>) {
+  return Number(firstPresent(row.actual_amount, row.netAmount, row.net_amount, row.amount, row.gross_amount, 0) || 0);
+}
+
+function transactionPaidDate(row: Record<string, unknown>) {
+  return firstPresent(row.transaction_date, row.transactionDate, row.expense_date, row.date, row.created_at);
+}
+
+function transactionNote(row: Record<string, unknown>) {
+  return String(firstPresent(row.title, row.name, row.content, row.description, row.note, "") || "");
+}
+
 function toDatabaseDate(value: unknown) {
   if (typeof value !== "string" || !value) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -184,10 +225,35 @@ function isSavingsExpense(row: Record<string, unknown>) {
   return String(row.type || "") === "expense" && String(row.category || "") === "Tiết kiệm";
 }
 
+function isSimDataExpense(row: Record<string, unknown>) {
+  return String(row.type || "") === "expense" && String(row.category || "") === "Sinh hoạt" && String(row.subcategory || "") === "SIM / Data";
+}
+
+function isSimDataExpenseFlexible(row: Record<string, unknown>) {
+  if (compactText(row.type) !== "expense") return false;
+  const detail = compactText(firstPresent(row.detail, row.subcategory, row.categoryDetail, row.category_detail, row.category));
+  return detail === "sim/data" || detail === "simdata";
+}
+
 function yearMonthFromDate(value: unknown) {
   const date = toDatabaseDate(value) || todayDateOnly();
   const [year, month] = date.split("-").map(Number);
   return { date, year, month };
+}
+
+function addDaysToDateOnly(isoDate: string, days: number) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const date = new Date(y, m - 1, d + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function addMonthsToDateOnly(isoDate: string, months: number) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const monthIndex = (m - 1) + Math.max(1, Number(months || 1));
+  const year = y + Math.floor(monthIndex / 12);
+  const month = (monthIndex % 12) + 1;
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(Math.min(d, lastDay)).padStart(2, "0")}`;
 }
 
 async function removeLinkedSavingsForTransaction(transactionId: string) {
@@ -289,6 +355,68 @@ function todayDateOnly() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
+async function removeSimPaymentForTransaction(transactionId: string) {
+  await pool.query("DELETE FROM sim_monthly_payments WHERE transaction_id = $1", [transactionId]);
+}
+
+async function syncSimPaymentForTransaction(row: Record<string, unknown>) {
+  const transactionId = String(row.id || "");
+  if (!transactionId) return row;
+  const simId = transactionSimId(row);
+  
+  if (!simId || !isSimDataExpenseFlexible(row)) {
+    await removeSimPaymentForTransaction(transactionId);
+    return row;
+  }
+
+  const amount = transactionAmount(row);
+  if (amount <= 0) {
+    await removeSimPaymentForTransaction(transactionId);
+    return row;
+  }
+
+  const { date, year, month } = yearMonthFromDate(transactionPaidDate(row));
+  
+  const simQuery = await pool.query("SELECT phone_number, plan_name, monthly_fee, renewal_months FROM member_sims WHERE id = $1", [simId]);
+  const sim = simQuery.rows[0];
+  if (!sim) {
+    await removeSimPaymentForTransaction(transactionId);
+    return row;
+  }
+
+  const planFee = Number(sim.monthly_fee || 0);
+  const billingCycleMonths = Math.max(1, Number(sim.renewal_months || 1));
+  const coverageStartDate = date;
+  const coverageEndDate = addDaysToDateOnly(addMonthsToDateOnly(date, billingCycleMonths), -1);
+
+  const existingQuery = await pool.query("SELECT id, transaction_id FROM sim_monthly_payments WHERE sim_id = $1 AND year = $2 AND month = $3", [simId, year, month]);
+  const existing = existingQuery.rows[0];
+
+  const note = transactionNote(row);
+
+  if (existing) {
+    if (existing.transaction_id && existing.transaction_id !== transactionId) {
+      console.warn(`SIM payment for this month already linked to another transaction, updating existing payment.`);
+    }
+    await pool.query(
+      `UPDATE sim_monthly_payments 
+       SET transaction_id = $1, amount = $2, topup_amount = $2, plan_fee = $3, paid_date = $4, plan_name = $5, note = $6, billing_cycle_months = $7, coverage_start_date = $8, coverage_end_date = $9, updated_at = now() 
+       WHERE id = $10`,
+      [transactionId, amount, planFee, date, sim.plan_name, note, billingCycleMonths, coverageStartDate, coverageEndDate, existing.id]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO sim_monthly_payments (sim_id, phone_number, month, year, plan_name, amount, topup_amount, plan_fee, billing_cycle_months, coverage_start_date, coverage_end_date, paid_date, status, note, transaction_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11, 'paid', $12, $13)`,
+      [simId, sim.phone_number, month, year, sim.plan_name, amount, planFee, billingCycleMonths, coverageStartDate, coverageEndDate, date, note, transactionId]
+    );
+  }
+  
+  await pool.query("DELETE FROM sim_monthly_payments WHERE transaction_id = $1 AND (sim_id != $2 OR year != $3 OR month != $4)", [transactionId, simId, year, month]);
+  
+  return row;
+}
+
 export function collectionHandlers(collection: Collection) {
   const fields = columns[collection];
   return {
@@ -319,15 +447,23 @@ export function collectionHandlers(collection: Collection) {
     POST: async (request: NextRequest) => {
       if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
       await ensureCollectionSchema(collection);
-      const item = toDb(collection, await request.json());
+      const payload = await request.json();
+      if (collection === "transactions") {
+        console.log("[SIM_SYNC_DEBUG] transaction payload", payload);
+        console.log("[SIM_SYNC_DEBUG] simId", payload.sim_id || payload.simId || payload.linkedSimId || payload.linked_sim_id);
+        console.log("[SIM_SYNC_DEBUG] detail", payload.detail || payload.subcategory || payload.categoryDetail || payload.category_detail);
+      }
+      const item = toDb(collection, payload);
       const values = fields.map(field => item[field] ?? null);
       const params = fields.map((_, index) => `$${index + 1}`).join(", ");
       const updates = fields.filter(field => field !== "id").map(field => `${field} = EXCLUDED.${field}`).join(", ");
       const result = await pool.query(`INSERT INTO ${collection} (${fields.join(", ")}) VALUES (${params}) ON CONFLICT (id) DO UPDATE SET ${updates} RETURNING ${fields.join(", ")}`, values);
+      if (collection === "transactions") console.log("[SIM_SYNC_DEBUG] transaction result", result.rows[0]);
       if (collection === "transactions") {
         await revertSimTopupForTransaction(String(result.rows[0].id));
         await applySimTopupForTransaction(result.rows[0]);
         await syncSavingsForTransaction(result.rows[0]);
+        await syncSimPaymentForTransaction(result.rows[0]);
         const synced = await fetchTransactionRow(String(result.rows[0].id), fields);
         if (synced) return NextResponse.json(fromDb(collection, synced), { status: 201 });
       }
@@ -336,15 +472,23 @@ export function collectionHandlers(collection: Collection) {
     PUT: async (request: NextRequest) => {
       if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
       await ensureCollectionSchema(collection);
-      const item = toDb(collection, await request.json());
+      const payload = await request.json();
+      if (collection === "transactions") {
+        console.log("[SIM_SYNC_DEBUG] transaction payload", payload);
+        console.log("[SIM_SYNC_DEBUG] simId", payload.sim_id || payload.simId || payload.linkedSimId || payload.linked_sim_id);
+        console.log("[SIM_SYNC_DEBUG] detail", payload.detail || payload.subcategory || payload.categoryDetail || payload.category_detail);
+      }
+      const item = toDb(collection, payload);
       const values = fields.map(field => item[field] ?? null);
       const params = fields.map((_, index) => `$${index + 1}`).join(", ");
       const updates = fields.filter(field => field !== "id").map(field => `${field} = EXCLUDED.${field}`).join(", ");
       if (collection === "transactions" && item.id) await revertSimTopupForTransaction(String(item.id));
       const result = await pool.query(`INSERT INTO ${collection} (${fields.join(", ")}) VALUES (${params}) ON CONFLICT (id) DO UPDATE SET ${updates} RETURNING ${fields.join(", ")}`, values);
+      if (collection === "transactions") console.log("[SIM_SYNC_DEBUG] transaction result", result.rows[0]);
       if (collection === "transactions") {
         await applySimTopupForTransaction(result.rows[0]);
         await syncSavingsForTransaction(result.rows[0]);
+        await syncSimPaymentForTransaction(result.rows[0]);
         const synced = await fetchTransactionRow(String(result.rows[0].id), fields);
         if (synced) return NextResponse.json(fromDb(collection, synced));
       }
@@ -357,6 +501,7 @@ export function collectionHandlers(collection: Collection) {
       if (collection === "transactions") {
         await revertSimTopupForTransaction(id);
         await removeLinkedSavingsForTransaction(id);
+        await removeSimPaymentForTransaction(id);
       }
       await pool.query(`DELETE FROM ${collection} WHERE id = $1`, [id]);
       return NextResponse.json({ ok: true });

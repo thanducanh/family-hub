@@ -1874,20 +1874,98 @@ function MobileBankForm({ account, close, save, loading, error, inputClass }: an
 export function MobileSimSheet({ member, close }: { member?: Member | null; close: () => void }) {
   const ui = useUI();
   const [data, setData] = useState<any[] | null>(null);
-  const [view, setView] = useState<"list" | "detail" | "form">("list");
+  const [view, setView] = useState<"list" | "detail" | "form" | "payment-form" | "link-transaction" | "change-plan">("list");
   const [selected, setSelected] = useState<any | null>(null);
+  const [paymentSelected, setPaymentSelected] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
+  const [payments, setPayments] = useState<any[] | null>(null);
+  const [linkableTransactions, setLinkableTransactions] = useState<any[] | null>(null);
+  const inputClass = "h-12 w-full min-w-0 max-w-full rounded-xl border border-[#E8DCD5] bg-white px-3 text-sm outline-none focus:border-[#D4AF37] text-[#171018]";
+  const cycleMonths = (sim: any) => Math.max(1, Number(sim?.renewalMonths || sim?.renewal_months || 1));
+  const cycleType = (sim: any) => String(sim?.billingCycleType || sim?.billing_cycle_type || (cycleMonths(sim) === 6 ? "six_months" : cycleMonths(sim) === 3 ? "three_months" : cycleMonths(sim) === 12 ? "yearly" : "monthly"));
+  const cycleLabel = (months: number, type?: string) => type === "yearly" || months === 12 ? "năm" : type === "none" ? "không gia hạn" : months === 1 ? "tháng" : `${months} tháng`;
+  const planPriceLabel = (sim: any) => `${money(Number(sim?.monthlyFee || sim?.monthly_fee || 0))}/${cycleLabel(cycleMonths(sim), cycleType(sim))}`;
+  const paymentCycleLabel = (payment: any) => `${money(Number(payment?.plan_fee || payment?.planFee || 0))}/${cycleLabel(Math.max(1, Number(payment?.billing_cycle_months || payment?.billingCycleMonths || 1)))}`;
+  const isoDate = (value: unknown) => String(value || "").slice(0, 10);
+  const formatIsoDate = (value: unknown) => {
+    const iso = isoDate(value);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return "";
+    const [y, m, d] = iso.split("-");
+    return `${d}/${m}/${y}`;
+  };
+  const inCoverage = (payment: any, year: number, month: number) => {
+    const start = isoDate(payment.coverage_start_date || payment.coverageStartDate || payment.paid_date || payment.paidDate);
+    const end = isoDate(payment.coverage_end_date || payment.coverageEndDate || payment.renew_date || payment.renewDate);
+    if (!start || !end) return false;
+    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+    const monthEnd = new Date(year, month, 0);
+    const monthEndIso = `${monthEnd.getFullYear()}-${String(monthEnd.getMonth() + 1).padStart(2, "0")}-${String(monthEnd.getDate()).padStart(2, "0")}`;
+    return start <= monthEndIso && end >= monthStart;
+  };
+  const compact = (value: unknown) => String(value || "").toLowerCase().replace(/\s+/g, "").replace(/-/g, "/");
+  const transactionSimId = (item: any) => item?.simId || item?.sim_id || item?.linkedSimId || item?.linked_sim_id || item?.metadata?.simId || item?.metadata?.linkedSimId || "";
+  const transactionDate = (item: any) => item?.transaction_date || item?.transactionDate || item?.expense_date || item?.date || item?.created_at || "";
+  const isSimDataTransaction = (item: any) => compact(item?.type) === "expense" && ["sim/data", "simdata"].includes(compact(item?.detail || item?.subcategory || item?.categoryDetail || item?.category_detail || item?.category));
+  const transactionHasPayment = (item: any) => {
+    const txId = String(item?.id || "");
+    if (!txId) return false;
+    return (payments || []).some((payment: any) => String(payment.transactionId || payment.transaction_id || "") === txId);
+  };
 
   const load = useCallback(() => {
     fetch(`/api/member-sims`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => {
       const all = res?.data || [];
-      setData(member ? all.filter((x: any) => x.memberId === member.id || x.member_id === member.id) : all);
+      const userSims = member ? all.filter((x: any) => x.memberId === member.id || x.member_id === member.id) : all;
+      const map = new Map<string, any>();
+      for (const sim of userSims) {
+        const phone = (sim.phoneNumber || sim.phone_number || "").replace(/\D/g, "");
+        if (!phone) continue;
+        if (!map.has(phone)) {
+          map.set(phone, sim);
+        } else {
+          const current = map.get(phone);
+          if (sim.status === "active" && current.status !== "active") {
+            map.set(phone, sim);
+          } else if (sim.status === current.status) {
+            const tSim = new Date(sim.updatedAt || sim.createdAt || sim.updated_at || sim.created_at || 0).getTime();
+            const tCur = new Date(current.updatedAt || current.createdAt || current.updated_at || current.created_at || 0).getTime();
+            if (tSim > tCur) map.set(phone, sim);
+          }
+        }
+      }
+      setData(Array.from(map.values()));
     }).catch(() => setData([]));
   }, [member]);
 
   useEffect(() => { load(); }, [load]);
+
+  const [planHistory, setPlanHistory] = useState<any[] | null>(null);
+
+  const loadPayments = useCallback(() => {
+    if (selected?.id) {
+      fetch(`/api/sim-payments?simId=${encodeURIComponent(selected.id)}`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => setPayments(res?.data || [])).catch(() => setPayments([]));
+    } else {
+      setPayments([]);
+    }
+  }, [selected]);
+
+  const loadPlanHistory = useCallback(() => {
+    if (selected?.id) {
+      fetch(`/api/member-sims/${selected.id}/history`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => setPlanHistory(res?.data || [])).catch(() => setPlanHistory([]));
+    } else {
+      setPlanHistory([]);
+    }
+  }, [selected]);
+
+  useEffect(() => {
+    if (view === "detail" && selected) {
+      setPayments(null);
+      setPlanHistory(null);
+      loadPayments();
+      loadPlanHistory();
+    }
+  }, [view, selected, loadPayments, loadPlanHistory]);
 
   const save = async (payload: any) => {
     setLoading(true); setError("");
@@ -1902,13 +1980,99 @@ export function MobileSimSheet({ member, close }: { member?: Member | null; clos
     load();
   };
 
+  const savePayment = async (payload: any) => {
+    setLoading(true); setError("");
+    const isNew = !payload.id;
+    const method = isNew ? "POST" : "PUT";
+    
+    let submitPayload = { ...payload };
+    if (!payload.onlyHistory) {
+      // Create transaction if toggle is OFF and it's a NEW payment
+      if (isNew) {
+        const expense = { memberId: member?.id || selected.memberId || selected.member_id, date: payload.paidDate, category: "Sinh hoạt", subcategory: "SIM / Data", title: payload.note || "Thanh toán SIM/Data", amount: payload.amount, type: "expense", note: payload.note, paymentMethod: "cash", simId: selected.id, simTopupApplied: false, countsForPersonalExpense: true, countsForCardSpending: true };
+        const txRes = await fetch("/api/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
+        if (!txRes.ok) { setLoading(false); return setError("Không thể tạo khoản chi."); }
+        // API transactions will automatically sync to sim_monthly_payments, so we don't need to manually POST to sim-payments again!
+        setLoading(false);
+        ui.toast("Đã lưu thanh toán và khoản chi", "success");
+        setView("detail");
+        loadPayments();
+        return;
+      }
+    }
+
+    const response = await fetch("/api/sim-payments", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(submitPayload) });
+    const result = await readJsonSafe<{ ok?: boolean; error?: string }>(response);
+    setLoading(false);
+    if (!response.ok || !result?.ok) return setError(result?.error || "Lỗi lưu thanh toán.");
+    ui.toast("Đã lưu thanh toán", "success");
+    setView("detail");
+    loadPayments();
+  };
+
+  const removePayment = async (paymentId: string) => {
+    const payment = payments?.find(p => p.id === paymentId);
+    if (payment?.transaction_id) {
+      ui.toast("Khoản này liên kết với Thu chi. Vui lòng xóa giao dịch trong tab Thu chi để đồng bộ dữ liệu.", "error");
+      return;
+    }
+    if (!await ui.confirm("Xóa thanh toán?", "Bạn có chắc chắn muốn xóa bản ghi thanh toán này?")) return;
+    setLoading(true);
+    const response = await fetch(`/api/sim-payments?id=${paymentId}`, { method: "DELETE" });
+    setLoading(false);
+    if (!response.ok) return ui.toast("Lỗi khi xóa", "error");
+    ui.toast("Đã xóa thanh toán", "success");
+    loadPayments();
+  };
+
+  const loadLinkableTransactions = useCallback(() => {
+    setLinkableTransactions(null);
+    fetch("/api/transactions", { cache: "no-store" })
+      .then(r => readJsonSafe<any>(r))
+      .then(res => {
+        const rows = Array.isArray(res) ? res : (res?.data || []);
+        setLinkableTransactions(rows.filter((item: any) => {
+          if (!isSimDataTransaction(item)) return false;
+          const simId = String(transactionSimId(item) || "");
+          return !simId || (simId === String(selected?.id || "") && !transactionHasPayment(item));
+        }).map((item: any) => ({ ...item, _linkState: transactionSimId(item) ? "linked_missing_payment" : "unlinked" })));
+      })
+      .catch(() => setLinkableTransactions([]));
+  }, [payments, selected]);
+
+  const linkTransaction = async (transaction: any) => {
+    if (!selected?.id) return;
+    setLoading(true);
+    const response = await fetch("/api/transactions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...transaction, simId: selected.id, sim_id: selected.id }) });
+    setLoading(false);
+    if (!response.ok) return ui.toast("Không thể liên kết giao dịch cũ", "error");
+    ui.toast("Đã liên kết giao dịch với SIM/Data", "success");
+    setView("detail");
+    loadPayments();
+  };
+
+  const savePlanChange = async (payload: any) => {
+    if (!selected?.id) return;
+    setLoading(true); setError("");
+    const response = await fetch(`/api/member-sims/${selected.id}/plan-history`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const result = await readJsonSafe<{ ok?: boolean; data?: any; error?: string }>(response);
+    setLoading(false);
+    if (!response.ok || !result?.ok) return setError(result?.error || "KhÃ´ng thá»ƒ Ä‘á»•i gÃ³i.");
+    const saved = result.data || {};
+    setSelected((current: any) => ({ ...current, ...saved }));
+    ui.toast("ÄÃ£ Ä‘á»•i gÃ³i SIM/Data", "success");
+    setView("detail");
+    load();
+    loadPlanHistory();
+  };
+
   const remove = async (id: string) => {
-    if (!await ui.confirm("Xóa SIM/Data?", "Bạn có chắc chắn muốn xóa SIM này?")) return;
+    if (!await ui.confirm("Xóa SIM/Data?", "Bạn có chắc chắn muốn xóa SIM này? (Sẽ không xóa các thanh toán cũ)")) return;
     setLoading(true);
     const response = await fetch(`/api/member-sims/${id}`, { method: "DELETE" });
     setLoading(false);
     if (!response.ok) return ui.toast("Lỗi khi xóa", "error");
-    ui.toast("Đã xóa", "success");
+    ui.toast("Đã xóa SIM", "success");
     setView("list");
     load();
   };
@@ -1916,65 +2080,355 @@ export function MobileSimSheet({ member, close }: { member?: Member | null; clos
   if (view === "form") {
     return <MobileSimForm sim={selected} close={() => setView(selected?.id ? "detail" : "list")} save={save} loading={loading} error={error} inputClass={inputClass} />;
   }
+  
+  if (view === "payment-form") {
+    return <MobileSimPaymentForm payment={paymentSelected} sim={selected} close={() => setView("detail")} save={savePayment} loading={loading} error={error} inputClass={inputClass} />;
+  }
+
+  if (view === "change-plan" && selected) {
+    return <MobileSimChangePlanForm sim={selected} close={() => setView("detail")} save={savePlanChange} loading={loading} error={error} inputClass={inputClass} money={money} cycleLabel={cycleLabel} cycleMonths={cycleMonths} cycleType={cycleType} />;
+  }
+
+  if (view === "link-transaction" && selected) {
+    const unlinkedTransactions = (linkableTransactions || []).filter((item: any) => item._linkState !== "linked_missing_payment");
+    const unsyncedTransactions = (linkableTransactions || []).filter((item: any) => item._linkState === "linked_missing_payment");
+    const renderTransactionButton = (item: any, label: string) => (
+      <button key={item.id} disabled={loading} onClick={() => linkTransaction(item)} className="w-full rounded-2xl border border-[#E8DCD5] bg-[#FFFFFF] p-4 text-left shadow-sm active:bg-[#F8F5F2] disabled:opacity-60">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <b className="block truncate text-[14px] text-[#171018]">{item.title || "Giao dá»‹ch SIM/Data"}</b>
+            <p className="mt-1 text-[12px] text-[#6B5E64]">{formatIsoDate(transactionDate(item))} Â· {item.note || "KhÃ´ng cÃ³ ghi chÃº"}</p>
+            <span className="mt-2 inline-flex rounded-lg bg-[#F8F5F2] px-2 py-1 text-[11px] font-bold text-[#800020]">{label}</span>
+          </div>
+          <b className="shrink-0 text-[13px] text-[#800020]">{money(Number(item.actual_amount || item.netAmount || item.amount || item.gross_amount || 0))}</b>
+        </div>
+      </button>
+    );
+    return <FullScreenMobileSheet title="LiÃªn káº¿t giao dá»‹ch cÅ©" close={() => setView("detail")}>
+      <div className="min-h-full bg-[#F8F5F2] p-4 pb-10">
+        {!linkableTransactions ? <p className="py-8 text-center text-sm text-[#6B5E64]">Äang táº£i giao dá»‹ch...</p> : linkableTransactions.length === 0 ? <p className="rounded-2xl border border-[#E8DCD5] bg-[#FFFFFF] p-6 text-center text-sm text-[#6B5E64]">KhÃ´ng cÃ³ giao dá»‹ch SIM/Data cáº§n liÃªn káº¿t hoáº·c Ä‘á»“ng bá»™.</p> : <div className="space-y-5">
+          <div className="space-y-3">
+            <h3 className="text-[13px] font-bold text-[#6B5E64]">ChÆ°a liÃªn káº¿t SIM</h3>
+            {unlinkedTransactions.length === 0 ? <p className="rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] p-3 text-[12px] text-[#6B5E64]">KhÃ´ng cÃ³ giao dá»‹ch chÆ°a liÃªn káº¿t.</p> : unlinkedTransactions.map((item: any) => renderTransactionButton(item, "LiÃªn káº¿t vÃ o SIM"))}
+          </div>
+          <div className="space-y-3">
+            <h3 className="text-[13px] font-bold text-[#6B5E64]">ÄÃ£ liÃªn káº¿t nhÆ°ng chÆ°a cÃ³ lá»‹ch sá»­ thanh toÃ¡n</h3>
+            {unsyncedTransactions.length === 0 ? <p className="rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] p-3 text-[12px] text-[#6B5E64]">KhÃ´ng cÃ³ giao dá»‹ch thiáº¿u Ä‘á»“ng bá»™.</p> : unsyncedTransactions.map((item: any) => renderTransactionButton(item, "Äá»“ng bá»™ vÃ o lá»‹ch sá»­ SIM"))}
+          </div>
+        </div>}
+      </div>
+    </FullScreenMobileSheet>;
+  }
+
+  if (view === "link-transaction" && selected) {
+    return <FullScreenMobileSheet title="Liên kết giao dịch cũ" close={() => setView("detail")}>
+      <div className="min-h-full bg-[#F8F5F2] p-4 pb-10">
+        {!linkableTransactions ? <p className="py-8 text-center text-sm text-[#6B5E64]">Đang tải giao dịch...</p> : linkableTransactions.length === 0 ? <p className="rounded-2xl border border-[#E8DCD5] bg-[#FFFFFF] p-6 text-center text-sm text-[#6B5E64]">Không có giao dịch Sim / Data chưa liên kết.</p> : <div className="space-y-3">
+          {linkableTransactions.map((item: any) => <button key={item.id} disabled={loading} onClick={() => linkTransaction(item)} className="w-full rounded-2xl border border-[#E8DCD5] bg-[#FFFFFF] p-4 text-left shadow-sm active:bg-[#F8F5F2] disabled:opacity-60">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <b className="block truncate text-[14px] text-[#171018]">{item.title || "Giao dịch SIM/Data"}</b>
+                <p className="mt-1 text-[12px] text-[#6B5E64]">{formatIsoDate(item.date)} · {item.note || "Không có ghi chú"}</p>
+              </div>
+              <b className="shrink-0 text-[13px] text-[#800020]">{money(Number(item.amount || 0))}</b>
+            </div>
+          </button>)}
+        </div>}
+      </div>
+    </FullScreenMobileSheet>;
+  }
 
   if (view === "detail" && selected) {
     return <FullScreenMobileSheet title="Chi tiết SIM" close={() => setView("list")}>
-      <div className="pb-10 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-full">
-         <div className="bg-white dark:bg-[var(--app-card)] border-b border-slate-200 dark:border-white/10 px-4 py-6 text-center shadow-sm">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white">{selected.phoneNumber || selected.phone_number}</h2>
-            <p className="text-sm font-medium text-slate-500 mt-1">{selected.carrier || "Chưa xác định"}</p>
+      <div className="pb-10 bg-[#F8F5F2] min-h-full">
+         <div className="bg-[#FFFFFF] border-b border-[#E8DCD5] px-4 py-6 text-center shadow-sm">
+            <h2 className="text-xl font-bold text-[#171018]">{selected.phoneNumber || selected.phone_number}</h2>
+            <p className="text-sm font-medium text-[#6B5E64] mt-1">{selected.carrier || "Chưa xác định"}</p>
          </div>
-         <div className="bg-white dark:bg-[var(--app-card)] border-y border-slate-200 dark:border-white/10 mt-4 shadow-sm">
-            <Field label="Loại SIM"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200">{selected.simType || selected.sim_type === "data" ? "SIM Data" : "SIM Nghe gọi"}</div></Field>
-            <Field label="Gói cước"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200">{selected.planName || selected.plan_name || "-"}</div></Field>
-            <Field label="Trạng thái"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200">{selected.status === "active" ? "Đang hoạt động" : "Đã khóa"}</div></Field>
-            {selected.note && <Field label="Ghi chú"><div className="px-4 py-3 text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap">{selected.note}</div></Field>}
+         <div className="bg-[#FFFFFF] border-y border-[#E8DCD5] mt-4 shadow-sm">
+            <div className="flex flex-row items-center justify-between border-b border-[#E8DCD5] px-4 py-3.5">
+              <div className="text-[14px] text-[#6B5E64] w-[110px] shrink-0">Loại SIM</div>
+              <div className="flex-1 text-[14px] font-bold text-[#171018] text-right">{selected.simType || selected.sim_type === "data" ? "SIM Data" : "SIM Nghe gọi"}</div>
+            </div>
+            <div className="flex flex-row items-center justify-between border-b border-[#E8DCD5] px-4 py-3.5">
+              <div className="text-[14px] text-[#6B5E64] w-[110px] shrink-0">Gói cước</div>
+              <div className="flex-1 text-[14px] font-bold text-[#171018] text-right">{selected.planName || selected.plan_name || "-"}</div>
+            </div>
+            <div className="flex flex-row items-center justify-between border-b border-[#E8DCD5] px-4 py-3.5">
+              <div className="text-[14px] text-[#6B5E64] w-[110px] shrink-0">Giá gói</div>
+              <div className="flex-1 text-[14px] font-bold text-[#D4AF37] text-right">{planPriceLabel(selected)}</div>
+            </div>
+            <div className="flex flex-row items-center justify-between border-b border-[#E8DCD5] px-4 py-3.5">
+              <div className="text-[14px] text-[#6B5E64] w-[110px] shrink-0">Chu kỳ</div>
+              <div className="flex-1 text-[14px] font-bold text-[#171018] text-right">{cycleLabel(cycleMonths(selected), cycleType(selected))}</div>
+            </div>
+            <div className="flex flex-row items-center justify-between border-b border-[#E8DCD5] px-4 py-3.5">
+              <div className="text-[14px] text-[#6B5E64] w-[110px] shrink-0">Ngày gia hạn</div>
+              <div className="flex-1 text-[14px] font-bold text-[#171018] text-right">
+                {selected.renewDay || selected.renew_day ? `Ngày ${selected.renewDay || selected.renew_day}` : "-"}
+              </div>
+            </div>
+            <div className="flex flex-row items-center justify-between border-b border-[#E8DCD5] px-4 py-3.5">
+              <div className="text-[14px] text-[#6B5E64] w-[110px] shrink-0">Trạng thái</div>
+              <div className="flex-1 text-[14px] font-bold text-right"><span className={`px-2 py-1 text-[10px] uppercase rounded-md ${selected.status === "active" ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-[#6B5E64]"}`}>{selected.status === "active" ? "Đang hoạt động" : "Đã khóa"}</span></div>
+            </div>
+            {selected.note && <div className="flex flex-row items-center justify-between px-4 py-3.5">
+              <div className="text-[14px] text-[#6B5E64] w-[110px] shrink-0">Ghi chú</div>
+              <div className="flex-1 text-[14px] font-medium text-[#171018] text-right whitespace-pre-wrap">{selected.note}</div>
+            </div>}
          </div>
-         <div className="mt-6 px-4 flex flex-col gap-3">
-            <button onClick={() => { setSelected(selected); setView("form"); }} className="w-full py-3.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm active:bg-indigo-700">Sửa thông tin</button>
-            <button onClick={() => remove(selected.id)} className="w-full py-3.5 bg-white dark:bg-transparent border border-rose-200 dark:border-rose-500/30 text-rose-500 rounded-xl text-sm font-bold active:bg-rose-50 dark:active:bg-rose-500/10">Xóa SIM</button>
+         <div className="bg-[#FFFFFF] border-y border-[#E8DCD5] mt-4 shadow-sm pb-4">
+            <div className="flex justify-between items-center px-4 py-3 border-b border-[#E8DCD5]">
+              <h3 className="text-[14px] font-bold text-[#171018]">Thống kê gói theo tháng</h3>
+              <button type="button" onClick={() => { setPaymentSelected(null); setView("payment-form"); }} className="text-[13px] font-bold text-[#800020] bg-rose-50 px-3 py-1.5 rounded-lg active:bg-rose-100">+ Thêm</button>
+            </div>
+            <div className="px-4 mt-3 space-y-3">
+              {!payments ? (
+                <div className="text-sm text-[#6B5E64]">Đang tải...</div>
+              ) : (
+                Array.from({ length: 12 }).map((_, i) => {
+                  const d = new Date();
+                  d.setMonth(d.getMonth() - i);
+                  const y = d.getFullYear();
+                  const m = d.getMonth() + 1;
+                  const payment = payments.find(p => Number(p.year) === y && Number(p.month) === m);
+                  const activePayment = payment || payments.find(p => inCoverage(p, y, m));
+                  const isCoverageOnly = !payment && activePayment;
+                  return (
+                    <div key={`${y}-${m}`} className="flex items-center justify-between py-1">
+                      <div className="text-[14px] font-medium text-[#6B5E64]">Tháng {m}/{y}</div>
+                      <div className="text-[14px] text-right flex items-center gap-3">
+                        {payment ? (
+                          <>
+                            <div className="text-right flex flex-col justify-end">
+                              <div className="font-bold text-[#171018] flex items-center justify-end gap-1">
+                                Nạp {money(Number(payment.amount || payment.topup_amount || payment.topupAmount || 0))}
+                                {payment.plan_fee && Number(payment.amount || 0) !== Number(payment.plan_fee || 0) && (
+                                  <span className="text-[10px] text-rose-600 bg-rose-50 px-1 py-0.5 rounded ml-1" title="Chênh lệch so với phí gói">
+                                    {Number(payment.amount || 0) - Number(payment.plan_fee || 0) >= 0 ? "Dư " : "Thiếu "}{money(Math.abs(Number(payment.amount || 0) - Number(payment.plan_fee || 0)))}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-[#6B5E64] mt-0.5">
+                                {payment.plan_name || payment.planName || "-"} 
+                                {payment.plan_fee ? ` · Phí ${paymentCycleLabel(payment)}` : ""}
+                                {(payment.coverage_start_date || payment.coverageStartDate) && <div>Hiệu lực {formatIsoDate(payment.coverage_start_date || payment.coverageStartDate)} - {formatIsoDate(payment.coverage_end_date || payment.coverageEndDate)}</div>}
+                              </div>
+                            </div>
+                            <button onClick={() => { setPaymentSelected(payment); setView("payment-form"); }} className="text-[#D4AF37] text-xs font-bold bg-[#D4AF37]/10 px-2 py-1 rounded">Sửa</button>
+                            <button onClick={() => removePayment(payment.id)} className="text-rose-500 text-xs font-bold bg-rose-50 px-2 py-1 rounded">Xóa</button>
+                          </>
+                        ) : isCoverageOnly ? (
+                          <div className="text-right">
+                            <div className="text-[12px] font-bold text-[#059669]">Đang hiệu lực</div>
+                            <div className="text-[11px] text-[#6B5E64]">{activePayment.plan_name || activePayment.planName || selected.planName || selected.plan_name || "-"}</div>
+                          </div>
+                        ) : (
+                          <div className="text-[#6B5E64] italic text-[12px] mt-1">Chưa có dữ liệu</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
          </div>
+         <div className="bg-[#FFFFFF] border-y border-[#E8DCD5] mt-4 shadow-sm pb-4">
+            <div className="flex justify-between items-center px-4 py-3 border-b border-[#E8DCD5]">
+              <h3 className="text-[14px] font-bold text-[#171018]">Lịch sử đổi gói</h3>
+            </div>
+            <div className="px-4 mt-3 space-y-3">
+              {!planHistory ? (
+                <div className="text-sm text-[#6B5E64]">Đang tải...</div>
+              ) : planHistory.length === 0 ? (
+                <div className="text-sm text-[#6B5E64] italic">Chưa có lịch sử.</div>
+              ) : (
+                planHistory.map((h: any, i: number) => (
+                  <div key={h.id || i} className="flex flex-col py-1 border-b border-[#E8DCD5] last:border-0">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[14px] font-bold text-[#171018]">{h.newPlanName || h.new_plan_name}</div>
+                       <div className="text-[14px] font-bold text-[#D4AF37]">{money(Number(h.newPlanPrice || h.new_plan_price || 0))}</div>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <div className="text-[12px] text-[#6B5E64]">Áp dụng từ: {h.effectiveMonth || h.effective_month}/{h.effectiveYear || h.effective_year}</div>
+                      {h.oldPlanName && h.oldPlanName !== "Không xác định" && (
+                         <div className="text-[11px] text-slate-400 line-through">{h.oldPlanName || h.old_plan_name} ({money(Number(h.oldPlanPrice || h.old_plan_price || 0))})</div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+         </div>
+          <div className="mt-6 px-4 flex flex-col gap-3">
+             <button onClick={() => setView("change-plan")} className="w-full py-3.5 bg-[#800020] text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgba(128,0,32,0.15)] active:scale-[.99]">Äá»•i gÃ³i</button>
+             <button onClick={() => { setSelected(selected); setView("form"); }} className="w-full py-3.5 bg-[#FFFFFF] border border-[#E8DCD5] text-[#800020] rounded-xl text-sm font-bold active:bg-[#F8F5F2]">Sá»­a gÃ³i hiá»‡n táº¡i</button>
+             <button onClick={() => loadPlanHistory()} className="w-full py-3.5 bg-[#FFFFFF] border border-[#E8DCD5] text-[#800020] rounded-xl text-sm font-bold active:bg-[#F8F5F2]">Lá»‹ch sá»­ Ä‘á»•i gÃ³i</button>
+             <button onClick={() => { setSelected(selected); setView("form"); }} className="w-full py-3.5 bg-[#800020] text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgba(128,0,32,0.15)] active:scale-[.99]">Sửa thông tin SIM</button>
+             <button onClick={() => { loadLinkableTransactions(); setView("link-transaction"); }} className="w-full py-3.5 bg-[#FFFFFF] border border-[#D4AF37] text-[#800020] rounded-xl text-sm font-bold active:bg-[#F8F5F2]">Liên kết giao dịch cũ</button>
+             <button onClick={() => remove(selected.id)} className="w-full py-3.5 bg-transparent border border-rose-200 text-rose-500 rounded-xl text-sm font-bold active:bg-rose-50">Xóa SIM</button>
+          </div>
       </div>
     </FullScreenMobileSheet>;
   }
 
   return <FullScreenMobileSheet title="SIM / Data" close={close}>
-    <div className="pb-10 min-h-full bg-[#f8fafc] dark:bg-[var(--app-bg)]">
+    <div className="pb-10 min-h-full bg-[#F8F5F2]">
        <div className="p-4">
-         {!data ? <div className="text-center py-10 text-slate-400">Đang tải...</div> : data.length === 0 ? <div className="flex flex-col items-center justify-center py-16 text-slate-400"><svg className="size-16 mb-4 text-slate-200 dark:text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg><p>Chưa có SIM / Data.</p></div> : (
+         {!data ? <div className="text-center py-10 text-[#6B5E64]">Đang tải...</div> : data.length === 0 ? <div className="flex flex-col items-center justify-center py-16 text-[#6B5E64]"><svg className="size-16 mb-4 text-[#E8DCD5]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg><p>Chưa có SIM / Data.</p></div> : (
            <div className="space-y-3">
              {data.map((sim: any, i: number) => (
-               <button key={i} onClick={() => { setSelected(sim); setView("detail"); }} className="w-full text-left bg-white dark:bg-[var(--app-card)] border-b border-slate-200 dark:border-white/10 rounded-xl p-4 flex items-center justify-between shadow-sm active:bg-slate-50 dark:active:bg-white/5 transition-colors">
+               <button key={i} onClick={() => { setSelected(sim); setView("detail"); }} className="w-full text-left bg-[#FFFFFF] border border-[#E8DCD5] rounded-2xl p-4 flex items-center justify-between shadow-[0_2px_8px_rgba(0,0,0,0.02)] active:bg-slate-50 transition-colors">
                  <div className="min-w-0">
-                   <b className="block text-slate-800 dark:text-white text-sm">{sim.phoneNumber || sim.phone_number}</b>
-                   <p className="text-xs text-slate-500 mt-1">{sim.carrier || "Chưa xác định"} {sim.planName || sim.plan_name ? `· ${sim.planName || sim.plan_name}` : ""}</p>
+                   <b className="block text-[#171018] text-[15px]">{sim.phoneNumber || sim.phone_number}</b>
+                    <p className="text-[13px] font-medium text-[#6B5E64] mt-1">{sim.carrier || "Chưa xác định"} {sim.planName || sim.plan_name ? `· ${sim.planName || sim.plan_name}` : ""} {sim.monthlyFee || sim.monthly_fee ? `· ${planPriceLabel(sim)}` : ""}</p>
                  </div>
-                 <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md ${sim.status === "active" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"}`}>{sim.status === "active" ? "Đang dùng" : "Tạm ngưng"}</span>
+                 <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md ${sim.status === "active" ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-[#6B5E64]"}`}>{sim.status === "active" ? "Đang dùng" : "Tạm ngưng"}</span>
                </button>
              ))}
            </div>
          )}
-         {data !== null && <button onClick={() => { setSelected({ id: "", memberId: member?.id || "", carrier: "Viettel", phoneNumber: "", simType: "personal", planName: "", status: "active", note: "" }); setView("form"); }} className="mt-6 w-full py-4 border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-bold rounded-xl active:bg-slate-50 dark:active:bg-white/5">+ Thêm SIM mới</button>}
+         {data !== null && <button onClick={() => { setSelected({ id: "", memberId: member?.id || "", carrier: "Viettel", phoneNumber: "", simType: "personal", planName: "", monthlyFee: 0, status: "active", note: "" }); setView("form"); }} className="mt-6 w-full py-4 border-2 border-dashed border-[#D4AF37] bg-[#D4AF37]/5 text-[#800020] font-bold rounded-2xl active:bg-[#D4AF37]/10">+ Thêm SIM mới</button>}
        </div>
     </div>
   </FullScreenMobileSheet>;
 }
 
-function MobileSimForm({ sim, close, save, loading, error, inputClass }: any) {
-  const [form, setForm] = useState({ ...sim, phoneNumber: sim.phoneNumber || sim.phone_number || "", simType: sim.simType || sim.sim_type || "personal", planName: sim.planName || sim.plan_name || "" });
-  const set = (key: string, val: any) => setForm((c: any) => ({ ...c, [key]: val }));
-  return <FullScreenMobileSheet title={form.id ? "Sửa SIM" : "Thêm SIM"} close={close}>
-    <div className="pb-10 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-full">
-      <div className="bg-white dark:bg-[var(--app-card)] border-y border-slate-200 dark:border-white/10 shadow-sm mt-2">
-        <Field label="Số điện thoại"><input className={inputClass} type="tel" value={form.phoneNumber} onChange={e => set("phoneNumber", e.target.value)} placeholder="09xxxx" /></Field>
-        <Field label="Nhà mạng"><select className={inputClass} value={form.carrier} onChange={e => set("carrier", e.target.value)}><option value="Viettel">Viettel</option><option value="MobiFone">MobiFone</option><option value="VinaPhone">VinaPhone</option><option value="Wintel">Wintel</option><option value="Local">Local</option><option value="Khác">Khác</option></select></Field>
-        <Field label="Loại SIM"><select className={inputClass} value={form.simType} onChange={e => set("simType", e.target.value)}><option value="personal">Cá nhân</option><option value="work">Công việc</option><option value="data">Chỉ Data</option><option value="esim">eSIM</option></select></Field>
-        <Field label="Gói cước"><input className={inputClass} value={form.planName} onChange={e => set("planName", e.target.value)} placeholder="Tên gói data..." /></Field>
-        <Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={e => set("status", e.target.value)}><option value="active">Đang dùng</option><option value="paused">Tạm ngưng</option><option value="cancelled">Đã hủy</option></select></Field>
-        <Field label="Ghi chú"><textarea className={inputClass} value={form.note} onChange={e => set("note", e.target.value)} rows={3} /></Field>
+function MobileSimChangePlanForm({ sim, close, save, loading, error, inputClass, money, cycleLabel, cycleMonths, cycleType }: any) {
+  const today = new Date().toISOString().split("T")[0];
+  const initialCycleType = sim.billingCycleType || sim.billing_cycle_type || cycleType(sim);
+  const [form, setForm] = useState({
+    newPlanName: sim.planName || sim.plan_name || "",
+    newPlanPrice: sim.monthlyFee || sim.monthly_fee || 0,
+    newBillingCycleType: initialCycleType,
+    newRenewalMonths: cycleMonths(sim),
+    newRenewDay: sim.renewDay || sim.renew_day || "",
+    effectiveDate: today,
+    note: ""
+  });
+  const set = (key: string, val: any) => setForm((current: any) => ({ ...current, [key]: val }));
+  const setCycle = (value: string) => {
+    const months = value === "three_months" ? 3 : value === "six_months" ? 6 : value === "yearly" ? 12 : value === "custom" ? form.newRenewalMonths || 1 : 1;
+    setForm((current: any) => ({ ...current, newBillingCycleType: value, newRenewalMonths: months }));
+  };
+  const [year, month] = String(form.effectiveDate || today).split("-").map(Number);
+  return <FullScreenMobileSheet title="Äá»•i gÃ³i" close={close}>
+    <div className="pb-10 bg-[#F8F5F2] min-h-full p-4">
+      <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-2xl shadow-sm p-4 space-y-4">
+        <div className="rounded-xl border border-[#E8DCD5] bg-[#F8F5F2] p-3">
+          <p className="text-[12px] font-bold text-[#6B5E64]">GÃ³i hiá»‡n táº¡i</p>
+          <p className="mt-1 text-[14px] font-bold text-[#171018]">{sim.planName || sim.plan_name || "-"}</p>
+          <p className="mt-1 text-[12px] text-[#6B5E64]">{money(Number(sim.monthlyFee || sim.monthly_fee || 0))}/{cycleLabel(cycleMonths(sim), cycleType(sim))}</p>
+        </div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">GÃ³i má»›i</label><input className={inputClass} value={form.newPlanName} onChange={e => set("newPlanName", e.target.value)} /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">GiÃ¡ gÃ³i má»›i</label><input className={inputClass} type="number" value={form.newPlanPrice || ""} onChange={e => set("newPlanPrice", Number(e.target.value))} /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Chu ká»³ gÃ³i</label><select className={inputClass} value={form.newBillingCycleType} onChange={e => setCycle(e.target.value)}><option value="monthly">HÃ ng thÃ¡ng</option><option value="three_months">3 thÃ¡ng</option><option value="six_months">6 thÃ¡ng</option><option value="yearly">12 thÃ¡ng</option><option value="custom">TÃ¹y chá»‰nh</option><option value="none">KhÃ´ng tá»± gia háº¡n</option></select></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Sá»‘ thÃ¡ng</label><input className={inputClass} type="number" min="1" value={form.newRenewalMonths || ""} disabled={form.newBillingCycleType !== "custom"} onChange={e => set("newRenewalMonths", Number(e.target.value) || 1)} /></div>
+          <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">NgÃ y gia háº¡n</label><input className={inputClass} type="number" min="1" max="31" value={form.newRenewDay || ""} onChange={e => set("newRenewDay", Number(e.target.value) || "")} /></div>
+        </div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">NgÃ y báº¯t Ä‘áº§u Ã¡p dá»¥ng</label><input className={inputClass} type="date" value={form.effectiveDate} onChange={e => set("effectiveDate", e.target.value)} /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Ghi chÃº</label><textarea className={inputClass + " h-auto py-3"} value={form.note} onChange={e => set("note", e.target.value)} rows={3} /></div>
       </div>
-      {error && <div className="px-4 mt-4"><p className="text-sm font-medium text-rose-500 bg-rose-50 p-3 rounded-lg border border-rose-200">{error}</p></div>}
-      <div className="mt-6 px-4"><button disabled={loading || !form.phoneNumber?.trim()} type="button" onClick={() => save(form)} className="w-full py-3.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-sm disabled:opacity-50">Lưu lại</button></div>
+      {error && <div className="mt-4"><p className="text-sm font-medium text-rose-500 bg-rose-50 p-3 rounded-xl border border-rose-200">{error}</p></div>}
+      <div className="mt-6"><button disabled={loading || !form.newPlanName?.trim()} type="button" onClick={() => save({ ...form, effectiveMonth: month || new Date().getMonth() + 1, effectiveYear: year || new Date().getFullYear() })} className="w-full py-3.5 bg-[#800020] text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgba(128,0,32,0.15)] disabled:opacity-50 active:scale-[.99]">LÆ°u Ä‘á»•i gÃ³i</button></div>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+function MobileSimForm({ sim, close, save, loading, error, inputClass }: any) {
+  const initialCycleType = sim.billingCycleType || sim.billing_cycle_type || (Number(sim.renewalMonths || sim.renewal_months || 1) === 6 ? "six_months" : Number(sim.renewalMonths || sim.renewal_months || 1) === 3 ? "three_months" : Number(sim.renewalMonths || sim.renewal_months || 1) === 12 ? "yearly" : "monthly");
+  const initialCycleMonths = initialCycleType === "three_months" ? 3 : initialCycleType === "six_months" ? 6 : initialCycleType === "yearly" ? 12 : 1;
+  const [form, setForm] = useState({ ...sim, phoneNumber: sim.phoneNumber || sim.phone_number || "", simType: sim.simType || sim.sim_type || "personal", planName: sim.planName || sim.plan_name || "", monthlyFee: sim.monthlyFee || sim.monthly_fee || 0, billingCycleType: initialCycleType, renewalMonths: sim.renewalMonths || sim.renewal_months || initialCycleMonths, autoRenew: sim.autoRenew ?? sim.auto_renew ?? true });
+  const set = (key: string, val: any) => setForm((c: any) => ({ ...c, [key]: val }));
+  const setCycle = (value: string) => {
+    const months = value === "three_months" ? 3 : value === "six_months" ? 6 : value === "yearly" ? 12 : value === "custom" ? form.renewalMonths || 1 : 1;
+    setForm((c: any) => ({ ...c, billingCycleType: value, renewalMonths: months }));
+  };
+  return <FullScreenMobileSheet title={form.id ? "Sửa SIM" : "Thêm SIM"} close={close}>
+    <div className="pb-10 bg-[#F8F5F2] min-h-full p-4">
+      <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-2xl shadow-sm p-4 space-y-4">
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Số điện thoại</label><input className={inputClass} type="tel" value={form.phoneNumber} onChange={e => set("phoneNumber", e.target.value)} placeholder="09xxxx" /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Nhà mạng</label><select className={inputClass} value={form.carrier} onChange={e => set("carrier", e.target.value)}><option value="Viettel">Viettel</option><option value="MobiFone">MobiFone</option><option value="VinaPhone">VinaPhone</option><option value="Wintel">Wintel</option><option value="Local">Local</option><option value="Khác">Khác</option></select></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Loại SIM</label><select className={inputClass} value={form.simType} onChange={e => set("simType", e.target.value)}><option value="personal">Cá nhân</option><option value="work">Công việc</option><option value="data">Chỉ Data</option><option value="esim">eSIM</option></select></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Gói cước hiện tại</label><input className={inputClass} value={form.planName} onChange={e => set("planName", e.target.value)} placeholder="Tên gói data..." /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Giá gói / kỳ</label><input className={inputClass} type="number" value={form.monthlyFee || ""} onChange={e => set("monthlyFee", Number(e.target.value))} placeholder="Ví dụ: 460000" /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Chu kỳ gói</label><select className={inputClass} value={form.billingCycleType} onChange={e => setCycle(e.target.value)}><option value="monthly">Hàng tháng</option><option value="three_months">3 tháng</option><option value="six_months">6 tháng</option><option value="yearly">12 tháng</option><option value="custom">Tùy chỉnh</option><option value="none">Không tự gia hạn</option></select></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Số tháng hiệu lực</label><input className={inputClass} type="number" min="1" value={form.renewalMonths || ""} disabled={form.billingCycleType !== "custom"} onChange={e => set("renewalMonths", Number(e.target.value) || 1)} /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Ngày gia hạn / ngày bắt đầu kỳ</label><input className={inputClass} type="number" min="1" max="31" value={form.renewDay || form.renew_day || ""} onChange={e => set("renewDay", Number(e.target.value) || null)} placeholder="Ví dụ: 13" /></div>
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-[#E8DCD5] bg-[#F8F5F2] px-3 py-3 text-[13px] font-bold text-[#171018]"><span>Tự gia hạn</span><input type="checkbox" className="size-5 accent-[#800020]" checked={form.autoRenew !== false} onChange={e => set("autoRenew", e.target.checked)} /></label>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Trạng thái</label><select className={inputClass} value={form.status} onChange={e => set("status", e.target.value)}><option value="active">Đang dùng</option><option value="paused">Tạm ngưng</option><option value="cancelled">Đã hủy</option></select></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Ghi chú</label><textarea className={inputClass + " h-auto py-3"} value={form.note || ""} onChange={e => set("note", e.target.value)} rows={3} /></div>
+      </div>
+      {error && <div className="mt-4"><p className="text-sm font-medium text-rose-500 bg-rose-50 p-3 rounded-xl border border-rose-200">{error}</p></div>}
+      <div className="mt-6"><button disabled={loading || !form.phoneNumber?.trim()} type="button" onClick={() => save(form)} className="w-full py-3.5 bg-[#800020] text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgba(128,0,32,0.15)] disabled:opacity-50 active:scale-[.99]">Lưu lại</button></div>
+    </div>
+  </FullScreenMobileSheet>;
+}
+
+function MobileSimPaymentForm({ payment, sim, close, save, loading, error, inputClass }: any) {
+  const d = new Date();
+  const defaultCycleMonths = Math.max(1, Number(payment?.billingCycleMonths || payment?.billing_cycle_months || sim.renewalMonths || sim.renewal_months || 1));
+  const defaultPaidDate = payment?.paidDate || payment?.paid_date || d.toISOString().split("T")[0];
+  const addMonthsLocal = (iso: string, months: number) => {
+    const [y, m, day] = iso.split("-").map(Number);
+    const index = (m - 1) + Math.max(1, Number(months || 1));
+    const year = y + Math.floor(index / 12);
+    const month = (index % 12) + 1;
+    const lastDay = new Date(year, month, 0).getDate();
+    const result = new Date(year, month - 1, Math.min(day, lastDay) - 1);
+    return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(2, "0")}-${String(result.getDate()).padStart(2, "0")}`;
+  };
+  const [form, setForm] = useState({
+    id: payment?.id || "",
+    simId: sim.id,
+    phoneNumber: sim.phoneNumber || sim.phone_number || "",
+    month: payment?.month || d.getMonth() + 1,
+    year: payment?.year || d.getFullYear(),
+    planName: payment?.planName || payment?.plan_name || sim.planName || sim.plan_name || "",
+    planFee: payment?.planFee !== undefined && payment?.planFee !== null ? payment.planFee : (sim.monthlyFee || sim.monthly_fee || 0),
+    amount: payment?.amount !== undefined ? payment.amount : (sim.monthlyFee || sim.monthly_fee || 0),
+    paidDate: defaultPaidDate,
+    billingCycleMonths: defaultCycleMonths,
+    coverageStartDate: payment?.coverageStartDate || payment?.coverage_start_date || defaultPaidDate,
+    coverageEndDate: payment?.coverageEndDate || payment?.coverage_end_date || addMonthsLocal(defaultPaidDate, defaultCycleMonths),
+    status: payment?.status || "paid",
+    note: payment?.note || "",
+    onlyHistory: true
+  });
+  const set = (key: string, val: any) => setForm((c: any) => {
+    const next = { ...c, [key]: val };
+    if (key === "paidDate") next.coverageStartDate = val;
+    if (key === "paidDate" || key === "billingCycleMonths") next.coverageEndDate = addMonthsLocal(next.coverageStartDate || next.paidDate, Number(next.billingCycleMonths || 1));
+    return next;
+  });
+  return <FullScreenMobileSheet title={form.id ? "Sửa thanh toán" : "Thêm thanh toán tháng"} close={close}>
+    <div className="pb-10 bg-[#F8F5F2] min-h-full p-4">
+      <div className="bg-[#FFFFFF] border border-[#E8DCD5] rounded-2xl shadow-sm p-4 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Tháng</label><input className={inputClass} type="number" min="1" max="12" value={form.month} onChange={e => set("month", Number(e.target.value))} /></div>
+          <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Năm</label><input className={inputClass} type="number" min="2000" value={form.year} onChange={e => set("year", Number(e.target.value))} /></div>
+        </div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Gói data</label><input className={inputClass} value={form.planName} onChange={e => set("planName", e.target.value)} /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Phí gói data</label><input className={inputClass} type="number" value={form.planFee === 0 ? "" : form.planFee} onChange={e => set("planFee", Number(e.target.value))} /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Số tiền nạp thực tế</label><input className={inputClass} type="number" value={form.amount === 0 ? "" : form.amount} onChange={e => set("amount", Number(e.target.value))} /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Số tháng hiệu lực</label><input className={inputClass} type="number" min="1" value={form.billingCycleMonths} onChange={e => set("billingCycleMonths", Number(e.target.value) || 1)} /></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Ngày thanh toán</label><input className={inputClass} type="date" value={form.paidDate} onChange={e => set("paidDate", e.target.value)} /></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Bắt đầu kỳ</label><input className={inputClass} type="date" value={form.coverageStartDate} onChange={e => set("coverageStartDate", e.target.value)} /></div>
+          <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Kết thúc kỳ</label><input className={inputClass} type="date" value={form.coverageEndDate} onChange={e => set("coverageEndDate", e.target.value)} /></div>
+        </div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Trạng thái</label><select className={inputClass} value={form.status} onChange={e => set("status", e.target.value)}><option value="paid">Đã thanh toán</option><option value="pending">Chờ thanh toán</option></select></div>
+        <div><label className="block text-[13px] font-bold text-[#6B5E64] mb-1.5">Ghi chú</label><textarea className={inputClass + " h-auto py-3"} value={form.note} onChange={e => set("note", e.target.value)} rows={3} /></div>
+        {!form.id && (
+          <label className="flex items-center gap-2 text-[14px] font-bold text-[#171018] pt-2 border-t border-[#E8DCD5]">
+            <input type="checkbox" className="size-5 rounded border-[#E8DCD5] text-[#800020] focus:ring-[#800020]" checked={form.onlyHistory} onChange={e => set("onlyHistory", e.target.checked)} />
+            Chỉ lưu lịch sử SIM, không ghi vào Thu chi
+          </label>
+        )}
+      </div>
+      {error && <div className="mt-4"><p className="text-sm font-medium text-rose-500 bg-rose-50 p-3 rounded-xl border border-rose-200">{error}</p></div>}
+      <div className="mt-6"><button disabled={loading || !form.month || !form.year} type="button" onClick={() => save(form)} className="w-full py-3.5 bg-[#800020] text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgba(128,0,32,0.15)] disabled:opacity-50 active:scale-[.99]">{form.id ? "Lưu lại" : "Lưu thanh toán"}</button></div>
     </div>
   </FullScreenMobileSheet>;
 }
@@ -5439,6 +5893,26 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
   const setBankAccounts = bankAccountsState[1];
   const [memberSims, setMemberSims] = useState<MemberSim[]>([]);
   const isSimDataExpense = draft.category === "Sinh hoạt" && draft.subcategory === "Sim / Data";
+  const activeUniqueSims = useMemo(() => {
+    const map = new Map<string, MemberSim>();
+    for (const sim of memberSims) {
+      const phone = (sim.phoneNumber || "").replace(/\D/g, "");
+      if (!phone) continue;
+      if (!map.has(phone)) {
+        map.set(phone, sim);
+      } else {
+        const current = map.get(phone)!;
+        if (sim.status === "active" && current.status !== "active") {
+          map.set(phone, sim);
+        } else if (sim.status === current.status) {
+          const tSim = new Date(sim.updatedAt || sim.createdAt || (sim as any).updated_at || (sim as any).created_at || 0).getTime();
+          const tCur = new Date(current.updatedAt || current.createdAt || (current as any).updated_at || (current as any).created_at || 0).getTime();
+          if (tSim > tCur) map.set(phone, sim);
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [memberSims]);
 
   useEffect(() => {
     if (!record) return;
@@ -5590,7 +6064,41 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
           patch({ category, subcategory: expenseCategoryTree[category]?.[0] || "Khác", simId: "", topupSimBalance: false, reimbursementStatus: category === "Thanh toán hộ" ? "pending" : "none", reimbursedAmount: category === "Thanh toán hộ" ? "0" : "", reimbursedAt: "" });
         }}>{expenseCategories.map(category => <option key={category}>{category}</option>)}</select></Field>
         <Field label="Loại chi tiết"><select className={inputClass} value={draft.subcategory} onChange={event => patch({ subcategory: event.target.value, simId: event.target.value === "Sim / Data" ? draft.simId : "", topupSimBalance: event.target.value === "Sim / Data" ? draft.topupSimBalance : false })}>{(expenseCategoryTree[draft.category] || ["Khác"]).map(sub => <option key={sub}>{sub}</option>)}</select></Field>
-        {isSimDataExpense && <Field label="SIM liên kết"><select className={inputClass} value={draft.simId} onChange={event => patch({ simId: event.target.value, topupSimBalance: event.target.value ? draft.topupSimBalance : false })}><option value="">Không liên kết</option>{memberSims.map(sim => <option key={sim.id} value={sim.id}>{[sim.planName || sim.phoneNumber || "SIM/Data", sim.carrier].filter(Boolean).join(" / ")}</option>)}</select></Field>}
+        {isSimDataExpense && (
+          <Field label="SIM liên kết">
+            <select
+              className={`${inputClass} w-full min-w-0`}
+              value={draft.simId}
+              onChange={event => {
+                const newSimId = event.target.value;
+                const selectedSim = activeUniqueSims.find(s => s.id === newSimId);
+                const updates: Partial<ExpenseDraft> = { simId: newSimId, topupSimBalance: newSimId ? draft.topupSimBalance : false };
+                if (selectedSim && (!draft.grossAmount || draft.grossAmount === "0")) {
+                  const fee = Number(selectedSim.monthlyFee || (selectedSim as any).monthly_fee || 0);
+                  if (fee > 0) updates.grossAmount = String(fee);
+                }
+                patch(updates);
+              }}
+            >
+              <option value="">Không liên kết</option>
+              {activeUniqueSims.map(sim => (
+                <option key={sim.id} value={sim.id}>
+                  {[sim.phoneNumber || "SIM/Data", sim.carrier, sim.planName || (sim as any).plan_name].filter(Boolean).join(" · ")}
+                </option>
+              ))}
+            </select>
+            {draft.simId && activeUniqueSims.find(s => s.id === draft.simId) && (
+              <p className="mt-1 text-[11px] font-medium text-slate-500">
+                {[
+                  activeUniqueSims.find(s => s.id === draft.simId)?.phoneNumber,
+                  activeUniqueSims.find(s => s.id === draft.simId)?.carrier,
+                  activeUniqueSims.find(s => s.id === draft.simId)?.planName || (activeUniqueSims.find(s => s.id === draft.simId) as any)?.plan_name,
+                  (activeUniqueSims.find(s => s.id === draft.simId)?.monthlyFee || (activeUniqueSims.find(s => s.id === draft.simId) as any)?.monthly_fee) ? new Intl.NumberFormat("vi-VN").format(Number(activeUniqueSims.find(s => s.id === draft.simId)?.monthlyFee || (activeUniqueSims.find(s => s.id === draft.simId) as any)?.monthly_fee)) + "đ/tháng" : ""
+                ].filter(Boolean).join(" · ")}
+              </p>
+            )}
+          </Field>
+        )}
         {isSimDataExpense && draft.simId && ["transfer", "bank_account", "bank_card", "card", "credit_card", "momo", "apple_pay"].includes(draft.paymentMethod) && <label className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300"><input type="checkbox" checked={draft.topupSimBalance} onChange={event => patch({ topupSimBalance: event.target.checked })} /> Cộng vào số dư SIM</label>}
         {draft.category === 'Thanh toán hộ' && (
           <>
@@ -8877,7 +9385,7 @@ function MobileHome({
               <span className="text-xl font-light text-white/80">›</span>
             </button>
             <div className="grid grid-cols-2 gap-3 pointer-events-auto">
-              <button type="button" onClick={() => setFinanceSettingsOpen(true)} className="h-11 min-w-0 rounded-full bg-[#800020] px-3 text-[13px] font-bold text-white shadow-sm active:scale-[.99]">Đầu kỳ</button>
+              <button type="button" onClick={() => setFinanceSettingsOpen(true)} className="h-11 min-w-0 rounded-full bg-[#800020] px-3 text-[13px] font-bold text-white shadow-sm active:scale-[.99]">Thiết lập</button>
               <button type="button" onClick={() => go("system")} className="h-11 min-w-0 rounded-full bg-[#FFFFFF] border border-[#800020] px-3 text-[13px] font-bold text-[#800020] shadow-sm active:scale-[.99]">Hệ thống</button>
             </div>
           </div>
@@ -8906,22 +9414,43 @@ function MobileHome({
                 </div>
                 <p className="mt-2.5 text-[10px] text-[#6B5E64]">Cập nhật đến ngày {now.getDate().toString().padStart(2, '0')}/{(now.getMonth() + 1).toString().padStart(2, '0')}/{now.getFullYear()}</p>
               </div>
-              <div className="w-[140px] h-28 shrink-0">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} barSize={10}>
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6B5E64" }} dy={4} />
-                    <Bar dataKey="thu" radius={[2, 2, 0, 0]}>
-                      {chartData.map((entry, index) => <Cell key={`cell-thu-${index}`} fill={index === 2 ? "#059669" : "#E8DCD5"} />)}
-                    </Bar>
-                    <Bar dataKey="chi" radius={[2, 2, 0, 0]}>
-                      {chartData.map((entry, index) => <Cell key={`cell-chi-${index}`} fill={index === 2 ? "#E11D48" : "#F8E7EC"} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+              <div className="w-[140px] h-28 shrink-0 min-h-[112px]">
+                {typeof window !== "undefined" && (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} barSize={10}>
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6B5E64" }} dy={4} />
+                      <Bar dataKey="thu" radius={[2, 2, 0, 0]}>
+                        {chartData.map((entry, index) => <Cell key={`cell-thu-${index}`} fill={index === 2 ? "#059669" : "#E8DCD5"} />)}
+                      </Bar>
+                      <Bar dataKey="chi" radius={[2, 2, 0, 0]}>
+                        {chartData.map((entry, index) => <Cell key={`cell-chi-${index}`} fill={index === 2 ? "#E11D48" : "#F8E7EC"} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>}
           </div>
         </section>
+
+        <section className="rounded-[24px] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]">
+          <h2 className="text-[14px] font-bold text-[#171018] mb-3">Mục chính</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <button type="button" onClick={() => setProfileSheet("sim")} className="flex flex-col items-center justify-center rounded-xl bg-slate-50 p-3 hover:bg-slate-100 active:bg-slate-200">
+              <div className="flex size-10 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+              </div>
+              <span className="mt-2 text-xs font-semibold text-[#171018]">SIM/Data</span>
+            </button>
+            <button type="button" onClick={() => go("tasks")} className="flex flex-col items-center justify-center rounded-xl bg-slate-50 p-3 hover:bg-slate-100 active:bg-slate-200">
+              <div className="flex size-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+              </div>
+              <span className="mt-2 text-xs font-semibold text-[#171018]">Công việc</span>
+            </button>
+          </div>
+        </section>
+
 
         <section className="rounded-[24px] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]">
           <h2 className="text-[14px] font-bold text-[#171018] mb-3">Lối tắt nhanh</h2>

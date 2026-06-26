@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { canAccessBankMember } from "@/lib/bank-accounts";
 import { pool } from "@/lib/db";
-import { ensureMemberSimsTable, memberSimFields, memberSimFromRow, normalizeMemberSimBody, upsertMemberSim, validateMemberSimAccess } from "@/lib/member-sims";
+import { ensureMemberSimsTable, ensureUniqueMemberSimPhone, memberSimFields, memberSimFromRow, normalizeMemberSimBody, upsertMemberSim, validateMemberSimAccess } from "@/lib/member-sims";
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,6 +33,8 @@ export async function POST(request: NextRequest) {
     const sim = normalizeMemberSimBody(await request.json());
     const accessError = await validateMemberSimAccess(user, sim);
     if (accessError) return accessError;
+    const duplicateError = await ensureUniqueMemberSimPhone(sim.phoneNumber);
+    if (duplicateError) return duplicateError;
     const saved = await upsertMemberSim(sim);
     return NextResponse.json({ ok: true, data: saved }, { status: 201 });
   } catch (error) {

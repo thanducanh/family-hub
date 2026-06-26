@@ -94,6 +94,37 @@ export async function GET(req: Request) {
         await pool.query(`INSERT INTO notification_deliveries (event_id, delivery_type) VALUES ($1, $2)`, [row.id, `yearly-${todayStr}`]);
         await notifyEventMembers(row.id, "Sự kiện hằng năm", row.title);
       }
+      
+      // 4. SIM/Data Renewals (3 days before)
+      const targetDate = new Date(now.getTime() + 3 * 24 * 3600 * 1000);
+      const targetDay = targetDate.getDate();
+      
+      const simResult = await pool.query(
+        `SELECT id, member_id, phone_number, plan_name 
+         FROM member_sims
+         WHERE renew_day = $1 AND status = 'active'`
+        , [targetDay]
+      );
+      
+      for (const sim of simResult.rows) {
+        const deliveryType = `sim-renew-${todayStr}`;
+        const delivered = await pool.query(`SELECT id FROM notification_deliveries WHERE event_id = $1 AND delivery_type = $2`, [sim.id, deliveryType]);
+        if (delivered.rows.length === 0) {
+          await pool.query(`INSERT INTO notification_deliveries (event_id, delivery_type) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [sim.id, deliveryType]);
+          const message = `Sắp đến hạn gia hạn gói ${sim.plan_name || "cước"} cho SIM ${sim.phone_number} vào ngày ${targetDay}.`;
+          
+          if (sim.member_id) {
+             const userQuery = await pool.query("SELECT id FROM users WHERE member_id = $1", [sim.member_id]);
+             for (const u of userQuery.rows) {
+               await pool.query(
+                 "INSERT INTO internal_notifications (user_id, title, message, type, link) VALUES ($1, $2, $3, $4, $5)",
+                 [u.id, "Gia hạn SIM/Data", message, "reminder", "/"]
+               );
+               await sendPushNotification([u.id], { title: "Gia hạn SIM/Data", body: message, data: { url: "/" } });
+             }
+          }
+        }
+      }
     }
 
     return NextResponse.json({ success: true, timestamp: new Date().toISOString() });
