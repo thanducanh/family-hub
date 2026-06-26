@@ -359,7 +359,7 @@ async function removeSimPaymentForTransaction(transactionId: string) {
   await pool.query("DELETE FROM sim_monthly_payments WHERE transaction_id = $1", [transactionId]);
 }
 
-async function syncSimPaymentForTransaction(row: Record<string, unknown>) {
+export async function syncSimPaymentForTransaction(row: Record<string, unknown>) {
   const transactionId = String(row.id || "");
   if (!transactionId) return row;
   const simId = transactionSimId(row);
