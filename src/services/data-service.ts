@@ -130,7 +130,7 @@ export class ApiDataService implements DataService {
   getStatus() { return this.status; }
   async checkConnection() {
     try {
-      const response = await fetch("/api/health", { cache: "no-store" });
+      const response = await fetch("/api/db-counts", { cache: "no-store" });
       if (!response.ok) throw new Error("Database unavailable");
       const health = await response.json() as { counts: NasCounts };
       this.setStatus("nas", "Kết nối PostgreSQL NAS hoạt động bình thường.", health.counts);
@@ -145,7 +145,7 @@ export class ApiDataService implements DataService {
       await this.writeNas(cache, false);
       this.current = await this.readNas();
       await this.fallback.save(this.current);
-      const health = await fetch("/api/health", { cache: "no-store" });
+      const health = await fetch("/api/db-counts", { cache: "no-store" });
       if (!health.ok) throw new Error("Database health unavailable");
       const result = await health.json() as { counts: NasCounts };
       this.setStatus("nas", "Đã upsert toàn bộ localStorage lên PostgreSQL NAS.", result.counts);
