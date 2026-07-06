@@ -49,6 +49,8 @@ async function doInitDatabase() {
 
   // Seed default admin if users table is empty
   await ensureMemberSimsTable();
+  const { ensureCardPendingTransactionsTable } = await import("@/lib/card-pending-transactions");
+  await ensureCardPendingTransactionsTable();
   await seedAdminUser();
 }
 

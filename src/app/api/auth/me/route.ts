@@ -30,17 +30,18 @@ export async function GET() {
       : { rows: [] };
     const member = result.rows[0] ? toMemberProfile(result.rows[0]) : null;
     const mergedUser = {
-      ...user,
+      id: user.id,
+      username: user.username,
       displayName: member?.name || account?.display_name || user.displayName,
       avatar: member?.avatarUrl || member?.avatar || account?.avatar || user.avatar,
       coverUrl: member?.coverUrl || account?.cover_url || user.coverUrl,
       email: account?.email || "",
+      role: user.role,
       memberId: member?.id || user.memberId || "",
       permissions: member?.permissions || {},
-      member: member ?? undefined,
     };
-    const response = NextResponse.json({ ok: true, user: mergedUser, member });
-    response.cookies.set(await refreshedSessionCookie(mergedUser));
+    const response = NextResponse.json({ ok: true, user: mergedUser });
+    response.cookies.set(await refreshedSessionCookie(user));
     return response;
   } catch (error) {
     console.error("[GET /api/auth/me]", error);

@@ -1,4 +1,4 @@
-﻿# Family Management - Nhật ký dự án
+# Family Management - Nhật ký dự án
 
 ## 2026-06-01
 
@@ -575,3 +575,56 @@ pm.cmd run build.
 
 - Lần 28.10 - Fix chi tiết thẻ ngân hàng bị mất sidebar layout
 
+### Lần 29 – Thêm chế độ DB offline/read-only
+- Thêm `DbHealthProvider` kiểm tra `/api/health/db` mỗi 12 giây, hiển thị banner toàn app khi mất kết nối database.
+- Chặn thao tác ghi phía frontend khi DB offline, disable các nút thêm/sửa/xóa/lưu/thanh toán/tạo mới và trả lỗi JSON `DATABASE_OFFLINE` cho fetch ghi.
+- Cache kết quả GET quan trọng `members`, `tasks`, `transactions`, `events`, `notes` vào localStorage kèm thời gian; khi DB lỗi chỉ dùng cache để xem read-only.
+- Thêm server guard cho API ghi dữ liệu chính để không crash và trả JSON rõ ràng khi PostgreSQL mất kết nối.
+- Điều chỉnh `data-service` để không lưu thao tác mới vào localStorage khi ghi DB thất bại, tránh lệch dữ liệu.
+
+### Lần 30 - Hoàn thiện module Thẻ tín dụng & Quản lý chi tiêu tạm tính
+- **Database**: 
+  - Tạo bảng `card_pending_transactions` quản lý các giao dịch quẹt thẻ chờ thanh toán. 
+  - Thêm cột `paid_at` để ghi nhận thời điểm thanh toán. Script migration hỗ trợ chạy an toàn qua hàm `DO $$ BEGIN ... EXCEPTION ... END $$`.
+- **Giao diện & Logic Frontend**:
+  - Trang chủ (`family-app.tsx`) thêm mục "Thẻ ngân hàng" trong "Mục chính". Tổng "Phát sinh dự kiến" bằng Tổng chi tiêu thực + Tạm tính thẻ tín dụng.
+  - Sửa form `ExpenseForm` để khi chọn loại Thẻ tín dụng thì giao dịch sẽ lưu vào `card_pending_transactions` thay vì cộng trực tiếp vào màn Thu chi.
+  - Cập nhật trang quản lý thẻ ngân hàng (`bank-card-page.tsx`) trở thành thẻ "tượng trưng", không bắt buộc nhập thông tin nhạy cảm.
+  - Với thẻ tín dụng, thêm hai tab **Chi tiêu tạm tính (Chưa thanh toán)** và **Giao dịch đã thanh toán**.
+- **Chức năng thanh toán thẻ dư nợ**:
+  - Tạo nút "Thanh toán dư nợ" gom các giao dịch `pending` thành một giao dịch `expense` thật.
+  - API `POST /api/bank-accounts/[id]/pay` chạy an toàn bằng DB transaction, tự rollback nếu lỗi, chống thanh toán trùng lặp. Nội dung giao dịch: "Thanh toán thẻ [Tên thẻ] - Tháng MM/YYYY".
+  - Nếu mất kết nối DB (thông qua `systemStatus` và lỗi API fetch), vô hiệu hóa các nút Thêm thẻ, Lưu thẻ, Thanh toán thẻ.
+  - Không sử dụng alert hệ thống, thay bằng `ui.toast` và custom `ui.confirm` từ `ui-context`.
+
+### Lần 31 - Sửa lỗi 404 trang danh sách Thẻ ngân hàng
+- **Vấn đề**: Nút "Thẻ ngân hàng" ở Trang chủ trỏ tới `/members/[memberId]/bank-cards` nhưng thiếu file `page.tsx` gây ra lỗi 404.
+- **Giải pháp**:
+  - Khởi tạo route `src/app/members/[id]/bank-cards/page.tsx`.
+  - Tái sử dụng bảng `bank_accounts` cũ và API `GET /api/bank-accounts?memberId=[id]`.
+  - Nếu chưa có thẻ, hiển thị empty state: "Chưa có thẻ ngân hàng" cùng nút "+ Thêm thẻ".
+  - Hiển thị danh sách thẻ ở dạng lưới (grid), click vào từng thẻ sẽ trỏ đến trang chi tiết `[cardId]`.
+  - Thẻ được thiết kế dạng "tượng trưng", không hiển thị toàn bộ số thẻ nhạy cảm mà chỉ phục vụ việc quản lý chi tiêu trong Family Hub.
+
+### Lần 32 - Đơn giản hóa chức năng Quản lý Thẻ Ngân hàng và Sửa lỗi Dữ liệu
+- **Vấn đề**:
+  - Giao diện thêm/sửa và chi tiết thẻ quá phức tạp, lưu trữ dư thừa dữ liệu thẻ nhạy cảm (không phù hợp với nhu cầu chỉ quản lý chi tiêu tượng trưng).
+  - Có lỗi hiển thị chuỗi UTF-8 đối với các thành viên tạo trên ứng dụng do sai encoding database (Mojibake).
+  - Cần bảo đảm an toàn dữ liệu, không xóa toàn bộ mà chỉ reset/migrate module thẻ nếu cần thiết.
+- **Giải pháp**:
+  - **Tạo Script Bảo trì (`scripts/`)**:
+    - `reset-bank-cards-only.mjs`: Script chuyên dụng dùng để dọn sạch module thẻ ngân hàng (với các biến môi trường kiểm soát `RESET_BANK_CARDS_ONLY=YES`, `DRY_RUN=YES`), xử lý xóa an toàn thông qua `SET NULL` đối với `transactions.bank_account_id`.
+    - `fix-mojibake.mjs`: Script sửa lỗi Encoding tên thành viên `latin1 -> utf8`, có chức năng preview (không áp dụng nếu không có `FIX_MOJIBAKE_APPLY=YES`).
+  - **Thiết kế lại Giao diện (`src/components/bank-card-page.tsx`)**:
+    - Xóa bỏ các thông tin dư thừa: phí thường niên, ưu đãi/điểm thưởng, nội dung gốc, trích xuất hình ảnh, thông tin thẻ đầy đủ.
+    - Chuyển `BankCardFormPage` về một form duy nhất không dùng tabs: Tên thẻ (Ví dụ: Thẻ tín dụng BIDV, Thẻ vợ...), Loại, Ngân hàng, Hạn mức, Sao kê, Trạng thái.
+    - Thiết kế `BankCardDetailPage` với 3 tab trực quan (đối với thẻ tín dụng): **Thông tin thẻ**, **Tạm tính**, **Đã thanh toán**. Giao diện đáp ứng di động tốt hơn (Mobile First đỏ/trắng).
+  - **Chỉnh sửa API (`src/app/api/bank-accounts`)**:
+    - Loại bỏ yêu cầu nhập/lưu số `last4` bắt buộc, làm cho thẻ hoàn toàn "tượng trưng".
+    - `GET`: Filter/strip các field `cardNumber` và `accountNumber` về chuỗi rỗng trước khi trả ra frontend.
+    - `PUT`/`POST`: Set `last4="0000"`, `cardNumber=""`, `accountNumber=""` bảo đảm không lưu vào database thông tin thật kể cả khi bypass form.
+  - **Kiểm tra Logic Chi tiêu**:
+    - Logic thu chi trong `family-app.tsx` (`/api/card-pending-transactions`) vẫn đáp ứng quy trình:
+      - Khi chi tiêu bằng Thẻ tín dụng -> lưu vào `card_pending_transactions`.
+      - Khi bấm Tạo GD thanh toán dư nợ -> gom dư nợ tạo 1 `expense` transaction thật và cập nhật pending thành `paid`.
+      - Ghi nợ/Tiền mặt/Ewallet -> đi vào thẳng `transactions`.

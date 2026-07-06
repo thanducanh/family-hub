@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { requireSession, getSessionUser, buildDataFilter } from "@/lib/auth";
 import { ensureMemberSimsTable } from "@/lib/member-sims";
+import { apiErrorResponse, guardDatabaseWrite } from "@/lib/db-health";
+import { fixVietnameseMojibake } from "@/lib/text-encoding";
 
 export type Collection = "members" | "tasks" | "transactions" | "events" | "notes";
 
@@ -442,10 +444,13 @@ export function collectionHandlers(collection: Collection) {
       }
       
       const result = await pool.query(`SELECT ${selectFields.join(", ")} FROM ${collection} WHERE ${where} ORDER BY id`, params);
-      return NextResponse.json(result.rows.map(row => fromDb(collection, row)));
+      return NextResponse.json(fixVietnameseMojibake(result.rows.map(row => fromDb(collection, row))));
     },
     POST: async (request: NextRequest) => {
+      try {
       if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      const offline = await guardDatabaseWrite();
+      if (offline) return offline;
       await ensureCollectionSchema(collection);
       const payload = await request.json();
       if (collection === "transactions") {
@@ -465,12 +470,18 @@ export function collectionHandlers(collection: Collection) {
         await syncSavingsForTransaction(result.rows[0]);
         await syncSimPaymentForTransaction(result.rows[0]);
         const synced = await fetchTransactionRow(String(result.rows[0].id), fields);
-        if (synced) return NextResponse.json(fromDb(collection, synced), { status: 201 });
+        if (synced) return NextResponse.json(fixVietnameseMojibake(fromDb(collection, synced)), { status: 201 });
       }
-      return NextResponse.json(fromDb(collection, result.rows[0]), { status: 201 });
+      return NextResponse.json(fixVietnameseMojibake(fromDb(collection, result.rows[0])), { status: 201 });
+      } catch (error) {
+        return apiErrorResponse(error, "Không thể lưu dữ liệu.", `[POST /api/${collection}]`);
+      }
     },
     PUT: async (request: NextRequest) => {
+      try {
       if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      const offline = await guardDatabaseWrite();
+      if (offline) return offline;
       await ensureCollectionSchema(collection);
       const payload = await request.json();
       if (collection === "transactions") {
@@ -490,12 +501,18 @@ export function collectionHandlers(collection: Collection) {
         await syncSavingsForTransaction(result.rows[0]);
         await syncSimPaymentForTransaction(result.rows[0]);
         const synced = await fetchTransactionRow(String(result.rows[0].id), fields);
-        if (synced) return NextResponse.json(fromDb(collection, synced));
+        if (synced) return NextResponse.json(fixVietnameseMojibake(fromDb(collection, synced)));
       }
-      return NextResponse.json(fromDb(collection, result.rows[0]));
+      return NextResponse.json(fixVietnameseMojibake(fromDb(collection, result.rows[0])));
+      } catch (error) {
+        return apiErrorResponse(error, "Không thể lưu dữ liệu.", `[PUT /api/${collection}]`);
+      }
     },
     DELETE: async (request: NextRequest) => {
+      try {
       if (!await requireSession()) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      const offline = await guardDatabaseWrite();
+      if (offline) return offline;
       const id = new URL(request.url).searchParams.get("id");
       if (!id) return NextResponse.json({ error: "Thiếu id" }, { status: 400 });
       if (collection === "transactions") {
@@ -505,6 +522,9 @@ export function collectionHandlers(collection: Collection) {
       }
       await pool.query(`DELETE FROM ${collection} WHERE id = $1`, [id]);
       return NextResponse.json({ ok: true });
+      } catch (error) {
+        return apiErrorResponse(error, "Không thể xóa dữ liệu.", `[DELETE /api/${collection}]`);
+      }
     },
   };
 }

@@ -118,7 +118,7 @@ export async function GET(req: NextRequest) {
     const realExpenseCondition = "COALESCE(counts_for_personal_expense, CASE WHEN category IN ('Tiết kiệm', 'Thanh toán hộ') THEN false ELSE true END) = true";
 
     await ensureAdjustmentsTable();
-    const [incomeRecordsResult, expensesResult, savingsInExpenseResult, investmentsBuyResult, investmentsSellResult, adjustmentsResult] = await Promise.all([
+    const [incomeRecordsResult, expensesResult, savingsInExpenseResult, investmentsBuyResult, investmentsSellResult, adjustmentsResult, pendingCreditResult] = await Promise.all([
       pool.query(`SELECT month, SUM(amount) as total FROM income_records WHERE status = 'Đã nhận' AND year = $1 AND ${filter.where} GROUP BY month`, [year, ...filter.params]),
       pool.query(
         `SELECT EXTRACT(MONTH FROM ${transactionDateExpr}) as month, SUM(amount) as total
@@ -143,11 +143,12 @@ export async function GET(req: NextRequest) {
       pool.query(`SELECT EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price + fee) as total FROM investment_transactions WHERE action = 'buy' AND EXTRACT(YEAR FROM trade_date) = $1 AND ${filter.where} GROUP BY EXTRACT(MONTH FROM trade_date)`, [year, ...filter.params]),
       pool.query(`SELECT EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price - fee) as total FROM investment_transactions WHERE action = 'sell' AND EXTRACT(YEAR FROM trade_date) = $1 AND ${filter.where} GROUP BY EXTRACT(MONTH FROM trade_date)`, [year, ...filter.params]),
       pool.query(`SELECT month, SUM(amount) as total FROM finance_adjustments WHERE year = $1 GROUP BY month`, [year]),
+      pool.query(`SELECT EXTRACT(MONTH FROM date) as month, SUM(amount) as total FROM card_pending_transactions WHERE status = 'pending' AND EXTRACT(YEAR FROM date) = $1 AND ${filter.where} GROUP BY EXTRACT(MONTH FROM date)`, [year, ...filter.params]),
     ]);
 
-    const dataMap: Record<number, { month: number; income: number; expense: number; savingsInExpense: number; investmentBuy: number; investmentSell: number; netInvestment: number; adjustment: number }> = {};
+    const dataMap: Record<number, { month: number; income: number; expense: number; pendingCredit: number; savingsInExpense: number; investmentBuy: number; investmentSell: number; netInvestment: number; adjustment: number }> = {};
     for (let month = 1; month <= 12; month += 1) {
-      dataMap[month] = { month, income: 0, expense: 0, savingsInExpense: 0, investmentBuy: 0, investmentSell: 0, netInvestment: 0, adjustment: 0 };
+      dataMap[month] = { month, income: 0, expense: 0, pendingCredit: 0, savingsInExpense: 0, investmentBuy: 0, investmentSell: 0, netInvestment: 0, adjustment: 0 };
     }
 
     for (const row of incomeRecordsResult.rows) {
@@ -167,6 +168,9 @@ export async function GET(req: NextRequest) {
     }
     for (const row of adjustmentsResult.rows) {
       if (dataMap[Number(row.month)]) dataMap[Number(row.month)].adjustment += Number(row.total || 0);
+    }
+    for (const row of pendingCreditResult.rows) {
+      if (dataMap[Number(row.month)]) dataMap[Number(row.month)].pendingCredit += Number(row.total || 0);
     }
 
     const cashQuery = await pool.query(

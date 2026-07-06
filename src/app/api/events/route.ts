@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { createSystemNotification } from "@/lib/server-notifications";
+import { guardDatabaseWrite } from "@/lib/db-health";
+import { fixVietnameseMojibake } from "@/lib/text-encoding";
 
 const fields = `
   e.id,
@@ -177,7 +179,7 @@ export async function GET(request: NextRequest) {
        ORDER BY COALESCE(e.start_date, e.date, e.event_date::date, e.created_at::date), COALESCE(e.all_day, e.is_all_day, FALSE) DESC, COALESCE(e.start_time, e.time, e.event_date::time), e.created_at`,
       params
     );
-    return NextResponse.json({ ok: true, data: result.rows.map(view) });
+    return NextResponse.json(fixVietnameseMojibake({ ok: true, data: result.rows.map(view) }));
   } catch (error) {
     console.error("[GET /api/events]", error);
     return NextResponse.json({ ok: false, error: "Không thể tải sự kiện." }, { status: 500 });
@@ -188,6 +190,8 @@ async function save(request: NextRequest, update: boolean) {
   try {
     const actor = await getSessionUser();
     if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    const offline = await guardDatabaseWrite();
+    if (offline) return offline;
     await ensureEventSchema();
 
     const body = await request.json() as {
@@ -289,6 +293,8 @@ export async function DELETE(request: NextRequest) {
   try {
     const actor = await getSessionUser();
     if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    const offline = await guardDatabaseWrite();
+    if (offline) return offline;
     await ensureEventSchema();
     const id = request.nextUrl.searchParams.get("id") || "";
     if (!id || !await canEditEvent(actor.id, actor.role, id)) return NextResponse.json({ ok: false, error: "Không có quyền xóa sự kiện." }, { status: 403 });

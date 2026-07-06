@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { fixVietnameseMojibake } from "@/lib/text-encoding";
 import crypto from "crypto";
 
 export async function GET() {
@@ -68,7 +69,7 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ ok: true, notifications: data });
+    return NextResponse.json({ ok: true, notifications: fixVietnameseMojibake(data) });
   } catch (error) {
     console.error("[GET /api/notifications]", error);
     return NextResponse.json({ ok: false, error: "Không thể tải thông báo." }, { status: 500 });

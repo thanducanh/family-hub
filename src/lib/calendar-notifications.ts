@@ -1,5 +1,7 @@
 "use client";
 
+import { fixVietnameseMojibake, fixVietnameseMojibakeString } from "@/lib/text-encoding";
+
 export type CalendarNotificationAction = "created" | "updated" | "copied" | "moved" | "deleted";
 export type CalendarNotificationType = "daily_events" | "event_created" | "event_updated" | "event_deleted" | "event_moved" | "event_copied" | "account_password_changed";
 export type CalendarNotificationItem = { time: string; title: string };
@@ -75,7 +77,7 @@ function canSee(item: CalendarNotification, user?: CalendarNotificationUser) {
 
 export function loadCalendarNotifications() {
   if (typeof window === "undefined") return [] as CalendarNotification[];
-  try { return JSON.parse(localStorage.getItem(key) || "[]") as CalendarNotification[]; } catch { return []; }
+  try { return fixVietnameseMojibake(JSON.parse(localStorage.getItem(key) || "[]")) as CalendarNotification[]; } catch { return []; }
 }
 export function loadVisibleCalendarNotifications(user?: CalendarNotificationUser) {
   return loadCalendarNotifications().filter(item => canSee(item, user));
@@ -89,7 +91,7 @@ export function addCalendarNotification(input: CalendarNotificationInput) {
   const visibleUserIds = unique([input.actor.id, ...(input.visibleUserIds || [])]);
   const visibleMemberIds = unique(input.visibleMemberIds || []);
   const movedSuffix = input.action === "moved" && input.movedToDate ? ` sang ${new Date(`${input.movedToDate}T00:00:00`).toLocaleDateString("vi-VN")}` : "";
-  const message = `${input.actor.name} ${verbs[input.action]} sự kiện ${input.title}${movedSuffix}`;
+  const message = fixVietnameseMojibakeString(`${input.actor.name} ${verbs[input.action]} sự kiện ${input.title}${movedSuffix}`);
   const noticeId = crypto.randomUUID();
   const next = [{
     id: noticeId,
@@ -144,7 +146,7 @@ export function addDailyEventNotification(userId: string, date: string, count: n
   const noticeKey = `familyhub_daily_event_notice_${date}_${userId}`;
   if (localStorage.getItem(noticeKey)) return;
   localStorage.setItem(noticeKey, "true");
-  const title = `Bạn có ${count} sự kiện hôm nay. Chúc một ngày tốt lành!`;
+  const title = fixVietnameseMojibakeString(`Bạn có ${count} sự kiện hôm nay. Chúc một ngày tốt lành!`);
   const noticeId = crypto.randomUUID();
   const next = [{ id: noticeId, type: "daily_events" as const, title, message: title, items, userId, visibleUserIds: [userId], visible_user_ids: [userId], readUserIds: [], read_user_ids: [], createdAt: new Date().toISOString(), read: false }, ...loadCalendarNotifications()].slice(0, 100);
   localStorage.setItem(key, JSON.stringify(next));
@@ -166,8 +168,9 @@ export function addDailyEventNotification(userId: string, date: string, count: n
 }
 export function addAccountPasswordNotification(userId: string, message: string, actor?: { id: string; name: string; avatar?: string }) {
   if (typeof window === "undefined") return;
+  const fixedMessage = fixVietnameseMojibakeString(message);
   const noticeId = crypto.randomUUID();
-  const next = [{ id: noticeId, type: "account_password_changed" as const, title: message, message, userId, actorUserId: actor?.id, actor_user_id: actor?.id, actorName: actor?.name, actor_name: actor?.name, actorAvatar: actor?.avatar || "", actor_avatar: actor?.avatar || "", visibleUserIds: [userId], visible_user_ids: [userId], readUserIds: [], read_user_ids: [], createdAt: new Date().toISOString(), read: false }, ...loadCalendarNotifications()].slice(0, 100);
+  const next = [{ id: noticeId, type: "account_password_changed" as const, title: fixedMessage, message: fixedMessage, userId, actorUserId: actor?.id, actor_user_id: actor?.id, actorName: actor?.name, actor_name: actor?.name, actorAvatar: actor?.avatar || "", actor_avatar: actor?.avatar || "", visibleUserIds: [userId], visible_user_ids: [userId], readUserIds: [], read_user_ids: [], createdAt: new Date().toISOString(), read: false }, ...loadCalendarNotifications()].slice(0, 100);
   localStorage.setItem(key, JSON.stringify(next));
   window.dispatchEvent(new CustomEvent(notificationEvent));
 
@@ -177,8 +180,8 @@ export function addAccountPasswordNotification(userId: string, message: string, 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       id: noticeId,
-      title: message,
-      message,
+      title: fixedMessage,
+      message: fixedMessage,
       createdByName: actor?.name || "Family Hub",
       userId,
       visibleUserIds: [userId]
@@ -222,4 +225,3 @@ export function markNotificationRead(id: string, user?: CalendarNotificationUser
     body: JSON.stringify({ id })
   }).catch(console.error);
 }
-

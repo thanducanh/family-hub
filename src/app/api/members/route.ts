@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { durableAvatarValue, ensureMemberAvatarUrlColumn, normalizeBirthday, toMemberProfile } from "@/lib/member-profile";
+import { guardDatabaseWrite } from "@/lib/db-health";
 
 const fields = "id, name, nickname, birthday, gender, phone, avatar, avatar_url, notes, color";
 const selectFields = `${fields}, permissions`;
@@ -67,6 +68,8 @@ export async function POST(request: NextRequest) {
   try {
     const actor = await getSessionUser();
     if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    const offline = await guardDatabaseWrite();
+    if (offline) return offline;
     await ensureMemberAvatarUrlColumn();
     if (actor.role === "self_only") return NextResponse.json({ ok: false, error: "Không có quyền thêm thành viên." }, { status: 403 });
     const item = await request.json() as Record<string, unknown>;
@@ -87,6 +90,8 @@ export async function PUT(request: NextRequest) {
   try {
     const actor = await getSessionUser();
     if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    const offline = await guardDatabaseWrite();
+    if (offline) return offline;
     await ensureMemberAvatarUrlColumn();
     const item = await request.json() as Record<string, unknown>;
     const normalized: Record<string, unknown> = { ...item, birthday: item.birthDate || item.birthday, notes: item.note || item.notes };
@@ -120,6 +125,8 @@ export async function DELETE(request: NextRequest) {
   try {
     const actor = await getSessionUser();
     if (!actor) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    const offline = await guardDatabaseWrite();
+    if (offline) return offline;
     if (actor.role === "self_only") return NextResponse.json({ ok: false, error: "Không có quyền xóa thành viên." }, { status: 403 });
     const id = new URL(request.url).searchParams.get("id");
     if (!id) return NextResponse.json({ ok: false, error: "Thiếu id." }, { status: 400 });

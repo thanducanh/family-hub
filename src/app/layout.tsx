@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { UIProvider } from "@/components/ui-context";
+import { DbHealthProvider } from "@/components/db-health-context";
+import { AuthProvider } from "@/components/auth-provider";
 
 export const metadata: Metadata = {
   title: "Family Hub",
@@ -37,7 +39,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <meta charSet="utf-8" />
       </head>
       <body>
-        <UIProvider>{children}</UIProvider>
+        <UIProvider><DbHealthProvider><AuthProvider>{children}</AuthProvider></DbHealthProvider></UIProvider>
       </body>
     </html>
   );

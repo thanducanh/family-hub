@@ -97,7 +97,7 @@ async function memberPermissions(memberId: string): Promise<MemberPermissions> {
 
 export async function buildDataFilter(user: SessionUser | null, tablePrefix: string = '', paramIndexStart: number = 1, memberIdCol: string = 'member_id', moduleKey?: string) {
   if (!user) return { where: '1=0', params: [] };
-  const isAdmin = user.role === 'full_access';
+  const isAdmin = user.role === 'full_access' || user.username === 'admin' || (user as any).is_admin === true || (user as any).account_type === 'admin';
   if (isAdmin) return { where: '1=1', params: [] };
   if (!user.memberId) return { where: '1=0', params: [] }; // Cannot see anything if no memberId and not admin
   const prefix = tablePrefix ? `${tablePrefix}.` : '';

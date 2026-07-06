@@ -4,6 +4,7 @@ import { createSessionToken, normalizeUserRole, sessionCookie, type SessionUser 
 import { pool } from "@/lib/db";
 import { initDatabase } from "@/lib/init-database";
 import { ensureMemberAvatarUrlColumn, memberProfileFields, toMemberProfile } from "@/lib/member-profile";
+import { fixVietnameseMojibakeString } from "@/lib/text-encoding";
 
 export async function POST(request: NextRequest) {
   const { username, password, remember = false } = await request.json() as { username?: string; password?: string; remember?: boolean };
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
     if (row.member_id) await ensureMemberAvatarUrlColumn();
     const memberResult = row.member_id ? await pool.query(`SELECT ${memberProfileFields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [row.member_id]) : { rows: [] };
     const member = memberResult.rows[0] ? toMemberProfile(memberResult.rows[0]) : null;
-    const user: SessionUser = { id: row.id, username: row.username, displayName: member?.nickname || member?.name || row.display_name, avatar: member?.avatarUrl || member?.avatar || row.avatar, role: normalizeUserRole(String(row.role)), mustChangePassword: row.must_change_password, memberId: member?.id || row.member_id || "" };
+    const user: SessionUser = { id: row.id, username: row.username, displayName: member?.nickname || member?.name || fixVietnameseMojibakeString(row.display_name), avatar: member?.avatarUrl || member?.avatar || row.avatar, role: normalizeUserRole(String(row.role)), mustChangePassword: row.must_change_password, memberId: member?.id || row.member_id || "" };
     const response = NextResponse.json({ ok: true, user, member });
     response.cookies.set(sessionCookie(createSessionToken(user, remember), remember));
     return response;

@@ -1,4 +1,5 @@
 import { mockData } from "@/data/mock-data";
+import { fixVietnameseMojibake } from "@/lib/text-encoding";
 import type { AppData, EventItem, Member, Note, Preferences, Task, Transaction } from "@/types";
 
 export interface DataService {
@@ -116,10 +117,7 @@ export class ApiDataService implements DataService {
       this.current = data;
       this.setStatus("nas", "Đã ghi PostgreSQL NAS và cập nhật cache offline.", countsOf(data));
     } catch {
-      await this.fallback.save(data);
-      this.current = data;
-      this.setStatus("localStorage", "Không thể đồng bộ NAS. Dữ liệu vẫn được lưu trong localStorage.");
-      // localStorage remains the offline fallback and cache.
+      this.setStatus("localStorage", "Mất kết nối cơ sở dữ liệu. Dữ liệu chỉ có thể xem, không thể lưu thay đổi.");
     }
   }
   exportData() { return this.fallback.exportData(); }
@@ -135,7 +133,7 @@ export class ApiDataService implements DataService {
       const health = await response.json() as { counts: NasCounts };
       this.setStatus("nas", "Kết nối PostgreSQL NAS hoạt động bình thường.", health.counts);
     } catch {
-      this.setStatus("localStorage", "Không thể kết nối PostgreSQL NAS.");
+      this.setStatus("localStorage", "Mất kết nối cơ sở dữ liệu. Dữ liệu chỉ có thể xem, không thể lưu thay đổi.");
     }
     return this.status;
   }
@@ -158,6 +156,9 @@ export class ApiDataService implements DataService {
     const responses = await Promise.all(collections.map(collection => fetch(`/api/${collection}`)));
     if (responses.some(response => !response.ok)) throw new Error("Database API unavailable");
     const values = await Promise.all(responses.map(response => response.json()));
+    if (responses.some(response => response.headers.get("X-FamilyHub-Cache") === "readonly")) {
+      this.setStatus("localStorage", "Đang xem dữ liệu đã lưu lần cuối.");
+    }
     const extractedValues = values.map(val => (val && typeof val === "object" && val.ok !== undefined && val.data !== undefined) ? val.data : val);
     const data = Object.fromEntries(collections.map((collection, index) => [collection, extractedValues[index]])) as unknown as AppData;
     
@@ -194,13 +195,14 @@ function isAppData(data: unknown): data is AppData {
 }
 
 function normalizeData(data: AppData): AppData {
+  const fixed = fixVietnameseMojibake(data) as AppData;
   return {
-    ...data,
-    members: data.members.map(member => ({ ...normalizeMember(member), id: normalizeId(member.id) })),
-    tasks: data.tasks.map(task => ({ ...normalizeTask(task), id: normalizeId(task.id) })),
-    transactions: data.transactions.map(transaction => ({ ...normalizeTransaction(transaction), id: normalizeId(transaction.id) })),
-    events: data.events.map(event => ({ ...normalizeEvent(event), id: normalizeId(event.id) })),
-    notes: data.notes.map(note => ({ ...normalizeNote(note), id: normalizeId(note.id) })),
+    ...fixed,
+    members: fixed.members.map(member => ({ ...normalizeMember(member), id: normalizeId(member.id) })),
+    tasks: fixed.tasks.map(task => ({ ...normalizeTask(task), id: normalizeId(task.id) })),
+    transactions: fixed.transactions.map(transaction => ({ ...normalizeTransaction(transaction), id: normalizeId(transaction.id) })),
+    events: fixed.events.map(event => ({ ...normalizeEvent(event), id: normalizeId(event.id) })),
+    notes: fixed.notes.map(note => ({ ...normalizeNote(note), id: normalizeId(note.id) })),
   };
 }
 
@@ -256,3 +258,4 @@ function countsOf(data: AppData): NasCounts {
 }
 
 export const dataService = new ApiDataService();
+

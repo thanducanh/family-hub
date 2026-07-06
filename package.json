@@ -10,7 +10,9 @@
     "lint": "eslint",
     "seed:admin": "node database/seed-admin.mjs",
     "db:backup": "node database/backup.mjs",
-    "db:restore": "node database/restore.mjs"
+    "db:restore": "node database/restore.mjs",
+    "db:fix-font:dry": "node scripts/fix-mojibake-db.mjs --dry-run",
+    "db:fix-font:apply": "node scripts/fix-mojibake-db.mjs --apply"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

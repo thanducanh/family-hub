@@ -1,4 +1,5 @@
 import { pool } from "@/lib/db";
+import { fixVietnameseMojibakeString, fixVietnameseMojibake } from "@/lib/text-encoding";
 
 export interface MemberProfile {
   id: string;
@@ -49,19 +50,20 @@ export function normalizeBirthday(value: unknown) {
 }
 
 export function toMemberProfile(row: Record<string, unknown>): MemberProfile {
+  const permissions = fixVietnameseMojibake(row.permissions);
   return {
     id: String(row.id),
-    name: String(row.name ?? ""),
-    nickname: String(row.nickname ?? ""),
+    name: fixVietnameseMojibakeString(row.name),
+    nickname: fixVietnameseMojibakeString(row.nickname),
     avatar: String(row.avatar_url ?? row.avatar ?? ""),
     avatarUrl: String(row.avatar_url ?? row.avatar ?? ""),
     avatarPreview: row.avatarPreview !== undefined ? String(row.avatarPreview) : undefined,
     coverUrl: String(row.cover_url ?? ""),
-    phone: String(row.phone ?? ""),
+    phone: fixVietnameseMojibakeString(row.phone),
     birthday: normalizeBirthday(row.birthday),
-    gender: String(row.gender ?? ""),
-    notes: String(row.notes ?? ""),
+    gender: fixVietnameseMojibakeString(row.gender),
+    notes: fixVietnameseMojibakeString(row.notes),
     color: String(row.color ?? ""),
-    permissions: typeof row.permissions === "object" && row.permissions !== null ? row.permissions as Record<string, unknown> : {},
+    permissions: typeof permissions === "object" && permissions !== null ? permissions as Record<string, unknown> : {},
   };
 }

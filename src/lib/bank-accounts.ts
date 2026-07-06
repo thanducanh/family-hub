@@ -188,7 +188,20 @@ export function bankAccountFromRow(row: Record<string, unknown>): BankAccount {
 }
 
 export async function canAccessBankMember(user: SessionUser, memberId: string) {
-  if (user.role === "full_access") return true;
+  const isSysAdmin = user.role === "full_access" || user.username === "admin" || (user as any).is_admin === true || (user as any).account_type === "admin";
+  if (isSysAdmin) return true;
+  if (!user.memberId) return false;
+  
+  try {
+    const { pool } = await import("./db");
+    const result = await pool.query("SELECT permissions FROM members WHERE id = $1 AND deleted_at IS NULL", [user.memberId]);
+    const permissions = result.rows[0]?.permissions || {};
+    if (permissions.viewMode === "all") return true;
+    if (permissions.viewMode === "custom" && Array.isArray(permissions.visibleMemberIds) && permissions.visibleMemberIds.includes(memberId)) return true;
+  } catch (err) {
+    console.error("[canAccessBankMember] Error checking permissions:", err);
+  }
+  
   return Boolean(user.memberId && user.memberId === memberId);
 }
 

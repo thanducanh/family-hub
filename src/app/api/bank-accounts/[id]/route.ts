@@ -16,6 +16,8 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     if (!accountResult.rows[0]) return NextResponse.json({ ok: false, error: "Không tìm thấy thẻ ngân hàng." }, { status: 404 });
     if (!await canAccessBankMember(user, String(accountResult.rows[0].member_id))) return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });
     const [account] = await bankAccountsFromRows([accountResult.rows[0]]);
+    account.cardNumber = "";
+    account.accountNumber = "";
     const [memberResult, rawNotesResult] = await Promise.all([
       pool.query("SELECT id, name, nickname, birthday, gender, role, phone, avatar, notes, color FROM members WHERE id = $1 AND deleted_at IS NULL", [account.memberId]),
       pool.query("SELECT id, member_id, bank_account_id, title, bank_name, content_type, LEFT(raw_text, 1200) AS raw_text, image_url, extracted_json, effective_date, expiry_date, note, created_at, updated_at FROM bank_raw_notes WHERE bank_account_id = $1 ORDER BY updated_at DESC LIMIT 10", [id]).catch(() => ({ rows: [] })),
@@ -37,15 +39,12 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     if (existing.error) return existing.error;
     const body = await request.json();
     const account = normalizeBankBody({ ...body, id });
-    if (!account.memberId || !account.bankName || !account.accountType || !account.accountHolder || !account.status) {
+    if (!account.memberId || !account.bankName || !account.accountType || !account.status) {
       return NextResponse.json({ ok: false, error: "Vui lòng nhập đủ thông tin cơ bản." }, { status: 400 });
     }
-    if (account.accountType !== "Ví điện tử" && !/^\d{4}$/.test(account.last4)) {
-      return NextResponse.json({ ok: false, error: "Vui lòng nhập đúng 4 số cuối." }, { status: 400 });
-    }
-    if (account.accountType === "Ví điện tử" && !account.last4) {
-      return NextResponse.json({ ok: false, error: "Vui lòng nhập số điện thoại hoặc 4 số cuối." }, { status: 400 });
-    }
+    account.last4 = "0000";
+    account.cardNumber = "";
+    account.accountNumber = "";
     if (account.accountType === "Thẻ tín dụng") {
       if (!account.cardNetwork || account.cardNetwork === "Không áp dụng") return NextResponse.json({ ok: false, error: "Vui lòng chọn tổ chức thẻ." }, { status: 400 });
       if (!account.productName) return NextResponse.json({ ok: false, error: "Vui lòng nhập tên sản phẩm thẻ." }, { status: 400 });

@@ -1,9 +1,11 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
 import { ArrowLeft, PieChart, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell, PieChart as RechartsPie, Pie } from "recharts";
 import { TimeTreeCalendar } from "@/components/timetree-calendar";
@@ -12,6 +14,7 @@ import { useUI } from "@/components/ui-context";
 import { addAccountPasswordNotification, addDailyEventNotification, isCalendarNotificationUnread, loadVisibleCalendarNotifications, markCalendarNotificationsRead, markNotificationRead, notificationEvent, type CalendarNotification } from "@/lib/calendar-notifications";
 import { requestNotificationPermission } from "@/lib/notifications";
 import { translator } from "@/lib/i18n";
+import { fixVietnameseMojibake } from "@/lib/text-encoding";
 import { dataService, setCacheUserId, type SystemStatus } from "@/services/data-service";
 import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, CardReward, CardRewardType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberPermissions, MemberJob, MemberJobStatus, MemberSim, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
 import * as XLSX from "xlsx";
@@ -71,7 +74,7 @@ const bankCardsByMemberCache = new Map<string, BankAccount[]>();
 async function readJsonSafe<T>(response: Response): Promise<T | null> {
   const text = await response.text();
   if (!text) return null;
-  try { return JSON.parse(text) as T; }
+  try { return fixVietnameseMojibake(JSON.parse(text)) as T; }
   catch { return null; }
 }
 function parseDate(value: string | null | undefined, now = new Date()) {
@@ -258,10 +261,20 @@ const MOBILE_I18N: Record<string, Record<string, string>> = {
 const mobileT = (lang: string, key: string) => MOBILE_I18N[lang]?.[key] || key;
 
 export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
+  const router = useRouter();
   const ui = useUI();
-  const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
+  const { user, setUser, refreshUser } = useAuth();
   const [data, setData] = useState<AppData | null>(null);
-  const [screen, setScreen] = useState<Screen>("dashboard");
+  const [screen, setScreen] = useState<Screen>(() => {
+    if (typeof sessionStorage !== "undefined") {
+      const pending = sessionStorage.getItem("familyHubPendingScreen");
+      if (pending) {
+        sessionStorage.removeItem("familyHubPendingScreen");
+        return pending as Screen;
+      }
+    }
+    return "dashboard";
+  });
   const [language, setLanguage] = useState<Language>("vi");
   const [theme, setTheme] = useState<Theme>("system");
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
@@ -274,12 +287,12 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       const uid = user?.id || user?.memberId || "guest";
       const key = `familyHubNotifications:${uid}`;
       let localItems = [];
-      try { localItems = JSON.parse(localStorage.getItem(key) || "[]"); } catch(e){}
+      try { localItems = fixVietnameseMojibake(JSON.parse(localStorage.getItem(key) || "[]")) as any[]; } catch(e){}
       
       try {
         const res = await fetch("/api/notifications");
         if (res.ok) {
-          const data = await res.json();
+          const data = fixVietnameseMojibake(await res.json()) as any;
           if (data.ok && data.notifications) {
             const getNotifKey = (n: any) => n.dedupeKey || n.id;
             const map = new Map();
@@ -316,7 +329,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
         const getNotifKey = (n: any) => n.dedupeKey || n.id;
         const newKey = getNotifKey(e.detail);
         if (prev.some(n => getNotifKey(n) === newKey)) return prev;
-        return [e.detail, ...prev];
+        return [fixVietnameseMojibake(e.detail), ...prev];
       });
     };
     window.addEventListener("app_notification_created", handleNewNotif);
@@ -358,7 +371,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
               if (!sentKeys.includes(dedupeKey)) {
                 // Send reminder notification
                 const title = "Nhắc lịch";
-                const message = `Sắp đến sự kiện "${event.title}" lúc ${event.startTime}`;
+                const message = String(fixVietnameseMojibake(`Sắp đến sự kiện "${event.title}" lúc ${event.startTime}`));
                 
                 const notif = {
                   id: crypto.randomUUID(),
@@ -374,11 +387,12 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
                   priority: "normal",
                   dedupeKey
                 };
+                const fixedNotif = fixVietnameseMojibake(notif) as typeof notif;
                 
                 const localNotifs = JSON.parse(localStorage.getItem(`familyHubNotifications:${uid}`) || "[]");
                 if (!localNotifs.some((n: any) => n.dedupeKey === dedupeKey)) {
-                  localStorage.setItem(`familyHubNotifications:${uid}`, JSON.stringify([notif, ...localNotifs]));
-                  window.dispatchEvent(new CustomEvent("app_notification_created", { detail: notif }));
+                  localStorage.setItem(`familyHubNotifications:${uid}`, JSON.stringify([fixedNotif, ...localNotifs]));
+                  window.dispatchEvent(new CustomEvent("app_notification_created", { detail: fixedNotif }));
                   
                   // Try to show system notification if permitted
                   if (typeof Notification !== "undefined" && Notification.permission === "granted") {
@@ -435,10 +449,6 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   const t = translator(language);
 
   useEffect(() => {
-    void fetch("/api/auth/me").then(async response => {
-      const result = await readJsonSafe<{ user?: AuthUser; member?: Member }>(response);
-      setUser(response.ok && result?.user ? { ...result.user, member: result.member } : null);
-    }).catch(() => setUser(null));
     const preferences = dataService.loadPreferences();
     queueMicrotask(() => {
       setLanguage(preferences.language); setTheme(preferences.theme);
@@ -543,7 +553,15 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       addDailyEventNotification(user.id, date, todayEvents.length, todayEvents.slice(0, 3).map(event => ({ time: event.allDay ? "All-day" : event.startTime, title: event.title })));
     }).catch(() => undefined);
   }, [user]);
-  function go(nextScreen: Screen) { setProfilePageOpen(false); setScreen(nextScreen); if (nextScreen === "calendar") setSidebarCollapsed(true); }
+  function go(nextScreen: Screen) { 
+    setProfilePageOpen(false); 
+    setScreen(nextScreen); 
+    if (nextScreen === "calendar") setSidebarCollapsed(true); 
+    if (typeof window !== "undefined" && window.location.pathname !== "/") {
+      sessionStorage.setItem("familyHubPendingScreen", nextScreen);
+      router.push("/");
+    }
+  }
   function update(next: AppData) { setData(next); void dataService.save(next); }
   function saveItem(kind: EntityKind, item: EntityItem) {
     const items = data![kind] as EntityItem[];
@@ -602,6 +620,14 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       setProfilePageOpen(false);
     }
     setMobileShowMembers(showMembers);
+    if (typeof window !== "undefined") {
+      if (window.location.pathname === "/") {
+        sessionStorage.setItem("familyHubPendingScreen", nextScreen === "settings" ? "members" : nextScreen);
+      } else {
+        // If user logged in while on a sub-route (e.g. /members/[id]/bank-cards),
+        // we stay on that route (do not redirect to /).
+      }
+    }
   }} />;
   if (!data) return <LoadingSkeleton />;
 
@@ -684,33 +710,33 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
             .dark\\:bg-indigo-500\\/20 { background-color: rgba(212, 175, 55, 0.2) !important; }
           }
         `}} />
-        <div className="md:hidden">
+        <div className="lg:hidden">
           <MobileSettings user={user} onLogout={logout} openChangePassword={() => setChangePasswordOpen(true)} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} t={t} />
         </div>
-        <div className="hidden md:block">
+        <div className="hidden lg:block">
           <Settings user={user} onLogout={logout} openProfile={() => setProfilePageOpen(true)} openChangePassword={() => setChangePasswordOpen(true)} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} updateData={setData} t={t} />
         </div>
       </>
     );
 
-  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" || screen === "settings" || screen === "system" ? "pb-0" : "pb-[100px] md:pb-0"} ${sidebarCollapsed ? "md:pl-[64px]" : "md:pl-[220px]"}`}>
+  return <main className={`min-h-screen bg-[var(--app-background)] text-[var(--app-foreground)] transition-[padding-left] duration-300 ${screen === "calendar" || screen === "finance" || screen === "settings" || screen === "system" ? "pb-0" : "pb-[100px] lg:pb-0"} ${sidebarCollapsed ? "lg:pl-[64px]" : "lg:pl-[220px]"}`}>
     <MobileNav screen={screen} profileOpen={profilePageOpen} go={go} openProfile={() => setProfilePageOpen(true)} language={language} />
     <Sidebar screen={screen} go={go} t={t} collapsed={sidebarCollapsed} toggle={() => setSidebarCollapsed(collapsed => !collapsed)} />
-    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur md:px-6 md:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" || screen === "system" || screen === "dashboard" || screen === "notifications" ? "hidden md:block" : "block"}`}>
-      <div className={`mx-auto flex items-center gap-2 md:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
-        <label className={`relative w-full max-w-md ${screen === "finance" ? "hidden md:block" : "block"}`}><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 md:h-11" /></label>
-        <div className="relative ml-auto flex items-center gap-1 md:gap-2">
-          <button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="hidden md:grid size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><ThemeIcon dark={theme === "dark"} /></button>
-          <button aria-label="Thông báo" onClick={() => go("notifications")} className="hidden md:grid relative size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 md:size-11"><BellIcon />{notifications.some(item => !(item as any).readAt) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => !(item as any).readAt).length}</span>}</button>
-          <button aria-label="Mở menu tài khoản" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(open => !open)} className="hidden md:flex items-center gap-1 rounded-full p-1 text-left hover:bg-slate-50 dark:hover:bg-white/5 md:gap-2">
-            <span className="grid size-9 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm md:size-10"><AccountAvatar user={headerUser} /></span><span className="max-w-24 truncate text-sm font-medium hidden sm:block md:max-w-32">{headerUser.displayName}</span><span className="hidden sm:block"><ChevronDownIcon /></span>
+    <header className={`sticky top-0 z-30 border-b border-[var(--app-border)] bg-[var(--app-nav)] px-3 py-2 backdrop-blur lg:px-6 lg:py-3 ${screen === "calendar" || screen === "members" || screen === "finance" || screen === "settings" || screen === "system" || screen === "dashboard" || screen === "notifications" ? "hidden lg:block" : "block"}`}>
+      <div className={`mx-auto flex items-center gap-2 lg:gap-3 ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>
+        <label className={`relative w-full max-w-md ${screen === "finance" ? "hidden lg:block" : "block"}`}><span className="absolute inset-y-0 left-3 grid place-items-center text-slate-400"><SearchIcon /></span><input placeholder="Tìm kiếm..." className="h-10 w-full rounded-full border border-[var(--app-border)] bg-slate-50 dark:bg-white/5 pl-10 pr-3 text-sm outline-none focus:border-indigo-400 lg:h-11" /></label>
+        <div className="relative ml-auto flex items-center gap-1 lg:gap-2">
+          <button aria-label="Đổi giao diện sáng tối" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="hidden lg:grid size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 lg:size-11"><ThemeIcon dark={theme === "dark"} /></button>
+          <button aria-label="Thông báo" onClick={() => go("notifications")} className="hidden lg:grid relative size-10 place-items-center rounded-full border border-[var(--app-border)] text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/5 lg:size-11"><BellIcon />{notifications.some(item => !(item as any).readAt) && <span className="absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">{notifications.filter(item => !(item as any).readAt).length}</span>}</button>
+          <button aria-label="Mở menu tài khoản" aria-expanded={accountMenuOpen} onClick={() => setAccountMenuOpen(open => !open)} className="hidden lg:flex items-center gap-1 rounded-full p-1 text-left hover:bg-slate-50 dark:hover:bg-white/5 lg:gap-2">
+            <span className="grid size-9 overflow-hidden rounded-full bg-indigo-500 text-sm font-bold text-white shadow-sm lg:size-10"><AccountAvatar user={headerUser} /></span><span className="max-w-24 truncate text-sm font-medium hidden sm:block lg:max-w-32">{headerUser.displayName}</span><span className="hidden sm:block"><ChevronDownIcon /></span>
           </button>
           {accountMenuOpen && <AccountMenu user={headerUser} openProfile={() => { setAccountMenuOpen(false); setProfilePageOpen(true); }} openSettings={() => { setAccountMenuOpen(false); setProfilePageOpen(false); setScreen("settings"); }} logout={logout} />}
         </div>
       </div>
     </header>
     <InstallPromptBanner promptEvent={installPrompt} dismissed={installDismissed} onDismiss={() => { setInstallDismissed(true); localStorage.setItem("pwaInstallDismissed", "true"); }} />
-    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" || screen === "settings" || screen === "system" || screen === "dashboard" || screen === "notifications" ? "px-0 py-0 md:px-8 md:py-8" : "px-4 py-4 md:px-8 md:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && screen !== "system" && screen !== "dashboard" && screen !== "notifications" && <div className={`mb-4 md:mb-5 ${profilePageOpen || screen === "finance" || screen === "settings" ? "hidden md:block" : "block"}`}><h1 className="text-xl md:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs md:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
+    <section className={`mx-auto ${profilePageOpen || screen === "finance" || screen === "members" || screen === "calendar" || screen === "settings" || screen === "system" || screen === "dashboard" || screen === "notifications" ? "px-0 py-0 lg:px-8 lg:py-8" : "px-4 py-4 lg:px-8 lg:py-8"} ${screen === "calendar" ? "max-w-none" : "max-w-[1600px]"}`}>{!children && screen !== "members" && screen !== "calendar" && screen !== "system" && screen !== "dashboard" && screen !== "notifications" && <div className={`mb-4 lg:mb-5 ${profilePageOpen || screen === "finance" || screen === "settings" ? "hidden lg:block" : "block"}`}><h1 className="text-xl lg:text-2xl font-semibold">{profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</h1><p className="mt-1 text-xs lg:text-sm text-slate-400">Family Hub / {profilePageOpen ? "Hồ sơ cá nhân" : t(titleKey[screen])}</p></div>}{content}</section>
     {editor && <EditorSheet key={`${editor.kind}:${editor.item?.id ?? "new"}`} editor={editor} actor={user} members={data.members} close={() => setEditor(null)} save={saveItem} remove={deleteItem} />}
     {changePasswordOpen && <ChangePasswordSheet close={() => setChangePasswordOpen(false)} saved={async user => { setUser(user); await refreshCurrentUser(); }} />}
   </main>;
@@ -767,7 +793,7 @@ export function getHomeCoverUrl(user: any, lastUser?: any): string {
   }
   if (typeof window !== "undefined") {
     try {
-      const legacy = JSON.parse(localStorage.getItem("familyHubLastUser") || "null");
+      const legacy = fixVietnameseMojibake(JSON.parse(localStorage.getItem("familyHubLastUser") || "null")) as any;
       return localStorage.getItem("lastUserCoverUrl") || localStorage.getItem("lastCoverUrl") || localStorage.getItem("lastBackgroundUrl") || legacy?.coverUrl || legacy?.cover_url || legacy?.coverImageUrl || legacy?.background_url || "";
     } catch {}
   }
@@ -1176,7 +1202,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
 
   useEffect(() => {
     try {
-      const legacy = JSON.parse(localStorage.getItem("familyHubLastUser") || "null");
+      const legacy = fixVietnameseMojibake(JSON.parse(localStorage.getItem("familyHubLastUser") || "null")) as any;
       const stored = {
         displayName: localStorage.getItem("lastUserName") || legacy?.displayName || "",
         username: localStorage.getItem("lastUsername") || legacy?.username || "",
@@ -1839,7 +1865,7 @@ function MobileBankForm({ account, close, save, loading, error, inputClass }: an
   const [form, setForm] = useState(account);
   const set = (key: string, val: any) => setForm((c: any) => ({ ...c, [key]: val }));
   const [showPicker, setShowPicker] = useState(false);
-  const bankNames = ["Vietcombank", "Techcombank", "ACB", "MB Bank", "VietinBank", "BIDV", "VPBank", "Sacombank"];
+  const bankNames = ["Vietcombank", "Techcombank", "ACB", "MB Bank", "VietinBank", "BIDV", "VPBank", "Sacombank", "HSBC"];
   return <FullScreenMobileSheet title={form.id ? "Sửa thẻ" : "Thêm thẻ"} close={close}>
     <div className="pb-10 bg-[#f8fafc] dark:bg-[var(--app-bg)] min-h-full">
       <div className="bg-white dark:bg-[var(--app-card)] border-y border-slate-200 dark:border-white/10 shadow-sm mt-2">
@@ -2701,7 +2727,7 @@ function MobileNav({ screen, profileOpen, go, openProfile, language }: { screen:
   const inactiveColor = "text-white";
   
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-5 h-16 w-full items-center border-t border-[#800020] bg-[#800020] pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,.25)] backdrop-blur-xl min-[769px]:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 grid grid-cols-5 h-16 w-full items-center border-t border-[#800020] bg-[#800020] pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,.25)] backdrop-blur-xl lg:hidden">
       <button onClick={() => go("members")} className={`${navItemClass} ${screen === "members" && !profileOpen ? activeColor : inactiveColor}`}>
         <span className="text-lg leading-none"><HomeIcon /></span>
         <span className="text-[10px] font-semibold leading-none whitespace-nowrap">{mobileT(language, "nav.home")}</span>
@@ -2732,7 +2758,7 @@ function MobileNav({ screen, profileOpen, go, openProfile, language }: { screen:
 
 function Sidebar({ screen, go, t, collapsed, toggle }: { screen: Screen; go: (s: Screen) => void; t: ReturnType<typeof translator>; collapsed: boolean; toggle: () => void }) {
   const items: Screen[] = ["dashboard", "members", "calendar", "finance", "chat", "notes", "notifications", "settings"];
-  return <aside className={`fixed inset-y-0 left-0 z-40 hidden md:flex flex-col border-r border-[var(--app-border)] bg-[var(--app-card)] py-4 transition-[width] duration-300 shadow-sm ${collapsed ? "w-[64px] px-2" : "w-[220px] px-4"}`}>
+  return <aside className={`fixed inset-y-0 left-0 z-40 hidden lg:flex flex-col border-r border-[var(--app-border)] bg-[var(--app-card)] py-4 transition-[width] duration-300 shadow-sm ${collapsed ? "w-[64px] px-2" : "w-[220px] px-4"}`}>
     <div className={`flex min-h-12 items-center ${collapsed ? "justify-center" : "justify-between gap-3 px-2"}`}>
       {!collapsed && <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[.2em] text-indigo-500">Family Hub</p><p className="truncate pt-1 text-xl font-bold">My Family</p></div>}
       <button type="button" onClick={toggle} aria-label={collapsed ? "Mở rộng sidebar" : "Thu gọn sidebar"} className="grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--app-border)] text-slate-600 transition hover:bg-[#EEF2FF] hover:text-[#4F46E5] dark:text-slate-200 dark:hover:bg-indigo-400/15 dark:hover:text-indigo-200"><MenuIcon /></button>
@@ -2773,6 +2799,29 @@ function AddButton({ onClick, label }: { onClick: () => void; label: string }) {
 const filterClass = "w-full min-w-0 max-w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-card)] px-3 py-3 text-sm outline-none focus:border-rose-400";
 
 function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: Screen) => void; notifications: CalendarNotification[]; user: AuthUser }) {
+  const [pendingStats, setPendingStats] = useState({ totalPending: 0, pendingThisMonth: 0 });
+  useEffect(() => {
+    fetch("/api/card-pending-transactions/all").then(r => r.json()).then(res => {
+      if (res.ok && res.data) {
+        const now = new Date();
+        const thisMonth = (date: string) => {
+          const parsed = parseDate(date, now);
+          return parsed?.getMonth() === now.getMonth() && parsed.getFullYear() === now.getFullYear();
+        };
+        let thisMonthSum = 0;
+        let totalSum = 0;
+        for (const tx of res.data) {
+          if (tx.status === "pending") {
+            const amount = Number(tx.amount || 0);
+            totalSum += amount;
+            if (thisMonth(tx.date)) thisMonthSum += amount;
+          }
+        }
+        setPendingStats({ totalPending: totalSum, pendingThisMonth: thisMonthSum });
+      }
+    }).catch(console.error);
+  }, []);
+
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const isThisMonth = (date: string) => {
@@ -2782,7 +2831,9 @@ function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: S
   const sumTransactions = (items: Transaction[]) => items.reduce((sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0), 0);
   const total = (type: Transaction["type"], thisMonth = false) => sumTransactions(data.transactions.filter(item => String(item.type).toLowerCase() === type && (!thisMonth || isThisMonth(item.date))));
   const monthlyIncome = total("income", true);
-  const monthlyExpense = total("expense", true);
+  const realMonthlyExpense = total("expense", true);
+  const expectedMonthlyExpense = realMonthlyExpense + pendingStats.pendingThisMonth;
+  const monthlyExpense = expectedMonthlyExpense;
   const upcomingEvents = data.events.filter(event => {
     const date = parseDate(event.date, now);
     return date && date >= today;
@@ -5203,6 +5254,10 @@ function IncomeRecordForm({ record, members: initialMembers, templates, user, ba
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (dataService.getStatus().source === "localStorage") {
+      notify?.("Mất kết nối với cơ sở dữ liệu. Không thể lưu thu nhập lúc này.", "error");
+      return;
+    }
     const rawAmount = String(draft.amount).replace(/\D/g, "");
     const amount = Number(rawAmount);
     if (!Number.isFinite(amount) || amount <= 0) { notify?.("Vui l?ng nh?p s? ti?n h?p l?.", "error"); return; }
@@ -5422,6 +5477,7 @@ const expenseCategoryTree: Record<string, string[]> = {
   "Gia đình": ["Ba mẹ", "Quà tặng", "Việc nhà"],
   "Tiết kiệm": ["Mẹ giữ", "Ngân hàng", "Tiền mặt", "Quỹ dự phòng", "Khác"],
   "Thanh toán hộ": ["Mẹ cần hoàn", "Ba cần hoàn", "Người thân cần hoàn", "Bạn bè cần hoàn", "Khác"],
+  "Thanh toán thẻ": ["Khác"],
   "Khác": ["Khác"]
 };
 const expenseCategories = Object.keys(expenseCategoryTree);
@@ -5541,10 +5597,34 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
     result[person] = { person, total: (result[person]?.total || 0) + item.pendingAmount };
     return result;
   }, {})).sort((a, b) => b.total - a.total);
-  
+  const [pendingStats, setPendingStats] = useState({ totalPending: 0, pendingThisMonth: 0, pendingThisYear: 0 });
+  useEffect(() => {
+    fetch("/api/card-pending-transactions/all").then(r => r.json()).then(res => {
+      if (res.ok && res.data) {
+        let total = 0, monthSum = 0, yearSum = 0;
+        for (const tx of res.data) {
+          if (tx.status === "pending") {
+            const amount = Number(tx.amount || 0);
+            total += amount;
+            const txDate = tx.date ? new Date(tx.date) : null;
+            if (txDate && txDate.getFullYear() === Number(year)) {
+               yearSum += amount;
+               if (String(txDate.getMonth() + 1) === selectedMonth) {
+                  monthSum += amount;
+               }
+            }
+          }
+        }
+        setPendingStats({ totalPending: total, pendingThisMonth: monthSum, pendingThisYear: yearSum });
+      }
+    });
+  }, [year, selectedMonth]);
+
   const totalMonth = monthRecords.filter(countsAsPersonalExpense).reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
+  const expectedTotalMonth = totalMonth + pendingStats.pendingThisMonth;
   const totalDiscountMonth = monthRecords.reduce((sum, record) => sum + (Number(record.discountAmount) || 0), 0);
   const totalYear = yearRecords.filter(countsAsPersonalExpense).reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
+  const expectedTotalYear = totalYear + pendingStats.pendingThisYear;
   const totalDiscountYear = yearRecords.reduce((sum, record) => sum + (Number(record.discountAmount) || 0), 0);
   
   const realExpensesForStats = filteredExpensesForStats.filter(countsAsPersonalExpense);
@@ -5640,8 +5720,8 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card><p className="text-xs text-slate-400">{"Tổng chi năm"}</p><b className="font-semibold text-rose-500">{money(totalYear)}</b>{totalDiscountYear > 0 && <p className="mt-0.5 text-[10px] font-semibold text-emerald-500">Tiết kiệm: {money(totalDiscountYear)}</p>}</Card>
-        <Card><p className="text-xs text-slate-400">{"Tổng chi tháng"} {selectedMonth}</p><b className="font-semibold text-slate-900 dark:text-slate-100">{money(totalMonth)}</b>{totalDiscountMonth > 0 && <p className="mt-0.5 text-[10px] font-semibold text-emerald-500">Tiết kiệm: {money(totalDiscountMonth)}</p>}</Card>
+        <Card><p className="text-xs text-slate-400">{"Tổng chi năm"}</p><b className="font-semibold text-rose-500">{money(totalYear)}</b>{pendingStats.pendingThisYear > 0 && <p className="mt-0.5 text-[10px] font-semibold text-orange-500">Dự kiến (+Thẻ): {money(expectedTotalYear)}</p>}</Card>
+        <Card><p className="text-xs text-slate-400">{"Tổng chi tháng"} {selectedMonth}</p><b className="font-semibold text-slate-900 dark:text-slate-100">{money(totalMonth)}</b>{pendingStats.pendingThisMonth > 0 && <p className="mt-0.5 text-[10px] font-semibold text-orange-500">Dự kiến (+Thẻ): {money(expectedTotalMonth)}</p>}</Card>
         <Card><p className="text-xs text-slate-400">Khoản chi lớn nhất</p><b className="font-semibold text-slate-900 dark:text-slate-100">{largestCategory ? `${largestCategory.label} (${money(largestCategory.total)})` : "Chưa có"}</b></Card>
         <Card><p className="text-xs text-slate-400">Loại chi tiết lớn nhất</p><b className="font-semibold text-rose-500">{largestSubcategory ? `${largestSubcategory.label} (${money(largestSubcategory.total)})` : "Chưa có"}</b></Card>
         <Card><p className="text-xs text-slate-400">Đang chờ hoàn</p><b className="font-semibold text-orange-500">{money(totalPendingReimbursement)}</b>{pendingByPerson.length > 0 && <p className="mt-1 text-[10px] font-semibold text-slate-500">{pendingByPerson.map(item => `${item.person}: ${money(item.total)}`).join(" · ")}</p>}</Card>
@@ -5848,6 +5928,10 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
   function patch(value: Partial<ExpenseDraft>) { setDraft(current => ({ ...current, ...value })); }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (dataService.getStatus().source === "localStorage") {
+      ui.toast("Mất kết nối với cơ sở dữ liệu. Không thể lưu khoản chi lúc này.", "error");
+      return;
+    }
     if (isError || totalAmount < 0) {
       ui.toast("Giảm giá không được lớn hơn giá gốc.", "error");
       return;
@@ -5860,6 +5944,42 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
     const isSavingExpense = draft.category === "Tiết kiệm";
     const reimbursementStatus = isReimbursement ? (draft.reimbursementStatus || "pending") : "none";
     const reimbursementAmount = isReimbursement ? Number(draft.reimbursedAmount || 0) : 0;
+    
+    let safeBankAccounts = Array.isArray(bankAccounts) ? bankAccounts : [];
+    const selectedBank = safeBankAccounts.find(b => b.id === finalPaymentAccountId);
+    const isCreditCard = selectedBank && normalizeExpenseAccountType((selectedBank as any).accountType) === "credit_card";
+
+    if (isCreditCard) {
+      if (record) {
+        // Edit pending tx
+        // For simplicity, if it's already a real transaction, it cannot be converted back to pending here easily. 
+        // We will assume pending tx edit is done in Bank Card UI, not here.
+        // Actually, if we edit a real transaction and change it to credit card, it's complex.
+        ui.toast("Không thể chuyển giao dịch thường thành tạm tính ở đây.", "error");
+        return;
+      }
+      
+      const payload = {
+        memberId: draft.memberId,
+        bankAccountId: finalPaymentAccountId,
+        title: draft.vendor.trim() || "Khác",
+        amount: totalAmount,
+        date: draft.date,
+        category: draft.category,
+        note: draft.note
+      };
+      
+      const response = await fetch("/api/card-pending-transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!response.ok) {
+        const result = await readJsonSafe<{ error?: string }>(response);
+        ui.toast(result?.error || "Không thể lưu khoản chi tạm tính.", "error");
+        return;
+      }
+      ui.toast("Đã ghi nhận chi tiêu thẻ vào phần Tạm tính.", "success");
+      close();
+      return;
+    }
+
     const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, transactionTime: draft.transactionTime, transaction_time: draft.transactionTime, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: grossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, payment_method: draft.paymentMethod, paymentAccountId: finalPaymentAccountId || undefined, payment_account_id: finalPaymentAccountId || undefined, bankAccountId: finalPaymentAccountId || undefined, bank_account_id: finalPaymentAccountId || undefined, simId: finalSimId || undefined, sim_id: finalSimId || undefined, simTopupApplied: shouldTopupSim, sim_topup_applied: shouldTopupSim, isReimbursable: isReimbursement, is_reimbursable: isReimbursement, reimbursementPerson: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursement_person: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursementStatus, reimbursement_status: reimbursementStatus, reimbursedAmount: reimbursementAmount, reimbursed_amount: reimbursementAmount, reimbursedAt: isReimbursement ? draft.reimbursedAt || null : null, reimbursed_at: isReimbursement ? draft.reimbursedAt || null : null, countsForPersonalExpense: !isReimbursement && !isSavingExpense, counts_for_personal_expense: !isReimbursement && !isSavingExpense, countsForCardSpending: isReimbursement || !isSavingExpense, counts_for_card_spending: isReimbursement || !isSavingExpense } as Transaction & { simTopupApplied: boolean; sim_topup_applied: boolean; reimbursementPerson?: string | null; reimbursementStatus?: string; reimbursedAmount?: number };
     const response = await fetch("/api/transactions", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
     if (!response.ok) {
@@ -6020,7 +6140,7 @@ function ExpenseDeleteDialog({ record, close, confirm }: { record: Transaction; 
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4" onMouseDown={close}><div onMouseDown={event => event.stopPropagation()} className="w-full max-w-md rounded-2xl bg-[var(--app-card)] p-5 shadow-2xl"><h3 className="text-lg font-bold">Xóa phiếu chi này?</h3><div className="mt-4 rounded-xl border border-[var(--app-border)] p-4"><b>{record.title}</b><p className="mt-1 text-sm font-bold text-rose-500">{money(record.amount)}</p></div><div className="mt-5 flex justify-end gap-3"><button onClick={close} className="rounded-xl border border-[var(--app-border)] px-4 py-2 text-sm font-bold">Hủy</button><button onClick={confirm} className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white">Xóa</button></div></div></div>;
 }
 
-const bankNames = ["BIDV", "Vietcombank", "Techcombank", "MB", "VPBank", "ACB", "TPBank", "Sacombank", "VIB", "VietinBank", "Agribank", "UOB", "MoMo", "Apple Pay", "ZaloPay", "Khác"];
+const bankNames = ["BIDV", "Vietcombank", "Techcombank", "MB", "VPBank", "ACB", "TPBank", "Sacombank", "VIB", "VietinBank", "Agribank", "HSBC", "UOB", "MoMo", "Apple Pay", "ZaloPay", "Khác"];
 const bankCardTypes: import("../types").BankCardType[] = ["Tài khoản ngân hàng", "Thẻ ghi nợ / ATM", "Thẻ tín dụng", "Ví điện tử"];
 const bankNetworks: import("../types").BankCardNetwork[] = ["Không áp dụng", "Visa", "Mastercard", "Napas", "JCB", "Amex"];
 const bankStatuses: BankAccountStatus[] = ["Đang dùng", "Tạm khóa", "Đã hủy"];
@@ -7490,6 +7610,7 @@ export function calculateMonthlyUsableBalance(
 }
 
 function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"tong-quan" | "thanh-vien" | "danh-muc">("tong-quan");
   const [filterMemberId, setFilterMemberId] = useState<string>("all");
   const [categoryType, setCategoryType] = useState<"expense" | "income" | "saving">("expense");
@@ -9028,6 +9149,7 @@ function MobileHome({
   savedUser?: (user: AuthUser) => void;
   refreshCurrentUser?: () => Promise<AuthUser | null>;
 }) {
+  const router = useRouter();
   const ui = useUI();
   const [lastUser, setLastUser] = useState<any>(null);
   const [homeFinance, setHomeFinance] = useState<any>(null);
@@ -9238,18 +9360,24 @@ function MobileHome({
 
         <section className="rounded-[24px] bg-[#FFFFFF] p-4 shadow-[0_8px_24px_rgba(128,0,32,0.08)] border border-[#E8DCD5]">
           <h2 className="text-[14px] font-bold text-[#171018] mb-3">Mục chính</h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <button type="button" onClick={() => setProfileSheet("sim")} className="flex flex-col items-center justify-center rounded-xl bg-slate-50 p-3 hover:bg-slate-100 active:bg-slate-200">
               <div className="flex size-10 items-center justify-center rounded-full bg-blue-100 text-blue-600">
                 <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
               </div>
-              <span className="mt-2 text-xs font-semibold text-[#171018]">SIM/Data</span>
+              <span className="mt-2 text-[11px] font-semibold text-[#171018]">SIM/Data</span>
             </button>
             <button type="button" onClick={() => go("tasks")} className="flex flex-col items-center justify-center rounded-xl bg-slate-50 p-3 hover:bg-slate-100 active:bg-slate-200">
               <div className="flex size-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                 <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
               </div>
-              <span className="mt-2 text-xs font-semibold text-[#171018]">Công việc</span>
+              <span className="mt-2 text-[11px] font-semibold text-[#171018]">Công việc</span>
+            </button>
+            <button type="button" onClick={() => { if (user?.memberId) { router.push(`/members/${user.memberId}/bank-cards`); } }} className="flex flex-col items-center justify-center rounded-xl bg-slate-50 p-3 hover:bg-slate-100 active:bg-slate-200">
+              <div className="flex size-10 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+              </div>
+              <span className="mt-2 text-[11px] font-semibold text-[#171018]">Thẻ ngân hàng</span>
             </button>
           </div>
         </section>
