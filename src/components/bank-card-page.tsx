@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { BankAccount, BankAccountStatus, BankCardType, Member } from "@/types";
+import { formatCardUsageDuration, formatISODateToVN, parseVNDateToISO } from "@/lib/utils";
 import { useUI } from "./ui-context";
 
 type AuthUser = { id: string; username: string; displayName: string; avatar: string; role?: string; memberId?: string; is_admin?: boolean; isAdmin?: boolean; account_type?: string; permissions?: { viewMode?: string, modules?: Record<string, boolean> }; };
@@ -10,7 +11,14 @@ type FormMode = "new" | "edit";
 
 const bankNames = ["BIDV", "Vietcombank", "Techcombank", "MB", "VPBank", "ACB", "TPBank", "Sacombank", "VIB", "VietinBank", "Agribank", "HSBC", "UOB", "MoMo", "Apple Pay", "ZaloPay", "Khác"];
 const bankCardTypes: BankCardType[] = ["Thẻ tín dụng", "Thẻ ghi nợ / ATM", "Ví điện tử", "Tiền mặt", "Tài khoản ngân hàng"];
-const bankStatuses: BankAccountStatus[] = ["Đang dùng", "Tạm khóa", "Đã hủy"];
+const formCardTypes = [
+  { value: "credit", label: "Thẻ tín dụng" },
+  { value: "debit", label: "Thẻ ghi nợ / ATM" },
+];
+const bankStatuses = [
+  { value: "active", label: "Đang dùng" },
+  { value: "inactive", label: "Ngừng dùng" },
+];
 const inputClass = "w-full rounded-xl border border-[#E7DDD6] bg-[#FFFDFC] px-4 py-3 text-sm text-[#2B1B17] outline-none transition focus:border-[#800020] focus:ring-1 focus:ring-[#800020] placeholder:text-[#6B5B57]/50";
 const money = (value: number) => new Intl.NumberFormat("vi-VN").format(Number.isFinite(value) ? value : 0) + " ₫";
 
@@ -41,9 +49,9 @@ async function readJsonSafe<T>(response: Response): Promise<T | null> {
 function emptyBankForm(memberId: string): BankAccount {
   return {
     id: crypto.randomUUID(), memberId, bankName: "BIDV", accountHolder: "", accountNumber: "", cardNumber: "",
-    accountType: "Thẻ tín dụng", cardType: "Thẻ tín dụng", cardNetwork: "Không áp dụng", productName: "", branch: "",
-    statementDay: "", dueDay: "", creditLimit: 0, expiryMonth: "", expiryYear: "", status: "Đang dùng",
-    annualFeeEnabled: false, annualFeeAmount: 0, annualFeeWaiverType: "Không có", annualFeeWaiverTarget: 0, annualFeeCycle: "năm", annualFeeCycleStart: "", annualFeeCurrentSpending: 0, note: "", benefits: [], rewards: [],
+    accountType: "credit", cardType: "credit", cardNetwork: "Không áp dụng", productName: "", branch: "",
+    statementDay: "", dueDay: "", creditLimit: 0, expiryMonth: "", expiryYear: "", status: "active",
+    annualFeeEnabled: false, annualFeeAmount: 0, annualFeeWaiverType: "Không có", annualFeeWaiverTarget: 0, annualFeeCycle: "năm", annualFeeCycleStart: "", annualFeeCurrentSpending: 0, note: "", benefits: [], rewards: [], openedAt: "",
   };
 }
 
@@ -58,7 +66,7 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
 function Shell({ member, title, children }: { member?: Member; title: string; children: React.ReactNode }) {
   const router = useRouter();
   return (
-    <div className="mx-auto max-w-[460px] lg:max-w-[600px] pb-24 min-h-screen bg-[#F8F5F2]">
+    <div className="mx-auto max-w-[460px] lg:max-w-[600px] pb-24 md:pb-8 min-h-screen md:min-h-0 bg-[#F8F5F2] md:rounded-[32px] md:shadow-lg md:overflow-hidden md:border md:border-[#E7DDD6]">
       <div className="sticky top-0 z-20 flex h-14 items-center justify-between bg-white px-4 shadow-sm border-b border-[#E7DDD6]">
         <button
           onClick={() => member ? router.push(`/members/${member.id}/bank-cards`) : router.back()}
@@ -82,15 +90,54 @@ function ErrorState({ message }: { message: string }) {
   return <div className="rounded-[24px] border border-rose-200 bg-rose-50 p-8 text-center text-sm font-semibold text-rose-700 shadow-sm">{message}</div>;
 }
 
+function ConfirmModal({ isOpen, onClose, onConfirm, hasTransactions, processing }: { isOpen: boolean; onClose: () => void; onConfirm: () => void; hasTransactions: boolean; processing: boolean }) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4" onClick={onClose}>
+      <div className="w-full max-w-[400px] rounded-[24px] bg-[#FFFDFC] p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-xl font-bold text-[#2B1B17] mb-3">
+          {hasTransactions ? "Ngừng dùng thẻ?" : "Xóa thẻ?"}
+        </h3>
+        <p className="text-[15px] text-[#6B5B57] leading-relaxed mb-8">
+          {hasTransactions 
+            ? "Thẻ này đã có lịch sử giao dịch nên sẽ không bị xóa vĩnh viễn. Hệ thống sẽ chuyển thẻ sang trạng thái ngừng dùng để giữ lịch sử cũ."
+            : "Thẻ này chưa có giao dịch liên quan. Bạn có chắc muốn xóa thẻ khỏi hệ thống không?"}
+        </p>
+        <div className="flex gap-3 justify-end mt-4">
+          <button 
+            type="button" 
+            onClick={onClose} 
+            disabled={processing}
+            className="px-5 py-3 rounded-xl border border-[#E7DDD6] bg-white text-[#6B5B57] font-semibold hover:bg-slate-50 transition-colors"
+          >
+            Hủy
+          </button>
+          <button 
+            type="button" 
+            onClick={onConfirm} 
+            disabled={processing}
+            className="px-5 py-3 rounded-xl bg-[#800020] text-white font-semibold hover:bg-[#6A001A] transition-colors disabled:opacity-60"
+          >
+            {processing ? "Đang xử lý..." : (hasTransactions ? "Ngừng dùng" : "Xóa thẻ")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function BankCardFormPage({ memberId, cardId, mode }: { memberId: string; cardId?: string; mode: FormMode }) {
   const router = useRouter();
+  const ui = useUI();
   const [user, setUser] = useState<AuthUser | null>();
   const [members, setMembers] = useState<Member[]>([]);
   const [form, setForm] = useState<BankAccount>(() => emptyBankForm(memberId));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
   const [authError, setAuthError] = useState("");
+  const [hasTransactions, setHasTransactions] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -138,20 +185,27 @@ export function BankCardFormPage({ memberId, cardId, mode }: { memberId: string;
           if (!found || !found.id) {
             throw new Error("Dữ liệu thẻ trả về không hợp lệ.");
           }
+          if (cardPayload?.hasTransactions) {
+            setHasTransactions(true);
+          }
           
-          setForm({
+            const rawType = found.cardType || found.card_type || found.accountType || found.account_type || 'debit';
+            const mappedType = ['credit', 'Thẻ tín dụng', 'credit_card'].includes(rawType) ? 'credit' : 'debit';
+            const mappedStatus = ['active', 'Đang dùng', 'enabled'].includes(found.status) ? 'active' : 'inactive';
+            setForm({
             ...emptyBankForm(found.memberId || found.member_id || memberId),
             ...found,
             id: found.id,
             memberId: found.memberId || found.member_id || memberId,
             bankName: found.bankName || found.bank_name || 'BIDV',
             productName: found.displayName || found.display_name || found.productName || found.product_name || found.bankName || found.bank_name || '',
-            cardType: found.cardType || found.card_type || found.accountType || found.account_type || 'Thẻ ghi nợ / ATM',
-            status: found.status || 'Đang dùng',
+            cardType: mappedType as BankCardType,
+            status: mappedStatus as BankAccountStatus,
             creditLimit: found.creditLimit ?? found.credit_limit ?? 0,
             statementDay: found.statementDay || found.statement_day || '',
             dueDay: found.dueDay || found.due_day || '',
-            note: found.note || ''
+            note: found.note || '',
+            openedAt: found.openedAt || found.opened_at ? formatISODateToVN(found.openedAt || found.opened_at) : ''
           });
         } else {
           const owner = nextMembers.find(member => member.id === memberId);
@@ -175,7 +229,7 @@ export function BankCardFormPage({ memberId, cardId, mode }: { memberId: string;
   const isFamilyAdmin = user?.permissions?.viewMode === "all";
   const isAdmin = isSysAdmin || isFamilyAdmin;
   const editableMembers = isAdmin ? members : members.filter(member => member.id === user?.memberId);
-  const isCredit = form.cardType === "Thẻ tín dụng" || form.accountType === "Thẻ tín dụng";
+  const isCredit = form.cardType === "credit" || form.accountType === "credit" || form.cardType === "Thẻ tín dụng";
 
   function set<K extends keyof BankAccount>(key: K, value: BankAccount[K]) {
     setForm(current => ({ ...current, [key]: value }));
@@ -185,17 +239,57 @@ export function BankCardFormPage({ memberId, cardId, mode }: { memberId: string;
     event.preventDefault();
     if (!canEdit || saving) return;
     setSaving(true);
+    
+    let openedAtIso = form.openedAt;
+    if (form.openedAt) {
+      const parsed = parseVNDateToISO(form.openedAt);
+      if (!parsed) {
+        setError("Ngày mở thẻ phải có dạng dd/mm/yyyy");
+        setSaving(false);
+        return;
+      }
+      openedAtIso = parsed;
+    }
+
     try {
       setError("");
       const response = await fetch(mode === "new" ? "/api/bank-accounts" : `/api/bank-accounts/${form.id}`, {
         method: mode === "new" ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, accountType: form.cardType }),
+        body: JSON.stringify({ ...form, accountType: form.cardType, openedAt: openedAtIso }),
       });
       const result = await readJsonSafe<{ error?: string; data?: BankAccount }>(response);
       if (!response.ok || !result?.data) { setError(result?.error || "Không lưu được thẻ ngân hàng."); return; }
-      router.push(`/members/${result.data.memberId}/bank-cards/${result.data.id}`);
-    } finally { setSaving(false); }
+      router.refresh();
+      router.push(`/members/${result.data.memberId}/bank-cards`);
+    } catch (err: any) {
+      setError(err.message || "Đã xảy ra lỗi hệ thống khi lưu thẻ.");
+    } finally { 
+      setSaving(false);
+    }
+  }
+
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  async function handleDelete() {
+    if (!cardId) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/bank-accounts/${cardId}`, { method: "DELETE" });
+      const result = await readJsonSafe<any>(res);
+      if (!res.ok) {
+        ui.toast(result?.error || "Lỗi khi xử lý thẻ.", "error");
+        setDeleting(false);
+        return;
+      }
+      ui.toast(result?.mode === "archived" ? "Đã chuyển thẻ sang trạng thái Ngừng dùng." : "Đã xóa thẻ.", "success");
+      router.push(`/members/${memberId}/bank-cards`);
+    } catch (err) {
+      ui.toast(`Lỗi khi xử lý thẻ.`, "error");
+    } finally {
+      setDeleting(false);
+      setShowConfirm(false);
+    }
   }
 
   if (loading) return <Shell title={mode === "new" ? "Thêm thẻ mới" : "Chỉnh sửa thẻ"} member={currentMember}><LoadingState /></Shell>;
@@ -208,18 +302,19 @@ export function BankCardFormPage({ memberId, cardId, mode }: { memberId: string;
       <form onSubmit={save} className="mx-auto w-full space-y-4">
         <div className="rounded-[24px] border border-[#E7DDD6] bg-[#FFFDFC] p-5 shadow-sm">
           <div className="grid grid-cols-1 gap-4">
-            <Field label="Tên gợi nhớ (VD: Thẻ tiêu dùng)"><input required className={inputClass} value={form.productName} onChange={e => set("productName", e.target.value)} placeholder="Nhập tên dễ nhớ..." /></Field>
+            <Field label="Tên thẻ"><input required className={inputClass} value={form.productName} onChange={e => set("productName", e.target.value)} placeholder="Ví dụ: BIDV Visa, MoMo, HSBC Cashback..." /></Field>
             <Field label="Ngân hàng/Tổ chức"><select required className={inputClass} value={form.bankName} onChange={e => set("bankName", e.target.value)}>{bankNames.map(name => <option key={name}>{name}</option>)}</select></Field>
             <Field label="Thành viên quản lý"><select required className={inputClass} value={form.memberId} onChange={e => set("memberId", e.target.value)}>{editableMembers.map(m => <option key={m.id} value={m.id}>{m.nickname || m.name}</option>)}</select></Field>
-            <Field label="Loại nguồn tiền"><select className={inputClass} value={form.cardType} onChange={e => { const v = e.target.value as BankCardType; setForm(c => ({ ...c, cardType: v, accountType: v })); }}>{bankCardTypes.map(type => <option key={type}>{type}</option>)}</select></Field>
-            <Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={e => set("status", e.target.value as BankAccountStatus)}>{bankStatuses.map(status => <option key={status}>{status}</option>)}</select></Field>
+            <Field label="Loại nguồn tiền"><select className={inputClass} value={form.cardType} onChange={e => { const v = e.target.value as BankCardType; setForm(c => ({ ...c, cardType: v, accountType: v })); }}>{formCardTypes.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}</select></Field>
+            <Field label="Trạng thái"><select className={inputClass} value={form.status} onChange={e => set("status", e.target.value as BankAccountStatus)}>{bankStatuses.map(status => <option key={status.value} value={status.value}>{status.label}</option>)}</select></Field>
+            <Field label="Ngày mở thẻ"><input type="text" className={inputClass} value={form.openedAt || ""} onChange={e => set("openedAt", e.target.value)} placeholder="dd/mm/yyyy" /></Field>
           </div>
         </div>
 
         {isCredit && (
           <div className="rounded-[24px] border border-[#D4AF37]/40 bg-[#FFFDFC] p-5 shadow-sm">
             <div className="grid grid-cols-1 gap-4">
-              <Field label="Hạn mức thẻ (VND)"><input className={inputClass} type="number" min="0" value={form.creditLimit} onChange={e => set("creditLimit", Number(e.target.value))} placeholder="Ví dụ: 50000000" /></Field>
+              <Field label="Hạn mức thẻ (VND)"><input className={inputClass} type="text" inputMode="numeric" value={form.creditLimit ? new Intl.NumberFormat("vi-VN").format(form.creditLimit) : ""} onChange={e => { const val = e.target.value.replace(/\D/g, ""); set("creditLimit", val ? parseInt(val, 10) : 0); }} placeholder="Ví dụ: 50.000.000" /></Field>
               <Field label="Ngày chốt sao kê"><input className={inputClass} inputMode="numeric" value={form.statementDay} onChange={e => set("statementDay", e.target.value)} placeholder="Ví dụ: 15" /></Field>
               <Field label="Ngày đến hạn"><input className={inputClass} inputMode="numeric" value={form.dueDay} onChange={e => set("dueDay", e.target.value)} placeholder="Ví dụ: 30" /></Field>
             </div>
@@ -231,11 +326,24 @@ export function BankCardFormPage({ memberId, cardId, mode }: { memberId: string;
           {error && <p className="mt-4 text-sm font-semibold text-rose-600">{error}</p>}
         </div>
         
-        <div className="flex flex-col gap-3 pt-4 pb-8">
-          <button type="submit" disabled={saving} className="w-full h-12 rounded-xl bg-[#800020] text-base font-bold text-white hover:bg-[#6b001a] disabled:opacity-60 transition-colors shadow-md">{saving ? "Đang xử lý..." : "Lưu thông tin"}</button>
-          <button type="button" onClick={() => router.back()} className="w-full h-12 rounded-xl border border-[#E7DDD6] bg-white text-base font-bold text-[#6B5B57] hover:bg-[#F8F5F2] transition-colors">Quay lại</button>
+        <div className="flex flex-col gap-3 pt-4 pb-24">
+          <button type="submit" disabled={saving || deleting} className="w-full h-12 rounded-xl bg-[#800020] text-base font-bold text-white hover:bg-[#6b001a] disabled:opacity-60 transition-colors shadow-md">{saving ? "Đang xử lý..." : "Lưu thẻ"}</button>
+          <button type="button" disabled={saving || deleting} onClick={() => router.back()} className="w-full h-12 rounded-xl border border-[#E7DDD6] bg-white text-base font-bold text-[#6B5B57] hover:bg-[#F8F5F2] transition-colors">Quay lại</button>
+          
+          {mode === "edit" && (
+            <div className="mt-4 pt-4 border-t border-[#E7DDD6]">
+              <button type="button" disabled={saving || deleting} onClick={() => setShowConfirm(true)} className="w-full h-12 rounded-xl bg-[#FFF0F0] text-base font-bold text-[#D32F2F] hover:bg-[#FFE0E0] disabled:opacity-60 transition-colors">{deleting ? "Đang xử lý..." : (hasTransactions ? "Ngừng dùng thẻ" : "Xóa thẻ")}</button>
+            </div>
+          )}
         </div>
       </form>
+      <ConfirmModal 
+        isOpen={showConfirm} 
+        onClose={() => setShowConfirm(false)} 
+        onConfirm={handleDelete} 
+        hasTransactions={hasTransactions} 
+        processing={deleting} 
+      />
     </Shell>
   );
 }
@@ -248,6 +356,8 @@ export function BankCardDetailPage({ memberId, cardId }: { memberId: string; car
   const [pendingTxs, setPendingTxs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [hasTransactions, setHasTransactions] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<"info" | "pending" | "paid">("info");
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState<{ method: string; accountId: string; date: string }>({ method: "transfer", accountId: "", date: new Date().toISOString().slice(0, 10) });
@@ -268,6 +378,7 @@ export function BankCardDetailPage({ memberId, cardId }: { memberId: string; car
         if (!acc) { setError("Không tìm thấy thẻ."); return; }
         
         setAccount(acc); setOwner(mem || null);
+        if (result?.hasTransactions) setHasTransactions(true);
         
         if (acc.cardType === "Thẻ tín dụng" || acc.accountType === "Thẻ tín dụng") {
           setActiveTab("pending"); // Default to pending for credit
@@ -285,6 +396,29 @@ export function BankCardDetailPage({ memberId, cardId }: { memberId: string; car
     void load().finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [cardId]);
+
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  async function handleDelete() {
+    if (!cardId) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/bank-accounts/${cardId}`, { method: "DELETE" });
+      const result = await readJsonSafe<any>(res);
+      if (!res.ok) {
+        ui.toast(result?.error || "Lỗi khi xử lý thẻ.", "error");
+        setDeleting(false);
+        return;
+      }
+      ui.toast(result?.mode === "archived" ? "Đã chuyển thẻ sang trạng thái Ngừng dùng." : "Đã xóa thẻ.", "success");
+      router.push(`/members/${memberId}/bank-cards`);
+    } catch (err) {
+      ui.toast(`Lỗi khi xử lý thẻ.`, "error");
+    } finally {
+      setDeleting(false);
+      setShowConfirm(false);
+    }
+  }
 
   if (loading && !account) return <Shell title="Chi tiết thẻ" member={owner || undefined}><LoadingState /></Shell>;
   if (error && !account) return <Shell title="Chi tiết thẻ" member={owner || undefined}><ErrorState message={error} /></Shell>;
@@ -305,16 +439,23 @@ export function BankCardDetailPage({ memberId, cardId }: { memberId: string; car
           <div className="relative z-10 flex flex-col h-full justify-between min-h-[160px]">
             <div className="flex justify-between items-start">
               <div>
-                <h2 className="text-xl sm:text-2xl font-bold font-serif tracking-wide">{account.bankName}</h2>
-                <p className="mt-1 text-sm font-medium opacity-80">{account.productName || account.cardType}</p>
+                <h2 className="text-xl sm:text-2xl font-bold font-serif tracking-wide">
+                  {(() => {
+                    const name = account.displayName || account.productName;
+                    if (!name) return account.bankName;
+                    if (name.toLowerCase().includes(account.bankName.toLowerCase())) return name;
+                    return `${account.bankName} ${name}`;
+                  })()}
+                </h2>
+                <p className="mt-1 text-sm font-medium opacity-80">{account.bankName} • {isCredit ? "Thẻ tín dụng" : "Thẻ ghi nợ / ATM"}</p>
               </div>
               <div className="flex flex-col items-end gap-2">
                 <span className={`rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${isCredit ? 'bg-[#D4AF37]/20 text-[#D4AF37]' : 'bg-white/20 text-white'}`}>
-                  {isCredit ? "Credit" : account.cardType}
+                  {isCredit ? "Credit" : "Debit"}
                 </span>
-                {account.status !== "Đang dùng" && (
+                {account.status !== "active" && account.status !== "Đang dùng" && (
                   <span className="rounded-md bg-rose-500/80 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
-                    {account.status}
+                    {account.status === "inactive" ? "Ngừng dùng" : account.status}
                   </span>
                 )}
               </div>
@@ -418,7 +559,9 @@ export function BankCardDetailPage({ memberId, cardId }: { memberId: string; car
             <h3 className="mb-5 text-lg font-bold text-[#800020]">Chi tiết nguồn tiền</h3>
             <div className="grid gap-4 grid-cols-1">
               <Info label="Chủ tài khoản" value={account.accountHolder || owner?.nickname || "Trống"} />
-              <Info label="Trạng thái" value={<span className={`inline-flex rounded-md px-2 py-1 text-xs font-bold ${account.status === "Đang dùng" ? "bg-[#D4AF37]/20 text-[#800020]" : "bg-[#F8F5F2] text-[#6B5B57]"}`}>{account.status}</span>} />
+              <Info label="Ngày mở thẻ" value={account.openedAt ? formatISODateToVN(account.openedAt) : "Chưa cập nhật"} />
+              <Info label="Thời gian sử dụng" value={formatCardUsageDuration(account.openedAt)} />
+              <Info label="Trạng thái" value={<span className={`inline-flex rounded-md px-2 py-1 text-xs font-bold ${account.status === "active" || account.status === "Đang dùng" ? "bg-[#D4AF37]/20 text-[#800020]" : "bg-[#F8F5F2] text-[#6B5B57]"}`}>{account.status === "active" || account.status === "Đang dùng" ? "Đang dùng" : "Ngừng dùng"}</span>} />
               {isCredit && <Info label="Hạn mức khả dụng" value={account.creditLimit ? money(account.creditLimit) : "Chưa cấu hình"} />}
               {isCredit && <Info label="Kỳ sao kê" value={account.statementDay ? `Ngày ${account.statementDay} hàng tháng` : "Chưa cấu hình"} />}
               {isCredit && <Info label="Hạn thanh toán" value={account.dueDay ? `Ngày ${account.dueDay} hàng tháng` : "Chưa cấu hình"} />}
@@ -482,7 +625,25 @@ export function BankCardDetailPage({ memberId, cardId }: { memberId: string; car
             </div>
           </div>
         )}
+
+        {/* Quản lý thẻ */}
+        <div className="rounded-[24px] border border-[#E7DDD6] bg-[#FFFDFC] p-6 shadow-sm">
+          <h3 className="mb-4 text-lg font-bold text-[#800020]">Quản lý thẻ</h3>
+          <p className="mb-4 text-sm font-medium text-[#6B5B57]">
+            {hasTransactions ? "Thẻ này đã có lịch sử giao dịch. Nếu bạn không muốn sử dụng thẻ này nữa, hãy chọn ngừng dùng. Các giao dịch cũ vẫn sẽ được giữ lại." : "Thẻ này chưa có giao dịch nào, bạn có thể xóa thẻ vĩnh viễn khỏi hệ thống."}
+          </p>
+          <button type="button" disabled={deleting} onClick={() => setShowConfirm(true)} className="w-full h-12 rounded-xl bg-[#FFF0F0] text-base font-bold text-[#D32F2F] hover:bg-[#FFE0E0] disabled:opacity-60 transition-colors">
+            {deleting ? "Đang xử lý..." : (hasTransactions ? "Ngừng dùng thẻ" : "Xóa thẻ")}
+          </button>
+        </div>
       </div>
+      <ConfirmModal 
+        isOpen={showConfirm} 
+        onClose={() => setShowConfirm(false)} 
+        onConfirm={handleDelete} 
+        hasTransactions={hasTransactions} 
+        processing={deleting} 
+      />
     </Shell>
   );
 }

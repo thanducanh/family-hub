@@ -4,7 +4,7 @@ import { type SessionUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import type { AnnualFeeCycle, AnnualFeeWaiverType, BankAccount, BankAccountStatus, BankCardNetwork, BankCardReward, BankCardRewardType, BankCardType } from "@/types";
 
-const fields = "id, member_id, bank_name, account_holder, account_number, card_number, account_type, card_type, card_network, product_name, branch, statement_day, due_day, credit_limit, expiry_month, expiry_year, status, annual_fee_enabled, annual_fee_amount, annual_fee_waiver_type, annual_fee_waiver_target, annual_fee_cycle, annual_fee_cycle_start, annual_fee_current_spending, note, created_at, updated_at, display_name, last4";
+const fields = "id, member_id, bank_name, account_holder, account_number, card_number, account_type, card_type, card_network, product_name, branch, statement_day, due_day, credit_limit, expiry_month, expiry_year, status, annual_fee_enabled, annual_fee_amount, annual_fee_waiver_type, annual_fee_waiver_target, annual_fee_cycle, annual_fee_cycle_start, annual_fee_current_spending, note, created_at, updated_at, display_name, last4, opened_at";
 const rewardFields = "id, bank_account_id, reward_type, title, amount, points, recorded_at, note, created_at, updated_at";
 const cardTypes: BankCardType[] = ["Tài khoản ngân hàng", "Thẻ ghi nợ / ATM", "Thẻ tín dụng", "Ví điện tử"];
 const networks: BankCardNetwork[] = ["Không áp dụng", "Visa", "Mastercard", "Napas", "JCB", "Amex"];
@@ -150,6 +150,17 @@ export async function bankAccountsFromRows(rows: Record<string, unknown>[]) {
   return accounts.map(account => ({ ...account, rewards: byAccount[account.id] || [] }));
 }
 
+function formatDateLocal(d: unknown): string {
+  if (!d) return "";
+  if (d instanceof Date) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  return String(d).slice(0, 10);
+}
+
 export function bankAccountFromRow(row: Record<string, unknown>): BankAccount {
   const type = normalizeCardType(row.account_type || row.card_type);
   return {
@@ -175,15 +186,16 @@ export function bankAccountFromRow(row: Record<string, unknown>): BankAccount {
     annualFeeWaiverType: normalizeWaiverType(row.annual_fee_waiver_type),
     annualFeeWaiverTarget: Number(row.annual_fee_waiver_target ?? 0),
     annualFeeCycle: normalizeCycle(row.annual_fee_cycle),
-    annualFeeCycleStart: row.annual_fee_cycle_start ? String(row.annual_fee_cycle_start).slice(0, 10) : "",
+    annualFeeCycleStart: formatDateLocal(row.annual_fee_cycle_start),
     annualFeeCurrentSpending: Number(row.annual_fee_current_spending ?? 0),
     note: String(row.note ?? ""),
     displayName: String(row.display_name ?? ""),
     last4: String(row.last4 ?? ""),
     benefits: [],
     rewards: [],
-    createdAt: row.created_at ? String(row.created_at) : "",
-    updatedAt: row.updated_at ? String(row.updated_at) : "",
+    openedAt: formatDateLocal(row.opened_at),
+    createdAt: row.created_at ? (row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at)) : "",
+    updatedAt: row.updated_at ? (row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at)) : "",
   };
 }
 
@@ -246,20 +258,21 @@ export function normalizeBankBody(body: Partial<BankAccount>) {
     annualFeeCycleStart: String(body.annualFeeCycleStart || "").trim() || null,
     annualFeeCurrentSpending: Number(body.annualFeeCurrentSpending || 0),
     note: String(body.note || "").trim(),
-    displayName: String(body.displayName || "").trim(),
+    displayName: String(body.displayName || body.productName || "").trim(),
     last4: String(body.last4 || "").trim(),
+    openedAt: String(body.openedAt || "").trim() || null,
     rewards: (body.rewards || []).map(normalizeRewardBody),
   };
 }
 
 export function isCreditBankType(value: unknown) {
-  return ["Thẻ tín dụng"].includes(String(value));
+  return ["credit", "Thẻ tín dụng"].includes(String(value));
 }
 
 export async function upsertBankAccount(account: ReturnType<typeof normalizeBankBody>) {
   const result = await pool.query(
-    `INSERT INTO bank_accounts (id, member_id, bank_name, account_holder, account_number, card_number, account_type, card_type, card_network, product_name, branch, statement_day, due_day, credit_limit, expiry_month, expiry_year, status, annual_fee_enabled, annual_fee_amount, annual_fee_waiver_type, annual_fee_waiver_target, annual_fee_cycle, annual_fee_cycle_start, annual_fee_current_spending, note, display_name, last4)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+    `INSERT INTO bank_accounts (id, member_id, bank_name, account_holder, account_number, card_number, account_type, card_type, card_network, product_name, branch, statement_day, due_day, credit_limit, expiry_month, expiry_year, status, annual_fee_enabled, annual_fee_amount, annual_fee_waiver_type, annual_fee_waiver_target, annual_fee_cycle, annual_fee_cycle_start, annual_fee_current_spending, note, display_name, last4, opened_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)
      ON CONFLICT (id) DO UPDATE SET
       member_id=EXCLUDED.member_id,
       bank_name=EXCLUDED.bank_name,
@@ -287,9 +300,10 @@ export async function upsertBankAccount(account: ReturnType<typeof normalizeBank
       note=EXCLUDED.note,
       display_name=EXCLUDED.display_name,
       last4=EXCLUDED.last4,
+      opened_at=EXCLUDED.opened_at,
       updated_at=CURRENT_TIMESTAMP
      RETURNING ${fields}`,
-    [account.id, account.memberId, account.bankName, account.accountHolder, account.accountNumber, account.cardNumber, account.accountType, account.cardType, account.cardNetwork, account.productName, account.branch, account.statementDay, account.dueDay, account.creditLimit, account.expiryMonth, account.expiryYear, account.status, account.annualFeeEnabled, account.annualFeeAmount, account.annualFeeWaiverType, account.annualFeeWaiverTarget, account.annualFeeCycle, account.annualFeeCycleStart, account.annualFeeCurrentSpending, account.note, account.displayName, account.last4]
+    [account.id, account.memberId, account.bankName, account.accountHolder, account.accountNumber, account.cardNumber, account.accountType, account.cardType, account.cardNetwork, account.productName, account.branch, account.statementDay, account.dueDay, account.creditLimit, account.expiryMonth, account.expiryYear, account.status, account.annualFeeEnabled, account.annualFeeAmount, account.annualFeeWaiverType, account.annualFeeWaiverTarget, account.annualFeeCycle, account.annualFeeCycleStart, account.annualFeeCurrentSpending, account.note, account.displayName, account.last4, account.openedAt]
   );
   await pool.query("DELETE FROM bank_card_rewards WHERE bank_account_id = $1", [account.id]);
   for (const reward of account.rewards) await insertReward(account.id, reward);
@@ -337,17 +351,19 @@ async function insertReward(bankAccountId: string, reward: BankCardReward) {
 
 function normalizeCardType(value: unknown): BankCardType {
   const text = String(value || "").trim().toLowerCase();
-  if (["credit_card", "credit", "the tin dung", "thẻ tín dụng"].includes(text)) return "Thẻ tín dụng";
-  if (["debit_card", "debit", "atm", "the ghi no", "thẻ ghi nợ", "the ghi no / atm", "thẻ ghi nợ / atm"].includes(text)) return "Thẻ ghi nợ / ATM";
-  if (["wallet", "momo", "vi dien tu", "ví điện tử"].includes(text)) return "Ví điện tử";
-  if (["bank_account", "tai khoan ngan hang", "tài khoản ngân hàng"].includes(text)) return "Tài khoản ngân hàng";
-  return cardTypes.includes(value as BankCardType) ? value as BankCardType : "Tài khoản ngân hàng";
+  if (["credit_card", "credit", "the tin dung", "thẻ tín dụng"].includes(text)) return "credit";
+  if (["debit_card", "debit", "atm", "the ghi no", "thẻ ghi nợ", "the ghi no / atm", "thẻ ghi nợ / atm"].includes(text)) return "debit";
+  if (["wallet", "momo", "vi dien tu", "ví điện tử"].includes(text)) return "wallet";
+  if (["bank_account", "tai khoan ngan hang", "tài khoản ngân hàng"].includes(text)) return "bank_account";
+  return "debit";
 }
 function normalizeNetwork(value: unknown): BankCardNetwork {
   return networks.includes(value as BankCardNetwork) ? value as BankCardNetwork : "Không áp dụng";
 }
 function normalizeStatus(value: unknown): BankAccountStatus {
-  return statuses.includes(value as BankAccountStatus) ? value as BankAccountStatus : "Đang dùng";
+  const text = String(value || "").trim().toLowerCase();
+  if (["inactive", "archived", "disabled", "ngừng dùng", "đã hủy", "tạm khóa"].includes(text)) return "inactive";
+  return "active";
 }
 function normalizeWaiverType(value: unknown): AnnualFeeWaiverType {
   return waiverTypes.includes(value as AnnualFeeWaiverType) ? value as AnnualFeeWaiverType : "Không có";

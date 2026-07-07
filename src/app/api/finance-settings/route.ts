@@ -23,6 +23,9 @@ async function ensureFinanceSettingsTable() {
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_savings_balance NUMERIC DEFAULT 0");
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_investment_balance NUMERIC DEFAULT 0");
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now()");
+  await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_cash_amount NUMERIC DEFAULT 0");
+  await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_debit_amount NUMERIC DEFAULT 0");
+  await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_wallet_amount NUMERIC DEFAULT 0");
 }
 
 function normalizeStart(body: Record<string, unknown>) {
@@ -52,12 +55,15 @@ export async function GET() {
              COALESCE(tracking_start_year, EXTRACT(YEAR FROM tracking_start_date)::integer, 2024) as "trackingStartYear",
              opening_cash_balance::float as "openingCashBalance",
              opening_savings_balance::float as "openingSavingsBalance",
-             opening_investment_balance::float as "openingInvestmentBalance"
+             opening_investment_balance::float as "openingInvestmentBalance",
+             opening_cash_amount::float as "openingCashAmount",
+             opening_debit_amount::float as "openingDebitAmount",
+             opening_wallet_amount::float as "openingWalletAmount"
       FROM finance_settings
       LIMIT 1
     `);
     if (result.rows.length === 0) {
-      return NextResponse.json({ ok: true, data: { trackingStartDate: "2024-01-01", trackingStartMonth: 1, trackingStartYear: 2024, openingCashBalance: 0, openingSavingsBalance: 0, openingInvestmentBalance: 0 } });
+      return NextResponse.json({ ok: true, data: { trackingStartDate: "2024-01-01", trackingStartMonth: 1, trackingStartYear: 2024, openingCashBalance: 0, openingSavingsBalance: 0, openingInvestmentBalance: 0, openingCashAmount: 0, openingDebitAmount: 0, openingWalletAmount: 0 } });
     }
     return NextResponse.json({ ok: true, data: result.rows[0] });
   } catch (error) {
@@ -76,6 +82,9 @@ export async function PUT(req: NextRequest) {
     const openingCashBalance = Number(body.openingCashBalance ?? body.opening_cash_balance ?? 0) || 0;
     const openingSavingsBalance = Number(body.openingSavingsBalance ?? body.opening_savings_balance ?? 0) || 0;
     const openingInvestmentBalance = Number(body.openingInvestmentBalance ?? body.opening_investment_balance ?? 0) || 0;
+    const openingCashAmount = Number(body.openingCashAmount ?? body.opening_cash_amount ?? 0) || 0;
+    const openingDebitAmount = Number(body.openingDebitAmount ?? body.opening_debit_amount ?? 0) || 0;
+    const openingWalletAmount = Number(body.openingWalletAmount ?? body.opening_wallet_amount ?? 0) || 0;
 
     const check = await pool.query("SELECT id FROM finance_settings LIMIT 1");
     if (check.rows.length > 0) {
@@ -87,18 +96,21 @@ export async function PUT(req: NextRequest) {
              opening_cash_balance = $4,
              opening_savings_balance = $5,
              opening_investment_balance = $6,
+             opening_cash_amount = $7,
+             opening_debit_amount = $8,
+             opening_wallet_amount = $9,
              updated_at = now()`,
-        [start.date, start.month, start.year, openingCashBalance, openingSavingsBalance, openingInvestmentBalance]
+        [start.date, start.month, start.year, openingCashBalance, openingSavingsBalance, openingInvestmentBalance, openingCashAmount, openingDebitAmount, openingWalletAmount]
       );
     } else {
       await pool.query(
-        `INSERT INTO finance_settings (tracking_start_date, tracking_start_month, tracking_start_year, opening_cash_balance, opening_savings_balance, opening_investment_balance)
+        `INSERT INTO finance_settings (tracking_start_date, tracking_start_month, tracking_start_year, opening_cash_balance, opening_savings_balance, opening_investment_balance, opening_cash_amount, opening_debit_amount, opening_wallet_amount)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [start.date, start.month, start.year, openingCashBalance, openingSavingsBalance, openingInvestmentBalance]
       );
     }
 
-    return NextResponse.json({ ok: true, data: { trackingStartDate: start.date, trackingStartMonth: start.month, trackingStartYear: start.year, openingCashBalance, openingSavingsBalance, openingInvestmentBalance } });
+    return NextResponse.json({ ok: true, data: { trackingStartDate: start.date, trackingStartMonth: start.month, trackingStartYear: start.year, openingCashBalance, openingSavingsBalance, openingInvestmentBalance, openingCashAmount, openingDebitAmount, openingWalletAmount } });
   } catch (error) {
     console.error("[PUT /api/finance-settings]", error);
     return NextResponse.json({ ok: false, error: "Lỗi server" }, { status: 500 });

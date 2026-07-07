@@ -22,6 +22,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const client = await pool.connect();
   try {
+    if (paymentAccountId) {
+      const sourceCheck = await client.query(`SELECT type, card_type FROM bank_accounts WHERE id = $1`, [paymentAccountId]);
+      const source = sourceCheck.rows[0];
+      if (source) {
+        const typeStr = String(source.type).toLowerCase();
+        const cardTypeStr = String(source.card_type).toLowerCase();
+        if (typeStr === 'credit' || typeStr === 'credit_card' || cardTypeStr === 'credit' || cardTypeStr === 'thẻ tín dụng') {
+          return NextResponse.json({ ok: false, error: "Không được dùng thẻ tín dụng để thanh toán dư nợ." }, { status: 400 });
+        }
+      }
+    }
+
     await client.query("BEGIN");
 
     // Get all pending transactions for this card

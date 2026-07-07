@@ -74,7 +74,10 @@ async function getFinanceSettings() {
               COALESCE(tracking_start_year, EXTRACT(YEAR FROM tracking_start_date)::integer, 2024) as "trackingStartYear",
               opening_cash_balance::float as "openingCashBalance",
               opening_savings_balance::float as "openingSavingsBalance",
-              opening_investment_balance::float as "openingInvestmentBalance"
+              opening_investment_balance::float as "openingInvestmentBalance",
+              opening_cash_amount::float as "openingCashAmount",
+              opening_debit_amount::float as "openingDebitAmount",
+              opening_wallet_amount::float as "openingWalletAmount"
        FROM finance_settings
        LIMIT 1`
     );
@@ -86,9 +89,12 @@ async function getFinanceSettings() {
       openingCashBalance: Number(row.openingCashBalance || 0),
       openingSavingsBalance: Number(row.openingSavingsBalance || 0),
       openingInvestmentBalance: Number(row.openingInvestmentBalance || 0),
+      openingCashAmount: Number(row.openingCashAmount || 0),
+      openingDebitAmount: Number(row.openingDebitAmount || 0),
+      openingWalletAmount: Number(row.openingWalletAmount || 0),
     };
   } catch {
-    return { trackingStartDate: "2024-01-01", trackingStartMonth: 1, trackingStartYear: 2024, openingCashBalance: 0, openingSavingsBalance: 0, openingInvestmentBalance: 0 };
+    return { trackingStartDate: "2024-01-01", trackingStartMonth: 1, trackingStartYear: 2024, openingCashBalance: 0, openingSavingsBalance: 0, openingInvestmentBalance: 0, openingCashAmount: 0, openingDebitAmount: 0, openingWalletAmount: 0 };
   }
 }
 
@@ -185,12 +191,10 @@ export async function GET(req: NextRequest) {
 
     const row = cashQuery.rows[0] || {};
     const totalAdjustment = Number(row.total_adjustment || 0);
-    const currentCash = settings.openingCashBalance
-      + Number(row.total_income || 0)
-      - Number(row.total_expense || 0)
-      - Number(row.total_invest_buy || 0)
-      + Number(row.total_invest_sell || 0)
-      + totalAdjustment;
+    const hasNewFields = settings.openingCashAmount !== undefined && settings.openingCashAmount !== null;
+    const initialCash = hasNewFields 
+      ? ((settings.openingCashAmount || 0) + (settings.openingDebitAmount || 0) + (settings.openingWalletAmount || 0)) 
+      : (settings.openingCashBalance || 0);
 
     const assetsQuery = await pool.query(
       `SELECT
@@ -207,8 +211,19 @@ export async function GET(req: NextRequest) {
     const investmentSellTotal = Number(assets.investment_sell_total || 0);
     const currentSavings = settings.openingSavingsBalance + savingsRecordsTotal + savingsFromExpensesTotal;
     const currentInvestment = settings.openingInvestmentBalance + investmentBuyTotal - investmentSellTotal;
-    const estimatedAssets = currentCash + currentSavings + currentInvestment;
+    // moved below
 
+    const currentCash = initialCash
+      + Number(row.total_income || 0)
+      - Number(row.total_expense || 0)
+      - (savingsRecordsTotal + savingsFromExpensesTotal)
+      - Number(row.total_invest_buy || 0)
+      + Number(row.total_invest_sell || 0)
+      + totalAdjustment;
+
+
+
+    const estimatedAssets = currentCash + currentSavings + currentInvestment;
     const yearStartDate = `${year}-01-01`;
     const filter3 = await buildDataFilter(user, '', 3, 'member_id', 'finance');
     const beforeYearQuery = await pool.query(
@@ -221,7 +236,16 @@ export async function GET(req: NextRequest) {
       [settings.trackingStartDate, yearStartDate, ...filter3.params]
     );
     const beforeYear = beforeYearQuery.rows[0] || {};
-    let cumulativeCash = settings.openingCashBalance
+    const beforeYearAssetsQuery = await pool.query(
+      `SELECT
+        (SELECT COALESCE(SUM(CASE WHEN type = 'withdraw' THEN -amount ELSE amount END), 0) FROM savings_records WHERE make_date(year::integer, month::integer, 1) >= $1::date AND make_date(year::integer, month::integer, 1) < $2::date AND ${filter3.where}) as savings_records_total,
+        (SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE type = 'expense' AND category = 'Tiết kiệm' AND linked_savings_id IS NULL AND ${transactionDateExpr} >= $1::date AND ${transactionDateExpr} < $2::date AND ${filter3.where}) as unlinked_savings_expense_total`,
+      [settings.trackingStartDate, yearStartDate, ...filter3.params]
+    );
+    const beforeYearAssetsData = beforeYearAssetsQuery.rows[0] || {};
+    const beforeYearSavings = Number(beforeYearAssetsData.savings_records_total || 0) + Number(beforeYearAssetsData.unlinked_savings_expense_total || 0);
+
+    let cumulativeCash = initialCash
       + Number(beforeYear.total_income || 0)
       - Number(beforeYear.total_expense || 0)
       - Number(beforeYear.total_invest_buy || 0)
@@ -230,23 +254,41 @@ export async function GET(req: NextRequest) {
     const monthlyData = Object.values(dataMap).sort((a, b) => a.month - b.month).map(item => {
       const afterExpense = item.income - item.expense;
       const netInvestment = item.investmentBuy - item.investmentSell;
-      const monthlyCashFlow = afterExpense - item.investmentBuy + item.investmentSell + item.adjustment;
+      const monthlyCashFlow = afterExpense - item.savingsInExpense - item.investmentBuy + item.investmentSell + item.adjustment;
       const inTrackingRange = year > settings.trackingStartYear || (year === settings.trackingStartYear && item.month >= settings.trackingStartMonth);
       if (inTrackingRange) cumulativeCash += monthlyCashFlow;
       return { ...item, netInvestment, afterExpense, monthlyCashFlow, cumulativeCash };
     });
+
+    
+    const paramsPending = ['pending'];
+    let wherePending = "status = $1";
+    if (filter.params[0]) {
+      paramsPending.push(filter.params[0]);
+      wherePending += " AND member_id = $2";
+    }
+    const globalPendingCreditQuery = await pool.query(`SELECT SUM(amount) as total FROM card_pending_transactions WHERE ${wherePending}`, paramsPending);
+    const pendingCreditTotal = Number(globalPendingCreditQuery.rows[0]?.total || 0);
+    const availableCash = currentCash;
+    const afterCreditPayment = availableCash - pendingCreditTotal;
 
     return NextResponse.json({
       ok: true,
       data: {
         monthlyData,
         currentCash,
+        availableCash,
+        pendingCreditTotal,
+        afterCreditPayment,
         currentSavings,
         currentInvestment,
         estimatedAssets,
         cashBreakdown: {
           startDate: settings.trackingStartDate,
-          openingCashBalance: settings.openingCashBalance,
+          openingCashBalance: initialCash,
+          openingCashAmount: settings.openingCashAmount,
+          openingDebitAmount: settings.openingDebitAmount,
+          openingWalletAmount: settings.openingWalletAmount,
           incomeSinceStart: Number(row.total_income || 0),
           realExpenseSinceStart: Number(row.total_expense || 0),
           savingTransferSinceStart: Number(assets.unlinked_savings_expense_total || 0),

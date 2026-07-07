@@ -1,7 +1,19 @@
 const fs = require('fs');
-let c = fs.readFileSync('src/components/family-app.tsx', 'utf8');
+const file = 'src/components/family-app.tsx';
+let content = fs.readFileSync(file, 'utf8');
 
-c = c.replace(/Ä Ã£ Ä‘á»•i gÃ³i SIM\/Data/g, 'Đã đổi gói SIM/Data');
-c = c.replace(/title="Ä á»•i gÃ³i"/g, 'title="Đổi gói"');
+const s1 = `      </div>
 
-fs.writeFileSync('src/components/family-app.tsx', c, 'utf8');
+    </div>
+
+    <div className="min-h-[300px] pb-4">`;
+
+const r1 = `      </div>
+
+    <div className="min-h-[300px] pb-4">`;
+
+content = content.replace(s1, r1);
+content = content.replace(s1.replace(/\n/g, '\r\n'), r1.replace(/\n/g, '\r\n'));
+
+fs.writeFileSync(file, content);
+console.log("Fixed");

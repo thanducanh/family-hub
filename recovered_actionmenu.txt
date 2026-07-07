@@ -1,0 +1,148 @@
+Created At: 2026-07-06T16:32:34Z
+Completed At: 2026-07-06T16:32:34Z
+File Path: `file:///d:/Projects/SynologyDrive/Family%20Management/src/components/family-app.tsx`
+Total Lines: 9813
+Total Bytes: 734912
+Showing lines 4080 to 4200
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+4080:     } catch (err: any) {
+4081:       ui.toast(err.message || "Không thể chuyển giao dịch.", "error");
+4082:     } finally {
+4083:       setConvertLoading(false);
+4084:     }
+4085:   };
+4086: 
+4087:   if (typeof document === "undefined") return null;
+4088:   return createPortal(<div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#800020] min-[769px]:hidden">
+4089:     <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#800020] px-3 text-white">
+4090:       <button type="button" aria-label="Quay lại danh sách Thu chi" onClick={event => { event.preventDefault(); event.stopPropagation(); close(); }} className="grid size-10 place-items-center rounded-full active:bg-white/10"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+4091:       <h2 className="min-w-0 flex-1 truncate px-2 text-center text-[17px] font-semibold">Chi tiết giao dịch</h2>
+4092:       <button type="button" aria-label="Tùy chọn giao dịch" onClick={() => setMenuOpen(true)} className="grid size-10 place-items-center rounded-full text-xl font-semibold text-[#D4AF37] active:bg-white/10">•••</button>
+4093:     </header>
+4094:     <div className="min-h-0 flex-1 overflow-y-auto bg-[#F8F5F2] px-3 pb-[calc(24px+env(safe-area-inset-bottom))] pt-6">
+4095:       <section className="mt-2 overflow-hidden rounded-2xl border border-[#E8DCD5] bg-[#FFFFFF] shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+4096:         <div className="border-b border-[#E8DCD5] px-4 py-5 text-center">
+4097:           <p className="mb-1 text-[13px] font-normal text-[#6B5E64]">{isIncome ? "Khoản thu" : item._displayCategory || "Khoản chi"}</p>
+4098:           <h3 className="mx-auto max-w-full break-words text-[18px] font-medium leading-snug text-[#171018]">{item._displayName}</h3>
+4099:           <p className={`mt-2 text-[30px] font-semibold tracking-tight ${isIncome ? "text-[#059669]" : "text-[#E11D48]"}`}>{isIncome ? "+" : "-"}{money(item.amount)}</p>
+4100:           {excludedFromExpense && <span className="mt-3 inline-flex rounded-full bg-[#F8E7EC] px-3 py-1 text-[12px] font-bold text-[#800020]">Đã chuyển sang tạm tính</span>}
+4101:         </div>
+4102:         <div className="divide-y divide-[#E8DCD5] px-4">
+4103:           {detailRows.filter(([, value]) => value !== "" && value !== null && value !== undefined).map(([label, value]) => <div key={String(label)} className="grid grid-cols-[minmax(0,42%)_minmax(0,58%)] items-start gap-3 py-3.5 text-[14px] leading-snug">
+4104:             <span className="font-normal text-[#6B5E64]">{label}</span>
+4105:             <span className="min-w-0 break-words text-right font-medium text-[#171018]">{String(value)}</span>
+4106:           </div>)}
+4107:         </div>
+4108:       </section>
+4109:     </div>
+4110:     {menuOpen && <ActionMenu isOpen close={() => setMenuOpen(false)} actions={[{ label: "Chuyển sang tạm tính thẻ", onClick: () => setConvertOpen(true), hidden: !canConvertToCardPending }, { label: "Sửa", onClick: onEdit }, { label: loading ? "Đang xóa..." : "Xóa", onClick: () => void remove(), textClass: "text-rose-500", hidden: loading }]} />}
+4111:     {convertOpen && <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45" onClick={() => !convertLoading && setConvertOpen(false)}>
+4112:       <div className="w-full rounded-t-[24px] bg-white p-4 pb-[calc(20px+env(safe-area-inset-bottom))] text-[#171018] shadow-2xl" onClick={event => event.stopPropagation()}>
+4113:         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#E8DCD5]" />
+4114:         <h3 className="text-[17px] font-bold">Chuyển sang tạm tính thẻ</h3>
+4115:         <p className="mt-3 rounded-2xl border border-[#E8DCD5] bg-[#F8F5F2] p-3 text-[14px] leading-5 text-[#6B5E64]">Giao dịch này sẽ được đưa sang Tạm tính thẻ tín dụng và không còn tính vào Chi thật để tránh tính trùng.</p>
+4116:         <label className="mt-4 block text-[13px] font-bold text-[#6B5E64]">Thẻ tín dụng</label>
+4117:         <select className="mt-2 h-12 w-full rounded-xl border border-[#E8DCD5] bg-white px-3 text-[15px] font-medium outline-none focus:border-[#800020]" value={selectedCardId || selectedCard?.id || ""} onChange={event => setSelectedCardId(event.target.value)} disabled={convertLoading || activeCreditCards.length === 0}>
+4118:           {activeCreditCards.length === 0 ? <option value="">Không có thẻ tín dụng active</option> : activeCreditCards.map((account: any) => <option key={account.id} value={account.id}>{account.displayName || account.productName || account.bankName}</option>)}
+4119:         </select>
+4120:         <div className="mt-5 grid grid-cols-2 gap-3">
+4121:           <button type="button" disabled={convertLoading} onClick={() => setConvertOpen(false)} className="h-12 rounded-xl border border-[#E8DCD5] bg-white text-[15px] font-bold text-[#800020] disabled:opacity-60">Hủy</button>
+4122:           <button type="button" disabled={convertLoading || activeCreditCards.length === 0} onClick={() => void convertToCardPending()} className="h-12 rounded-xl bg-[#800020] text-[15px] font-bold text-white disabled:opacity-60">{convertLoading ? "Đang chuyển..." : "Xác nhận"}</button>
+4123:         </div>
+4124:       </div>
+4125:     </div>}
+4126:   </div>, document.body);
+4127: }
+4128: 
+4129: function MobileTransactionEditor({ item, defaultType, allowTypeChange = false, close, onSaved, user, data, update }: any) {
+4130:   const ui = useUI();
+4131:   const [type, setType] = useState<"income" | "expense">(defaultType || "expense");
+4132:   const incomeRecord = item?._isIncome ? item as IncomeRecord : null;
+4133:   const expenseRecord = item && !item?._isIncome ? item as Transaction : null;
+4134:   const finish = () => { onSaved(); close(); };
+4135: 
+4136:   const shortTitle = `${item?.id ? "Sửa" : "Thêm"} ${type === "income" ? "thu" : "chi"}`;
+4137:   const formId = type === "income" ? "mobile-income-transaction-form" : "mobile-expense-transaction-form";
+4138:   return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="submit" form={formId} onClick={() => (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit()} className="px-4 min-h-[40px] text-[15px] font-bold text-[#800020] active:opacity-60 transition-opacity">Lưu</button>}>
+4139:     <div className="p-4 pt-6 bg-[#F8F5F2] min-h-0 pb-[calc(104px+env(safe-area-inset-bottom))]">
+4140:       {(!item?.id && allowTypeChange) && <div className="sticky top-0 z-10 mb-4 flex rounded-xl bg-[#FFFFFF] p-1.5 shadow-sm border border-[#E8DCD5]">
+4141:         <button type="button" onClick={() => setType("income")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "income" ? "bg-[#F8F5F2] text-[#059669] shadow-sm" : "text-[#6B5E64]"}`}>Thu nhập</button>
+4142:         <button type="button" onClick={() => setType("expense")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "expense" ? "bg-[#F8F5F2] text-[#E11D48] shadow-sm" : "text-[#6B5E64]"}`}>Chi tiêu</button>
+4143:       </div>}
+4144:       {type === "income" ? <IncomeRecordForm record={incomeRecord} members={toArray(data?.members).map((member: Member) => ({ id: member.id, name: member.name }))} templates={incomeTemplates} user={user} back={close} saved={finish} notify={(message, toastType) => ui.toast(message, toastType)} compactMobile /> : <ExpenseForm record={expenseRecord} members={toArray(data?.members)} user={user} close={close} compactMobile saved={(record) => {
+4145:         if ((record as any)._pendingOnly) {
+4146:           finish();
+4147:           return;
+4148:         }
+4149:         const transactions = toArray<Transaction>(data?.transactions);
+4150:         update({ ...data, transactions: transactions.some(current => current.id === record.id) ? transactions.map(current => current.id === record.id ? record : current) : [record, ...transactions] });
+4151:         finish();
+4152:       }} />}
+4153:     </div>
+4154:   </FullScreenMobileSheet>;
+4155: }
+4156: 
+4157: function MobileSavingsList({ data: appData, update, user, refreshTrigger, refresh }: any) {
+4158:   const [detail, setDetail] = useState<any>(null);
+4159:   const [editor, setEditor] = useState<any>(null);
+4160:   const [records, setRecords] = useState<any[]>([]);
+4161: 
+4162:   useEffect(() => {
+4163:     fetch("/api/savings-records", { cache: "no-store" }).then(async response => {
+4164:       const result = await readJsonSafe<any>(response);
+4165:       if (!response.ok) throw new Error(result?.error || "Không thể tải tiết kiệm");
+4166:       setRecords(toArray(result));
+4167:     }).catch(() => setRecords([]));
+4168:   }, [refreshTrigger]);
+4169: 
+4170:   const savings = useMemo(() => {
+4171:     return [...toArray(records)].sort((a, b) => {
+4172:       return new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime();
+4173:     });
+4174:   }, [records]);
+4175: 
+4176:   const totalSavings = savings.reduce((sum: number, item: any) => sum + (item.type === "withdraw" ? -Number(item.amount || 0) : Number(item.amount || 0)), 0);
+4177: 
+4178:   return <div className="px-4 pt-3 pb-32">
+4179:     <div className="bg-[var(--mobile-card)] rounded-[24px] p-5 shadow-[0_8px_24px_rgba(128,0,32,0.08)] text-[#171018] mb-5 relative overflow-hidden mt-2 border border-[#E8DCD5]">
+4180:       <p className="text-[14px] text-[#6B5E64] font-medium mb-1">Tiết kiệm hiện có</p>
+4181:       <b className="text-[32px] font-bold block mb-1 tracking-tight truncate text-[#800020]">{money(totalSavings)}</b>
+4182:     </div>
+4183: 
+4184:     <div className="bg-[var(--mobile-card)] rounded-[24px] shadow-[0_4px_12px_rgba(128,0,32,0.04)] p-4 border border-[#E8DCD5] min-h-[300px]">
+4185:       <h3 className="font-bold text-[#171018] mb-4 text-[16px] px-1">Danh sách tiết kiệm</h3>
+4186:       {savings.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-[#6B5E64]"><svg className="size-12 mb-3 text-[#E8DCD5]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có tiết kiệm</p></div> : (
+4187:         <div className="space-y-4">
+4188:           {savings.map(item => (
+4189:             <div key={item.id} onClick={() => setDetail(item)} className="flex justify-between items-center active:opacity-60 transition-opacity">
+4190:               <div className="flex gap-3 items-center min-w-0 pr-3">
+4191:                 <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-[#F8F5F2] text-[#D4AF37]">
+4192:                    <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+4193:                 </div>
+4194:                 <div className="min-w-0">
+4195:                   <b className="text-[#171018] text-[14px] font-medium block truncate leading-tight">{item.description || "Tiết kiệm"}</b>
+4196:                   <p className="text-[13px] text-[#6B5E64] font-normal mt-0.5 truncate">Tháng {item.month}/{item.year} • {item.holder || "Không rõ"}</p>
+4197:                 </div>
+4198:               </div>
+4199:               <b className="shrink-0 text-right text-[15px] font-bold text-[#059669]">{money(item.amount)}</b>
+4200:             </div>
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+Created At: 2026-07-06T16:51:01Z
+Completed At: 2026-07-06T16:51:07Z
+
+				The command completed successfully.
+				Output:
+				Created At: 2026-07-06T16:32:28Z
+Completed At: 2026-07-06T16:32:28Z
+{"File":"d:\\Projects\\SynologyDrive\\Family Management\\src\\components\\family-app.tsx","LineNumber":4110,"LineContent":"    {menuOpen \u0026\u0026 \u003cActionMenu isOpen close={() =\u003e setMenuOpen(false)} actions={[{ label: \"Chuyển sang tạm tính thẻ\", onClick: () =\u003e setConvertOpen(true), hidden: !canConvertToCardPending }, { label: \"Sửa\", onClick: onEdit }, { label: loading ? \"Đang xóa...\" : \"Xóa\", onClick: (
+Created At: 2026-07-06T16:32:34Z
+Completed At: 2026-07-06T16:32:34Z
+File Path: `file:///d:/Projects/SynologyDrive/Family%20Management/src/components/family-app.tsx`
+Total Lines: 9813
+Total Bytes: 734912
+Showing lines 4080 to 4200
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+4080:     } catch (err: any)
+
+

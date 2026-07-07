@@ -6,7 +6,7 @@ type ToastType = "success" | "error";
 
 interface UIContextType {
   toast: (message: string, type?: ToastType) => void;
-  confirm: (title: string, message: string, confirmText?: string) => Promise<boolean>;
+  confirm: (title: string, message: string, confirmText?: string, confirmColor?: string) => Promise<boolean>;
 }
 
 const UIContext = createContext<UIContextType | null>(null);
@@ -19,7 +19,7 @@ export function useUI() {
 
 export function UIProvider({ children }: { children: ReactNode }) {
   const [toastMessage, setToastMessage] = useState<{ message: string; type: ToastType; id: number } | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; confirmText?: string; resolve: (val: boolean) => void } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ title: string; message: string; confirmText?: string; confirmColor?: string; resolve: (val: boolean) => void } | null>(null);
 
   const toast = useCallback((message: string, type: ToastType = "success") => {
     const id = Date.now();
@@ -29,9 +29,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
     }, 3000);
   }, []);
 
-  const confirm = useCallback((title: string, message: string, confirmText?: string) => {
+  const confirm = useCallback((title: string, message: string, confirmText?: string, confirmColor?: string) => {
     return new Promise<boolean>((resolve) => {
-      setConfirmDialog({ title, message, confirmText, resolve });
+      setConfirmDialog({ title, message, confirmText, confirmColor, resolve });
     });
   }, []);
 
@@ -64,7 +64,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
               <button onClick={() => handleConfirm(false)} className="rounded-xl bg-slate-100 px-4 py-2 font-bold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
                 Hủy
               </button>
-              <button onClick={() => handleConfirm(true)} className="rounded-xl bg-rose-500 px-5 py-2 font-bold text-white hover:bg-rose-600">
+              <button onClick={() => handleConfirm(true)} className={`rounded-xl px-5 py-2 font-bold text-white ${confirmDialog.confirmColor ? '' : 'bg-rose-500 hover:bg-rose-600'}`} style={confirmDialog.confirmColor ? { backgroundColor: confirmDialog.confirmColor } : undefined}>
                 {confirmDialog.confirmText || "Xóa"}
               </button>
             </div>

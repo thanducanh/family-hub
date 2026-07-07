@@ -18,11 +18,14 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     const [account] = await bankAccountsFromRows([accountResult.rows[0]]);
     account.cardNumber = "";
     account.accountNumber = "";
-    const [memberResult, rawNotesResult] = await Promise.all([
+    const [memberResult, rawNotesResult, txCheck, pendingTxCheck] = await Promise.all([
       pool.query("SELECT id, name, nickname, birthday, gender, role, phone, avatar, notes, color FROM members WHERE id = $1 AND deleted_at IS NULL", [account.memberId]),
       pool.query("SELECT id, member_id, bank_account_id, title, bank_name, content_type, LEFT(raw_text, 1200) AS raw_text, image_url, extracted_json, effective_date, expiry_date, note, created_at, updated_at FROM bank_raw_notes WHERE bank_account_id = $1 ORDER BY updated_at DESC LIMIT 10", [id]).catch(() => ({ rows: [] })),
+      pool.query("SELECT 1 FROM transactions WHERE bank_account_id = $1 OR payment_account_id = $1 LIMIT 1", [id]),
+      pool.query("SELECT 1 FROM card_pending_transactions WHERE bank_account_id = $1 LIMIT 1", [id])
     ]);
-    return NextResponse.json({ ok: true, data: account, member: memberResult.rows[0] || null, rawNotes: bankRawNotesFromRows(rawNotesResult.rows) });
+    const hasTransactions = (txCheck.rowCount ?? 0) > 0 || (pendingTxCheck.rowCount ?? 0) > 0;
+    return NextResponse.json({ ok: true, data: account, member: memberResult.rows[0] || null, rawNotes: bankRawNotesFromRows(rawNotesResult.rows), hasTransactions });
   } catch (error) {
     console.error("[api/bank-accounts/:id] GET failed", error);
     return NextResponse.json({ ok: false, error: "Không tải được thông tin thẻ." }, { status: 500 });
@@ -67,8 +70,18 @@ export async function DELETE(_request: NextRequest, { params }: RouteContext) {
     const { id } = await params;
     const existing = await requireBankAccountAccess(user, id);
     if (existing.error) return existing.error;
+    
+    // Kiểm tra dữ liệu liên quan
+    const txCheck = await pool.query("SELECT 1 FROM transactions WHERE bank_account_id = $1 OR payment_account_id = $1 LIMIT 1", [id]);
+    const pendingTxCheck = await pool.query("SELECT 1 FROM card_pending_transactions WHERE bank_account_id = $1 LIMIT 1", [id]);
+    
+    if ((txCheck.rowCount ?? 0) > 0 || (pendingTxCheck.rowCount ?? 0) > 0) {
+      await pool.query("UPDATE bank_accounts SET status = 'Đã hủy', updated_at = NOW() WHERE id = $1", [id]);
+      return NextResponse.json({ ok: true, mode: 'archived' });
+    }
+    
     await pool.query("DELETE FROM bank_accounts WHERE id = $1", [id]);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, mode: 'deleted' });
   } catch (error) {
     console.error("[api/bank-accounts/:id] DELETE failed", error);
     return NextResponse.json({ ok: false, error: "Lỗi máy chủ. Vui lòng thử lại." }, { status: 500 });

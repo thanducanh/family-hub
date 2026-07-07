@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { BankAccount } from "@/types";
+import { formatCardUsageDuration, formatISODateToVN } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
 export default function BankCardListPage({ params }: { params: Promise<{ id: string }> }) {
@@ -21,12 +22,12 @@ export default function BankCardListPage({ params }: { params: Promise<{ id: str
     try {
       setLoading(true);
       setError("");
-      const response = await fetch(`/api/bank-accounts?memberId=${memberId}`);
+      const response = await fetch(`/api/bank-accounts?memberId=${memberId}`, { cache: "no-store", headers: { "pragma": "no-cache", "cache-control": "no-cache" } });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok) {
         throw new Error(result?.error || "Không thể tải danh sách thẻ");
       }
-      const accs = result.data || [];
+      const accs = (result.data || []).filter((a: BankAccount) => ['active', 'Đang dùng'].includes(a.status));
       setAccounts(accs);
       
       // Fetch stats for each card
@@ -99,7 +100,7 @@ export default function BankCardListPage({ params }: { params: Promise<{ id: str
             {accounts && accounts.length > 0 && (
               <div className="flex flex-col gap-3">
                 {accounts.map((card) => {
-                  const isCredit = card.accountType === "Thẻ tín dụng" || card.cardType === "credit" || card.cardType === "Thẻ tín dụng";
+                  const isCredit = card.accountType === "Thẻ tín dụng" || card.cardType === "credit" || card.cardType === "Thẻ tín dụng" || card.accountType === "credit";
                   const typeStr = isCredit ? "Thẻ tín dụng" : "Thẻ ghi nợ";
                   const spent = spending[card.id] || 0;
                   
@@ -122,7 +123,14 @@ export default function BankCardListPage({ params }: { params: Promise<{ id: str
                       onClick={() => router.push(`/members/${memberId}/bank-cards/${card.id}`)}
                       className="flex flex-col rounded-[16px] border border-[#E7DDD6] bg-white p-4 text-left shadow-sm active:bg-[#F8F5F2] transition-colors"
                     >
-                      <h3 className="font-bold text-[#2B1B17] text-base">{card.bankName}</h3>
+                      <h3 className="font-bold text-[#2B1B17] text-base">
+                        {(() => {
+                          const name = card.displayName || card.productName;
+                          if (!name) return card.bankName;
+                          if (name.toLowerCase().includes(card.bankName.toLowerCase())) return name;
+                          return `${card.bankName} ${name}`;
+                        })()}
+                      </h3>
                       
                       <p className="text-[13px] text-[#6B5B57] mt-1.5">
                         Đã chi năm nay: <span className="font-bold text-[#800020]">{money(spent)}</span> · {typeStr}
@@ -130,6 +138,14 @@ export default function BankCardListPage({ params }: { params: Promise<{ id: str
                       
                       <p className="text-[13px] text-[#6B5B57] mt-0.5">
                         Kỳ hạn: <span className="font-medium text-[#2B1B17]">{deadlineStr}</span>
+                      </p>
+
+                      <p className="text-[13px] text-[#6B5B57] mt-0.5">
+                        Ngày mở: <span className="font-medium text-[#2B1B17]">{card.openedAt ? formatISODateToVN(card.openedAt) : "Chưa cập nhật"}</span>
+                      </p>
+
+                      <p className="text-[13px] text-[#6B5B57] mt-0.5">
+                        Đã dùng: <span className="font-medium text-[#2B1B17]">{formatCardUsageDuration(card.openedAt)}</span>
                       </p>
                     </button>
                   );

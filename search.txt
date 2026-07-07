@@ -1,0 +1,954 @@
+<USER_REQUEST>
+Sửa tiếp module Tạm tính thẻ tín dụng trong Family Hub.
+
+Hiện trạng:
+1. Khi sửa một giao dịch cũ và đổi sang “Thẻ tín dụng”, app mở modal “Chuyển sang tạm tính thẻ” nhưng nút xác nhận đang ghi “Xóa”. Đây là sai UI.
+2. Khi bấm xác nhận, app báo lỗi “Không thể chuyển giao dịch sang tạm tính thẻ.”
+3. Màn “Tạm tính thẻ tín dụng” hiện đã group đúng HSBC Live+, nhưng chỉ hiện thẻ nào có pending. Tôi muốn hiển thị tất cả thẻ tín dụng đang hoạt động để xem từng thẻ.
+
+Yêu cầu sửa:
+
+1. Sửa UI modal chuyển giao dịch
+Không dùng chữ “Xóa”.
+
+Modal phải là:
+Title:
+“Chuyển sang tạm tính thẻ”
+
+Nội dung:
+“Giao dịch này sẽ được chuyển khỏi Chi thật và đưa vào Tạm tính thẻ tín dụng để tránh tính trùng.”
+
+Nút:
+- Hủy
+- Chuyển
+
+Nút “Chuyển” dùng màu Wine Red #800020.
+Không dùng màu cảnh báo kiểu xóa dữ liệu vì hành động này không xóa transaction gốc.
+
+2. Sửa logic chuyển giao dịch cũ sang tạm tính
+
+Khi user đang sửa một giao dịch cũ trong transactions:
+- Nếu đổi Phương thức thanh toán sang “Thẻ tín dụng”
+- Và chọn một thẻ tín dụng liên kết, ví dụ HSBC Live+
+- Khi bấm Lưu hoặc bấm xác nhận “Chuyển”
+thì phải gọi API:
+POST /api/transactions/[id]/convert-to-card-pending
+
+Không được gọi logic update transaction thường.
+
+API convert phải:
+- Lấy transaction gốc từ transactions.
+- Xác định đây là giao dịch chi tiêu cũ.
+- Không yêu cầu transaction.type nếu bảng transactions không có cột type.
+- Nếu hệ thống đang dùng transactions chỉ cho chi tiêu thì coi transaction trong bảng này là expense.
+- Không cho chuyển nếu category = “Thanh toán thẻ”.
+- Không cho chuyển nếu excluded_from_expense = true.
+- Không cho chuyển nếu converted_to_card_pending_id IS NOT NULL.
+- Kiểm tra bank_account_id là thẻ tín dụng active.
+
+Sau đó tạo card_pending_transactions:
+- member_id = transaction.member_id
+- bank_account_id = thẻ tín dụng đã chọn
+- title = transaction.title
+- amount = số tiền chi, dùng số dương
+- category = transaction.category
+- subcategory = transaction.subcategory
+- note = transaction.note + “ | Chuyển từ giao dịch cũ”
+- date = transaction.date
+- status = “pending”
+- payment_transaction_id = null
+
+Sau đó update transaction gốc:
+- converted_to_card_pending_id = id pending mới
+- excluded_from_expense = true
+- note thêm dòng:
+  “Đã chuyển sang tạm tính thẻ tín dụng: [tên thẻ]”
+- updated_at = NOW()
+
+Tất cả chạy trong DB transaction để tránh lỗi nửa chừng.
+
+3. Sửa thông báo lỗi
+Nếu chuyển thất bại, UI phải hiển thị lỗi cụ thể từ API, ví dụ:
+- “Giao dịch này đã được chuyển trước đó.”
+- “Vui lòng chọn thẻ tín dụng.”
+- “Không thể chuyển giao dịch thanh toán thẻ.”
+- “Không tìm thấy giao dịch.”
+
+Không dùng lỗi chung chung “Không thể chuyển giao dịch sang tạm tính thẻ” nếu API có message rõ hơn.
+
+4. Sửa màn “Tạm tính thẻ tín dụng” thành tab theo tất cả thẻ tín dụng
+
+Hiện tại màn này chỉ hiện HSBC Live+ vì chỉ thẻ này có pending.
+Cần sửa để hiển thị tất cả thẻ tín dụng đang hoạt động từ bank_accounts.
+
+Danh sách tab ngang:
+- Tất cả
+- HSBC Live+
+- BIDV Visa Platinum Cashback 360
+- UOB PRVIMILES
+
+Nguồn tab lấy từ bank_accounts:
+- card_type = credit hoặc “Thẻ tín dụng”
+- status = active hoặc “Đang dùng”
+
+Không hardcode.
+
+5. Nội dung từng tab
+
+Tab “Tất cả”:
+- Hiển thị tổng pending của tất cả thẻ
+- Group theo từng thẻ
+- Mỗi thẻ có nút Thanh toán nếu tổng pending > 0
+
+Tab từng thẻ:
+Ví dụ tab “HSBC Live+”:
+- Hiển thị tổng pending của HSBC
+- Danh sách pending của HSBC
+- Nút “Thanh toán thẻ” nếu có pending
+- Nếu không có pending thì hiển thị:
+  “Thẻ này chưa có khoản tạm tính.”
+
+Ví dụ tab “BIDV Visa Platinum Cashback 360”:
+- Nếu chưa có pending vẫn phải hiện tab
+- Nội dung: “Thẻ này chưa có khoản tạm tính.”
+
+6. Không hiện “Thẻ không xác định” nếu bank_account_id join được
+Tên thẻ hiển thị:
+- Nếu bank_name = HSBC và display_name = Live+ thì hiện “HSBC Live+”
+- Nếu display_name đã đầy đủ như BIDV Visa Platinum Cashback 360 thì hiện display_name
+- Nếu thiếu display_name thì dùng product_name
+- Cuối cùng mới dùng bank_name
+
+7. Nút Thanh toán thẻ
+- Chỉ hiện với thẻ có pending > 0
+- Khi bấm, gọi:
+POST /api/bank-accounts/[bank_account_id]/pay
+- Không thanh toán tất cả thẻ cùng lúc nếu user đang ở tab một thẻ.
+- Thanh toán HSBC chỉ xử lý pending của HSBC.
+- Thanh toán BIDV chỉ xử lý pending của BIDV.
+
+8. Dữ liệu trùng cũ
+Hiện DB có dữ liệu test trùng:
+- shopee bị 2 dòng
+- Nhẫn cưới bị 2 dòng
+
+Giai đoạn này chưa xóa tự động.
+Nhưng code phải đảm bảo từ bây giờ nhập 1 lần chỉ tạo 1 dòng.
+Sau khi sửa code xong mới tính chuyện dọn dữ liệu test cũ.
+
+9. Không được:
+- reset database
+- xóa transactions
+- xóa bank_accounts
+- xóa hàng loạt card_pending_transactions
+- chạy reset-bank-cards-v2.mjs --apply
+- seed lại BIDV/UOB
+- đổi logic chi tiêu thường
+
+10. Sau khi sửa:
+- npm run build
+
+Test bắt buộc:
+a) Mở Tạm tính thẻ tín dụng
+b) Thấy các tab: Tất cả, HSBC Live+, BIDV Visa, UOB
+c) HSBC có pending thì hiện danh sách
+d) BIDV/UOB chưa có pending vẫn hiện tab và empty state
+e) Sửa một giao dịch cũ, đổi sang Thẻ tín dụng HSBC Live+
+f) Modal hiện nút “Chuyển”, không phải “Xóa”
+g) Bấm Chuyển thành công
+h) transaction gốc excluded_from_expense = true
+i) card_pending_transactions có thêm dòng mới
+j) Tạm tính HSBC tăng
+k) Chi thật giảm
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-07-06T23:31:36+07:00.
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from None to Gemini 3.1 Pro (Low). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>
+Created At: 2026-07-06T16:32:34Z
+Completed At: 2026-07-06T16:32:34Z
+File Path: `file:///d:/Projects/SynologyDrive/Family%20Management/src/components/family-app.tsx`
+Total Lines: 9813
+Total Bytes: 734912
+Showing lines 4080 to 4200
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+4080:     } catch (err: any) {
+4081:       ui.toast(err.message || "Không thể chuyển giao dịch.", "error");
+4082:     } finally {
+4083:       setConvertLoading(false);
+4084:     }
+4085:   };
+4086: 
+4087:   if (typeof document === "undefined") return null;
+4088:   return createPortal(<div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#800020] min-[769px]:hidden">
+4089:     <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#800020] px-3 text-white">
+4090:       <button type="button" aria-label="Quay lại danh sách Thu chi" onClick={event => { event.preventDefault(); event.stopPropagation(); close(); }} className="grid size-10 place-items-center rounded-full active:bg-white/10"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
+4091:       <h2 className="min-w-0 flex-1 truncate px-2 text-center text-[17px] font-semibold">Chi tiết giao dịch</h2>
+4092:       <button type="button" aria-label="Tùy chọn giao dịch" onClick={() => setMenuOpen(true)} className="grid size-10 place-items-center rounded-full text-xl font-semibold text-[#D4AF37] active:bg-white/10">•••</button>
+4093:     </header>
+4094:     <div className="min-h-0 flex-1 overflow-y-auto bg-[#F8F5F2] px-3 pb-[calc(24px+env(safe-area-inset-bottom))] pt-6">
+4095:       <section className="mt-2 overflow-hidden rounded-2xl border border-[#E8DCD5] bg-[#FFFFFF] shadow-[0_8px_24px_rgba(128,0,32,0.08)]">
+4096:         <div className="border-b border-[#E8DCD5] px-4 py-5 text-center">
+4097:           <p className="mb-1 text-[13px] font-normal text-[#6B5E64]">{isIncome ? "Khoản thu" : item._displayCategory || "Khoản chi"}</p>
+4098:           <h3 className="mx-auto max-w-full break-words text-[18px] font-medium leading-snug text-[#171018]">{item._displayName}</h3>
+4099:           <p className={`mt-2 text-[30px] font-semibold tracking-tight ${isIncome ? "text-[#059669]" : "text-[#E11D48]"}`}>{isIncome ? "+" : "-"}{money(item.amount)}</p>
+4100:           {excludedFromExpense && <span className="mt-3 inline-flex rounded-full bg-[#F8E7EC] px-3 py-1 text-[12px] font-bold text-[#800020]">Đã chuyển sang tạm tính</span>}
+4101:         </div>
+4102:         <div className="divide-y divide-[#E8DCD5] px-4">
+4103:           {detailRows.filter(([, value]) => value !== "" && value !== null && value !== undefined).map(([label, value]) => <div key={String(label)} className="grid grid-cols-[minmax(0,42%)_minmax(0,58%)] items-start gap-3 py-3.5 text-[14px] leading-snug">
+4104:             <span className="font-normal text-[#6B5E64]">{label}</span>
+4105:             <span className="min-w-0 break-words text-right font-medium text-[#171018]">{String(value)}</span>
+4106:           </div>)}
+4107:         </div>
+4108:       </section>
+4109:     </div>
+4110:     {menuOpen && <ActionMenu isOpen close={() => setMenuOpen(false)} actions={[{ label: "Chuyển sang tạm tính thẻ", onClick: () => setConvertOpen(true), hidden: !canConvertToCardPending }, { label: "Sửa", onClick: onEdit }, { label: loading ? "Đang xóa..." : "Xóa", onClick: () => void remove(), textClass: "text-rose-500", hidden: loading }]} />}
+4111:     {convertOpen && <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/45" onClick={() => !convertLoading && setConvertOpen(false)}>
+4112:       <div className="w-full rounded-t-[24px] bg-white p-4 pb-[calc(20px+env(safe-area-inset-bottom))] text-[#171018] shadow-2xl" onClick={event => event.stopPropagation()}>
+4113:         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#E8DCD5]" />
+4114:         <h3 className="text-[17px] font-bold">Chuyển sang tạm tính thẻ</h3>
+4115:         <p className="mt-3 rounded-2xl border border-[#E8DCD5] bg-[#F8F5F2] p-3 text-[14px] leading-5 text-[#6B5E64]">Giao dịch này sẽ được đưa sang Tạm tính thẻ tín dụng và không còn tính vào Chi thật để tránh tính trùng.</p>
+4116:         <label className="mt-4 block text-[13px] font-bold text-[#6B5E64]">Thẻ tín dụng</label>
+4117:         <select className="mt-2 h-12 w-full rounded-xl border border-[#E8DCD5] bg-white px-3 text-[15px] font-medium outline-none focus:border-[#800020]" value={selectedCardId || selectedCard?.id || ""} onChange={event => setSelectedCardId(event.target.value)} disabled={convertLoading || activeCreditCards.length === 0}>
+4118:           {activeCreditCards.length === 0 ? <option value="">Không có thẻ tín dụng active</option> : activeCreditCards.map((account: any) => <option key={account.id} value={account.id}>{account.displayName || account.productName || account.bankName}</option>)}
+4119:         </select>
+4120:         <div className="mt-5 grid grid-cols-2 gap-3">
+4121:           <button type="button" disabled={convertLoading} onClick={() => setConvertOpen(false)} className="h-12 rounded-xl border border-[#E8DCD5] bg-white text-[15px] font-bold text-[#800020] disabled:opacity-60">Hủy</button>
+4122:           <button type="button" disabled={convertLoading || activeCreditCards.length === 0} onClick={() => void convertToCardPending()} className="h-12 rounded-xl bg-[#800020] text-[15px] font-bold text-white disabled:opacity-60">{convertLoading ? "Đang chuyển..." : "Xác nhận"}</button>
+4123:         </div>
+4124:       </div>
+4125:     </div>}
+4126:   </div>, document.body);
+4127: }
+4128: 
+4129: function MobileTransactionEditor({ item, defaultType, allowTypeChange = false, close, onSaved, user, data, update }: any) {
+4130:   const ui = useUI();
+4131:   const [type, setType] = useState<"income" | "expense">(defaultType || "expense");
+4132:   const incomeRecord = item?._isIncome ? item as IncomeRecord : null;
+4133:   const expenseRecord = item && !item?._isIncome ? item as Transaction : null;
+4134:   const finish = () => { onSaved(); close(); };
+4135: 
+4136:   const shortTitle = `${item?.id ? "Sửa" : "Thêm"} ${type === "income" ? "thu" : "chi"}`;
+4137:   const formId = type === "income" ? "mobile-income-transaction-form" : "mobile-expense-transaction-form";
+4138:   return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="submit" form={formId} onClick={() => (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit()} className="px-4 min-h-[40px] text-[15px] font-bold text-[#800020] active:opacity-60 transition-opacity">Lưu</button>}>
+4139:     <div className="p-4 pt-6 bg-[#F8F5F2] min-h-0 pb-[calc(104px+env(safe-area-inset-bottom))]">
+4140:       {(!item?.id && allowTypeChange) && <div className="sticky top-0 z-10 mb-4 flex rounded-xl bg-[#FFFFFF] p-1.5 shadow-sm border border-[#E8DCD5]">
+4141:         <button type="button" onClick={() => setType("income")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "income" ? "bg-[#F8F5F2] text-[#059669] shadow-sm" : "text-[#6B5E64]"}`}>Thu nhập</button>
+4142:         <button type="button" onClick={() => setType("expense")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "expense" ? "bg-[#F8F5F2] text-[#E11D48] shadow-sm" : "text-[#6B5E64]"}`}>Chi tiêu</button>
+4143:       </div>}
+4144:       {type === "income" ? <IncomeRecordForm record={incomeRecord} members={toArray(data?.members).map((member: Member) => ({ id: member.id, name: member.name }))} templates={incomeTemplates} user={user} back={close} saved={finish} notify={(message, toastType) => ui.toast(message, toastType)} compactMobile /> : <ExpenseForm record={expenseRecord} members={toArray(data?.members)} user={user} close={close} compactMobile saved={(record) => {
+4145:         if ((record as any)._pendingOnly) {
+4146:           finish();
+4147:           return;
+4148:         }
+4149:         const transactions = toArray<Transaction>(data?.transactions);
+4150:         update({ ...data, transactions: transactions.some(current => current.id === record.id) ? transactions.map(current => current.id === record.id ? record : current) : [record, ...transactions] });
+4151:         finish();
+4152:       }} />}
+4153:     </div>
+4154:   </FullScreenMobileSheet>;
+4155: }
+4156: 
+4157: function MobileSavingsList({ data: appData, update, user, refreshTrigger, refresh }: any) {
+4158:   const [detail, setDetail] = useState<any>(null);
+4159:   const [editor, setEditor] = useState<any>(null);
+4160:   const [records, setRecords] = useState<any[]>([]);
+4161: 
+4162:   useEffect(() => {
+4163:     fetch("/api/savings-records", { cache: "no-store" }).then(async response => {
+4164:       const result = await readJsonSafe<any>(response);
+4165:       if (!response.ok) throw new Error(result?.error || "Không thể tải tiết kiệm");
+4166:       setRecords(toArray(result));
+4167:     }).catch(() => setRecords([]));
+4168:   }, [refreshTrigger]);
+4169: 
+4170:   const savings = useMemo(() => {
+4171:     return [...toArray(records)].sort((a, b) => {
+4172:       return new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime();
+4173:     });
+4174:   }, [records]);
+4175: 
+4176:   const totalSavings = savings.reduce((sum: number, item: any) => sum + (item.type === "withdraw" ? -Number(item.amount || 0) : Number(item.amount || 0)), 0);
+4177: 
+4178:   return <div className="px-4 pt-3 pb-32">
+4179:     <div className="bg-[var(--mobile-card)] rounded-[24px] p-5 shadow-[0_8px_24px_rgba(128,0,32,0.08)] text-[#171018] mb-5 relative overflow-hidden mt-2 border border-[#E8DCD5]">
+4180:       <p className="text-[14px] text-[#6B5E64] font-medium mb-1">Tiết kiệm hiện có</p>
+4181:       <b className="text-[32px] font-bold block mb-1 tracking-tight truncate text-[#800020]">{money(totalSavings)}</b>
+4182:     </div>
+4183: 
+4184:     <div className="bg-[var(--mobile-card)] rounded-[24px] shadow-[0_4px_12px_rgba(128,0,32,0.04)] p-4 border border-[#E8DCD5] min-h-[300px]">
+4185:       <h3 className="font-bold text-[#171018] mb-4 text-[16px] px-1">Danh sách tiết kiệm</h3>
+4186:       {savings.length === 0 ? <div className="flex flex-col items-center justify-center py-10 text-[#6B5E64]"><svg className="size-12 mb-3 text-[#E8DCD5]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg><p className="text-[14px] font-medium">Chưa có tiết kiệm</p></div> : (
+4187:         <div className="space-y-4">
+4188:           {savings.map(item => (
+4189:             <div key={item.id} onClick={() => setDetail(item)} className="flex justify-between items-center active:opacity-60 transition-opacity">
+4190:               <div className="flex gap-3 items-center min-w-0 pr-3">
+4191:                 <div className="size-11 rounded-full flex items-center justify-center shrink-0 bg-[#F8F5F2] text-[#D4AF37]">
+4192:                    <svg className="size-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+4193:                 </div>
+4194:                 <div className="min-w-0">
+4195:                   <b className="text-[#171018] text-[14px] font-medium block truncate leading-tight">{item.description || "Tiết kiệm"}</b>
+4196:                   <p className="text-[13px] text-[#6B5E64] font-normal mt-0.5 truncate">Tháng {item.month}/{item.year} • {item.holder || "Không rõ"}</p>
+4197:                 </div>
+4198:               </div>
+4199:               <b className="shrink-0 text-right text-[15px] font-bold text-[#059669]">{money(item.amount)}</b>
+4200:             </div>
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+Created At: 2026-07-06T16:32:44Z
+Completed At: 2026-07-06T16:32:44Z
+File Path: `file:///d:/Projects/SynologyDrive/Family%20Management/src/components/family-app.tsx`
+Total Lines: 9813
+Total Bytes: 734912
+Showing lines 6020 to 6080
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+6020: 
+6021:   function patch(value: Partial<ExpenseDraft>) { setDraft(current => ({ ...current, ...value })); }
+6022:   async function submit(event: React.FormEvent) {
+6023:     event.preventDefault();
+6024:     if (isSubmitting) return;
+6025:     setIsSubmitting(true);
+6026:     try {
+6027:     if (dataService.getStatus().source === "localStorage") {
+6028:       ui.toast("Mất kết nối với cơ sở dữ liệu. Không thể lưu khoản chi lúc này.", "error");
+6029:       return;
+6030:     }
+6031:     if (isError || totalAmount < 0) {
+6032:       ui.toast("Giảm giá không được lớn hơn giá gốc.", "error");
+6033:       return;
+6034:     }
+6035:     const existingPaymentAccountId = record?.paymentAccountId || record?.payment_account_id || record?.bankAccountId || record?.bank_account_id || "";
+6036:     const finalPaymentAccountId = ["cash", "other"].includes(draft.paymentMethod) ? "" : (draft.paymentAccountId || existingPaymentAccountId || "");
+6037:     const finalSimId = isSimDataExpense ? draft.simId : "";
+6038:     const shouldTopupSim = Boolean(finalSimId && draft.topupSimBalance && ["transfer", "bank_account", "bank_card", "card", "credit_card", "momo", "apple_pay"].includes(draft.paymentMethod));
+6039:     const isReimbursement = draft.category === "Thanh toán hộ";
+6040:     const isSavingExpense = draft.category === "Tiết kiệm";
+6041:     const reimbursementStatus = isReimbursement ? (draft.reimbursementStatus || "pending") : "none";
+6042:     const reimbursementAmount = isReimbursement ? Number(draft.reimbursedAmount || 0) : 0;
+6043:     
+6044:     let safeBankAccounts = Array.isArray(bankAccounts) ? bankAccounts : [];
+6045:     const selectedBank = safeBankAccounts.find(b => b.id === finalPaymentAccountId);
+6046:     const isCreditCard = selectedBank && normalizeExpenseAccountType((selectedBank as any).accountType || (selectedBank as any).cardType) === "credit_card";
+6047:     
+6048:     if (draft.paymentMethod === "credit_card" && (!finalPaymentAccountId || !isCreditCard)) {
+6049:       ui.toast("Vui lòng chọn một Thẻ tín dụng liên kết.", "error");
+6050:       return;
+6051:     }
+6052:     if (isCreditCard) {
+6053:       if (record) {
+6054:         const confirmed = await ui.confirm(
+6055:           "Chuyển sang tạm tính thẻ",
+6056:           "Giao dịch này sẽ được chuyển khỏi Chi thật và đưa vào Tạm tính thẻ tín dụng để tránh tính trùng."
+6057:         );
+6058:         if (!confirmed) return;
+6059:         const response = await fetch(`/api/transactions/${encodeURIComponent(record.id)}/convert-to-card-pending`, {
+6060:           method: "POST",
+6061:           headers: { "Content-Type": "application/json" },
+6062:           body: JSON.stringify({ bank_account_id: finalPaymentAccountId }),
+6063:         });
+6064:         const result = await readJsonSafe<{ data?: { pendingId?: string }, error?: string }>(response);
+6065:         if (!response.ok) {
+6066:           ui.toast(result?.error || "Không thể chuyển sang tạm tính thẻ.", "error");
+6067:           return;
+6068:         }
+6069:         const cardName = selectedBank.displayName || selectedBank.productName || selectedBank.bankName || "thẻ tín dụng";
+6070:         ui.toast("Đã chuyển sang tạm tính thẻ.", "success");
+6071:         saved({
+6072:           ...record,
+6073:           convertedToCardPendingId: result?.data?.pendingId || "converted",
+6074:           converted_to_card_pending_id: result?.data?.pendingId || "converted",
+6075:           excludedFromExpense: true,
+6076:           excluded_from_expense: true,
+6077:           note: `${String(record.note || "").trim()}${record.note ? "\n" : ""}Đã chuyển sang tạm tính thẻ tín dụng: ${cardName}`,
+6078:         } as any);
+6079:         return;
+6080:       }
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+Created At: 2026-07-06T16:33:26Z
+Completed At: 2026-07-06T16:33:26Z
+The following changes were made by the replace_file_content tool to: d:\Projects\SynologyDrive\Family Management\src\components\family-app.tsx. If relevant, proactively run terminal commands to execute this code for the USER. Don't ask for permission.
+[diff_block_start]
+@@ -6053,7 +6053,9 @@
+       if (record) {
+         const confirmed = await ui.confirm(
+           "Chuyển sang tạm tính thẻ",
+-          "Giao dịch này sẽ được chuyển khỏi Chi thật và đưa vào Tạm tính thẻ tín dụng để tránh tính trùng."
++          "Giao dịch này sẽ được chuyển khỏi Chi thật và đưa vào Tạm tính thẻ tín dụng để tránh tính trùng.",
++          "Chuyển",
++          "#800020"
+         );
+         if (!confirmed) return;
+         const response = await fetch(`/api/transactions/${encodeURIComponent(record.id)}/convert-to-card-pending`, {
+[diff_block_end]
+
+Please note that the above snippet only shows the MODIFIED lines from the last change. It shows up to 3 lines of unchanged lines before and after the modified lines. The actual file contents may have many more lines not shown.
+Created At: 2026-07-06T16:33:36Z
+Completed At: 2026-07-06T16:33:36Z
+The following changes were made by the multi_replace_file_content tool to: d:\Projects\SynologyDrive\Family Management\src\components\family-app.tsx. If relevant, proactively run terminal commands to execute this code for the USER. Don't ask for permission.
+[diff_block_start]
+@@ -4112,7 +4112,7 @@
+       <div className="w-full rounded-t-[24px] bg-white p-4 pb-[calc(20px+env(safe-area-inset-bottom))] text-[#171018] shadow-2xl" onClick={event => event.stopPropagation()}>
+         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-[#E8DCD5]" />
+         <h3 className="text-[17px] font-bold">Chuyển sang tạm tính thẻ</h3>
+-        <p className="mt-3 rounded-2xl border border-[#E8DCD5] bg-[#F8F5F2] p-3 text-[14px] leading-5 text-[#6B5E64]">Giao dịch này sẽ được đưa sang Tạm tính thẻ tín dụng và không còn tính vào Chi thật để tránh tính trùng.</p>
++        <p className="mt-3 rounded-2xl border border-[#E8DCD5] bg-[#F8F5F2] p-3 text-[14px] leading-5 text-[#6B5E64]">Giao dịch này sẽ được chuyển khỏi Chi thật và đưa vào Tạm tính thẻ tín dụng để tránh tính trùng.</p>
+         <label className="mt-4 block text-[13px] font-bold text-[#6B5E64]">Thẻ tín dụng</label>
+         <select className="mt-2 h-12 w-full rounded-xl border border-[#E8DCD5] bg-white px-3 text-[15px] font-medium outline-none focus:border-[#800020]" value={selectedCardId || selectedCard?.id || ""} onChange={event => setSelectedCardId(event.target.value)} disabled={convertLoading || activeCreditCards.length === 0}>
+           {activeCreditCards.length === 0 ? <option value="">Không có thẻ tín dụng active</option> : activeCreditCards.map((account: any) => <option key={account.id} value={account.id}>{account.displayName || account.productName || account.bankName}</option>)}
+@@ -4119,6 +4119,6 @@
+         <div className="mt-5 grid grid-cols-2 gap-3">
+           <button type="button" disabled={convertLoading} onClick={() => setConvertOpen(false)} className="h-12 rounded-xl border border-[#E8DCD5] bg-white text-[15px] font-bold text-[#800020] disabled:opacity-60">Hủy</button>
+-          <button type="button" disabled={convertLoading || activeCreditCards.length === 0} onClick={() => void convertToCardPending()} className="h-12 rounded-xl bg-[#800020] text-[15px] font-bold text-white disabled:opacity-60">{convertLoading ? "Đang chuyển..." : "Xác nhận"}</button>
++          <button type="button" disabled={convertLoading || activeCreditCards.length === 0} onClick={() => void convertToCardPending()} className="h-12 rounded-xl bg-[#800020] text-[15px] font-bold text-white disabled:opacity-60">{convertLoading ? "Đang chuyển..." : "Chuyển"}</button>
+         </div>
+       </div>
+     </div>}
+[diff_block_end]
+
+Please note that the above snippet only shows the MODIFIED lines from the last change. It shows up to 3 lines of unchanged lines before and after the modified lines. The actual file contents may have many more lines not shown.
+Created At: 2026-07-06T16:34:14Z
+Completed At: 2026-07-06T16:34:15Z
+File Path: `file:///d:/Projects/SynologyDrive/Family%20Management/src/app/api/transactions/%5Bid%5D/convert-to-card-pending/route.ts`
+Total Lines: 148
+Total Bytes: 6366
+Showing lines 1 to 148
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: import { NextResponse } from "next/server";
+2: import { getSessionUser } from "@/lib/auth";
+3: import { pool } from "@/lib/db";
+4: import { canAccessBankMember } from "@/lib/bank-accounts";
+5: 
+6: const CREDIT_TYPES = new Set(["credit", "credit_card", "the tin dung", "thẻ tín dụng"]);
+7: const ACTIVE_STATUSES = new Set(["active", "enabled", "dang dung", "đang dùng"]);
+8: 
+9: function normalizeText(value: unknown) {
+10:   return String(value || "")
+11:     .trim()
+12:     .toLowerCase()
+13:     .normalize("NFD")
+14:     .replace(/[\u0300-\u036f]/g, "");
+15: }
+16: 
+17: function isCreditCard(row: Record<string, unknown>) {
+18:   return CREDIT_TYPES.has(normalizeText(row.account_type)) || CREDIT_TYPES.has(normalizeText(row.card_type));
+19: }
+20: 
+21: function isActive(row: Record<string, unknown>) {
+22:   return ACTIVE_STATUSES.has(normalizeText(row.status));
+23: }
+24: 
+25: function appendNote(note: unknown, line: string) {
+26:   const current = String(note || "").trim();
+27:   return current ? `${current}\n${line}` : line;
+28: }
+29: 
+30: function appendInlineNote(note: unknown, suffix: string) {
+31:   const current = String(note || "").trim();
+32:   return current ? `${current} | ${suffix}` : suffix;
+33: }
+34: 
+35: async function ensureConversionColumns(client: { query: typeof pool.query }) {
+36:   await client.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS converted_to_card_pending_id UUID");
+37:   await client.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS excluded_from_expense BOOLEAN DEFAULT false");
+38:   await client.query("ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS subcategory TEXT");
+39: }
+40: 
+41: export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+42:   const user = await getSessionUser();
+43:   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+44: 
+45:   const { id } = await params;
+46:   const body = await request.json().catch(() => ({}));
+47:   const bankAccountId = String(body.bank_account_id || body.bankAccountId || "").trim();
+48: 
+49:   if (!bankAccountId) {
+50:     return NextResponse.json({ ok: false, error: "Thiếu bank_account_id." }, { status: 400 });
+51:   }
+52: 
+53:   const client = await pool.connect();
+54:   try {
+55:     await client.query("BEGIN");
+56:     await ensureConversionColumns(client);
+57: 
+58:     const txResult = await client.query("SELECT * FROM transactions WHERE id = $1 FOR UPDATE", [id]);
+59:     const tx = txResult.rows[0];
+60:     if (!tx) {
+61:       await client.query("ROLLBACK");
+62:       return NextResponse.json({ ok: false, error: "Không tìm thấy giao dịch." }, { status: 404 });
+63:     }
+64:     if (!await canAccessBankMember(user, String(tx.member_id || ""))) {
+65:       await client.query("ROLLBACK");
+66:       return NextResponse.json({ ok: false, error: "Không có quyền với giao dịch này." }, { status: 403 });
+67:     }
+68:     if (String(tx.type || "").toLowerCase() !== "expense") {
+69:       await client.query("ROLLBACK");
+70:       return NextResponse.json({ ok: false, error: "Chỉ có thể chuyển giao dịch chi tiêu." }, { status: 400 });
+71:     }
+72:     if (["income", "savings", "investment"].includes(String(tx.type || "").toLowerCase())) {
+73:       await client.query("ROLLBACK");
+74:       return NextResponse.json({ ok: false, error: "Không thể chuyển thu nhập, tiết kiệm hoặc đầu tư." }, { status: 400 });
+75:     }
+76:     if (normalizeText(tx.category) === "thanh toan the") {
+77:       await client.query("ROLLBACK");
+78:       return NextResponse.json({ ok: false, error: "Không thể chuyển giao dịch Thanh toán thẻ." }, { status: 400 });
+79:     }
+80:     if (tx.converted_to_card_pending_id || tx.excluded_from_expense === true) {
+81:       await client.query("ROLLBACK");
+82:       return NextResponse.json({ ok: false, error: "Giao dịch đã được chuyển hoặc đã bị loại khỏi Chi thật." }, { status: 409 });
+83:     }
+84: 
+85:     const bankResult = await client.query("SELECT * FROM bank_accounts WHERE id = $1", [bankAccountId]);
+86:     const bank = bankResult.rows[0];
+87:     if (!bank) {
+88:       await client.query("ROLLBACK");
+89:       return NextResponse.json({ ok: false, error: "Không tìm thấy thẻ tín dụng." }, { status: 404 });
+90:     }
+91:     if (!await canAccessBankMember(user, String(bank.member_id || ""))) {
+92:       await client.query("ROLLBACK");
+93:       return NextResponse.json({ ok: false, error: "Không có quyền với thẻ tín dụng này." }, { status: 403 });
+94:     }
+95:     if (!isCreditCard(bank) || !isActive(bank)) {
+96:       await client.query("ROLLBACK");
+97:       return NextResponse.json({ ok: false, error: "Vui lòng chọn thẻ tín dụng đang active." }, { status: 400 });
+98:     }
+99: 
+100:     const amount = Math.abs(Number(tx.amount || 0));
+101:     if (!Number.isFinite(amount) || amount <= 0) {
+102:       await client.query("ROLLBACK");
+103:       return NextResponse.json({ ok: false, error: "Số tiền giao dịch không hợp lệ." }, { status: 400 });
+104:     }
+105: 
+106:     const pendingNote = appendInlineNote(tx.note, "Chuyển từ giao dịch cũ");
+107:     const pendingResult = await client.query(
+108:       `INSERT INTO card_pending_transactions (
+109:         member_id, bank_account_id, title, amount, category, subcategory, note, date, status, payment_transaction_id
+110:       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NULL)
+111:       RETURNING id`,
+112:       [
+113:         tx.member_id,
+114:         bankAccountId,
+115:         tx.title || "Giao dịch cũ",
+116:         amount,
+117:         tx.category || "Khác",
+118:         tx.subcategory || null,
+119:         pendingNote,
+120:         tx.date,
+121:       ]
+122:     );
+123: 
+124:     const pendingId = pendingResult.rows[0].id;
+125:     const cardName = [bank.display_name, bank.product_name, bank.bank_name].find(value => String(value || "").trim()) || "thẻ tín dụng";
+126:     const convertedNote = appendNote(tx.note, `Đã chuyển sang tạm tính thẻ tín dụng: ${cardName}`);
+127: 
+128:     await client.query(
+129:       `UPDATE transactions
+130:        SET converted_to_card_pending_id = $1,
+131:            excluded_from_expense = true,
+132:            note = $2,
+133:            updated_at = NOW()
+134:        WHERE id = $3`,
+135:       [pendingId, convertedNote, id]
+136:     );
+137: 
+138:     await client.query("COMMIT");
+139:     return NextResponse.json({ ok: true, data: { pendingId } });
+140:   } catch (error) {
+141:     await client.query("ROLLBACK").catch(() => undefined);
+142:     console.error("[POST /api/transactions/:id/convert-to-card-pending]", error);
+143:     return NextResponse.json({ ok: false, error: "Không thể chuyển giao dịch sang tạm tính thẻ." }, { status: 500 });
+144:   } finally {
+145:     client.release();
+146:   }
+147: }
+148: 
+The above content shows the entire, complete file contents of the requested file.
+
+Created At: 2026-07-06T16:34:41Z
+Completed At: 2026-07-06T16:34:41Z
+{"File":"d:\\Projects\\SynologyDrive\\Family Management\\src\\components\\family-app.tsx","LineNumber":4115,"LineContent":"        \u003cp className=\"mt-3 rounded-2xl border border-[#E8DCD5] bg-[#F8F5F2] p-3 text-[14px] leading-5 text-[#6B5E64]\"\u003eGiao dịch này sẽ được chuyển khỏi Chi thật và đưa vào Tạm tính thẻ tín dụng để tránh tính trùng.\u003c/p\u003e"}
+{"File":"d:\\Projects\\SynologyDrive\\Family Management\\src\\components\\family-app.tsx","LineNumber":5788,"LineContent":"            ui.toast(\"Đã ghi nhận vào Tạm tính thẻ tín dụng\");"}
+{"File":"d:\\Projects\\SynologyDrive\\Family Management\\src\\components\\family-app.tsx","LineNumber":6056,"LineContent":"          \"Giao dịch này sẽ được chuyển khỏi Chi thật và đưa vào Tạm tính thẻ tín dụng để tránh tính trùng.\","}
+{"File":"d:\\Projects\\SynologyDrive\\Family Management\\src\\components\\family-app.tsx","LineNumber":9608,"LineContent":"          \u003cp className=\"mb-1 text-[13px] font-medium text-[#6B5E64]\"\u003eTạm tính thẻ tín dụng\u003c/p\u003e"}
+{"File":"d:\\Projects\\SynologyDrive\\Family Management\\src\\components\\family-app.tsx","LineNumber":9679,"LineContent":"        \u003ch2 className=\"text-lg font-bold\"\u003eTạm tính thẻ tín dụng\u003c/h2\u003e"}
+Created At: 2026-07-06T16:34:46Z
+Completed At: 2026-07-06T16:34:46Z
+File Path: `file:///d:/Projects/SynologyDrive/Family%20Management/src/components/family-app.tsx`
+Total Lines: 9815
+Total Bytes: 734945
+Showing lines 9600 to 9800
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+9600: 
+9601:   const total = data.reduce((sum: number, item: any) => sum + Number(item.amount), 0);
+9602:   const cardsCount = new Set(data.map(pendingBankAccountId).filter(Boolean)).size;
+9603: 
+9604:   return (
+9605:     <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-4 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
+9606:       <div className="flex items-center justify-between">
+9607:         <div>
+9608:           <p className="mb-1 text-[13px] font-medium text-[#6B5E64]">Tạm tính thẻ tín dụng</p>
+9609:           <b className="block break-words text-[clamp(23px,7.5vw,31px)] font-bold leading-tight tracking-tight text-[#E11D48]">
+9610:             {total.toLocaleString("vi-VN")} đ
+9611:           </b>
+9612:           <p className="mt-1 text-[12px] font-medium text-[#800020]">{cardsCount} thẻ đang có dư nợ</p>
+9613:         </div>
+9614:         <button onClick={onOpen} className="shrink-0 rounded-xl bg-[#800020] px-4 py-2 text-sm font-bold text-white shadow-sm active:scale-95 transition-transform">
+9615:           Xem chi tiết
+9616:         </button>
+9617:       </div>
+9618:     </div>
+9619:   );
+9620: }
+9621: 
+9622: function CreditPendingSheet({ close, bankAccounts }: { close: () => void, bankAccounts: any[] }) {
+9623:   const [data, setData] = useState<any[]>([]);
+9624:   const [loading, setLoading] = useState(true);
+9625:   const [payingCard, setPayingCard] = useState<string | null>(null);
+9626:   const ui = useUI();
+9627: 
+9628:   const load = () => {
+9629:     setLoading(true);
+9630:     fetch("/api/card-pending-transactions/all", { cache: "no-store" })
+9631:       .then(res => res.json())
+9632:       .then(res => {
+9633:         setData(dedupePendingItems(res?.data || []));
+9634:         setLoading(false);
+9635:       })
+9636:       .catch(() => setLoading(false));
+9637:   };
+9638:   
+9639:   useEffect(() => { load(); }, []);
+9640: 
+9641:   const groups = data.reduce((acc, item) => {
+9642:     const id = pendingBankAccountId(item) || "unlinked";
+9643:     if (!acc[id]) acc[id] = [];
+9644:     acc[id].push(item);
+9645:     return acc;
+9646:   }, {} as Record<string, any[]>);
+9647: 
+9648:   const cards = Object.keys(groups).map(id => {
+9649:     const firstItem = groups[id][0] || {};
+9650:     const hasLinkedCard = id !== "unlinked" && Boolean(firstItem.bankName || firstItem.bank_name || firstItem.displayName || firstItem.display_name || firstItem.productName || firstItem.product_name);
+9651:     const bankAccount = bankAccounts.find(b => String(b.id) === id) || null;
+9652:     const cardName = hasLinkedCard ? pendingCardName(firstItem) : "Thẻ chưa liên kết";
+9653:     const total = groups[id].reduce((sum: number, item: any) => sum + Number(item.amount), 0);
+9654:     const items = groups[id].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+9655:     return { id, cardName, total, items, bankAccount, hasLinkedCard };
+9656:   });
+9657: 
+9658:   const pay = async (cardId: string, cardName: string, total: number) => {
+9659:     const activeSources = bankAccounts.filter(b => ["active", "Đang dùng", "enabled"].includes(b.status) && b.id !== cardId);
+9660:     let selectedSource = "";
+9661:     
+9662:     // Simple custom prompt logic for selecting payment source
+9663:     const promptId = "payment_source_" + Date.now();
+9664:     const confirmed = await ui.confirm("Thanh toán dư nợ", `Bạn muốn thanh toán toàn bộ dư nợ tạm tính của thẻ ${cardName}?\nTổng thanh toán: ${total.toLocaleString("vi-VN")} đ.\nVui lòng chọn nguồn tiền thanh toán nếu có:`);
+9665:     if (!confirmed) return;
+9666:     
+9667:     // Note: Since ui.confirm doesn't support dropdown easily, we'll build a custom modal state in CreditPendingSheet itself.
+9668:     setPayingCard(cardId);
+9669:   };
+9670: 
+9671:   if (payingCard) {
+9672:     const card = cards.find(c => c.id === payingCard);
+9673:     return <CreditPaymentForm card={card!} bankAccounts={bankAccounts} close={() => setPayingCard(null)} onPaid={() => { setPayingCard(null); load(); }} />;
+9674:   }
+9675: 
+9676:   return (
+9677:     <FullScreenMobileSheet close={close}>
+9678:       <div className="flex items-center justify-between border-b border-[var(--app-border)] p-4 bg-[var(--app-nav)] sticky top-0 z-10">
+9679:         <h2 className="text-lg font-bold">Tạm tính thẻ tín dụng</h2>
+9680:         <button onClick={close} className="rounded-full bg-slate-100 p-2 dark:bg-white/10 text-slate-500 hover:text-black dark:hover:text-white"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+9681:       </div>
+9682:       <div className="p-4 space-y-4">
+9683:         {loading ? <div className="text-center text-sm py-10">Đang tải...</div> : cards.length === 0 ? <div className="text-center text-sm py-10">Không có khoản tạm tính nào.</div> : cards.map(card => (
+9684:           <div key={card.id} className="bg-[var(--app-card)] rounded-[20px] shadow-sm border border-[var(--app-border)] p-4">
+9685:             <div className="flex justify-between items-center mb-3">
+9686:               <h3 className="font-bold text-[16px] text-[#171018] dark:text-white">{card.cardName}</h3>
+9687:               <b className="text-[16px] text-[#E11D48]">{card.total.toLocaleString("vi-VN")} đ</b>
+9688:             </div>
+9689:             <div className="divide-y divide-[#E8DCD5] dark:divide-white/10 bg-[#F8E7EC]/50 dark:bg-black/20 rounded-xl mb-4">
+9690:               {card.items.map((item: any) => (
+9691:                 <div key={item.id} className="flex justify-between items-center p-3 text-[13px]">
+9692:                   <div className="min-w-0">
+9693:                     <b className="block truncate">{item.title}</b>
+9694:                     <span className="text-[#6B5E64] block truncate">{item.date} • {item.category}</span>
+9695:                   </div>
+9696:                   <b className="shrink-0">{Number(item.amount).toLocaleString("vi-VN")} đ</b>
+9697:                 </div>
+9698:               ))}
+9699:             </div>
+9700:             {card.hasLinkedCard && <button onClick={() => setPayingCard(card.id)} className="w-full rounded-xl bg-[#800020] px-4 py-3 text-[14px] font-bold text-white active:scale-95 transition-transform">
+9701:               Thanh toán thẻ
+9702:             </button>}
+9703:           </div>
+9704:         ))}
+9705:       </div>
+9706:     </FullScreenMobileSheet>
+9707:   );
+9708: }
+9709: 
+9710: function CreditPaymentForm({ card, bankAccounts, close, onPaid }: { card: any, bankAccounts: any[], close: () => void, onPaid: () => void }) {
+9711:   const [source, setSource] = useState("");
+9712:   const [method, setMethod] = useState("transfer");
+9713:   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+9714:   const [saving, setSaving] = useState(false);
+9715:   const ui = useUI();
+9716: 
+9717:   const activeSources = bankAccounts.filter(b => ["active", "Đang dùng", "enabled"].includes(b.status) && b.id !== card.id);
+9718: 
+9719:   const submit = async () => {
+9720:     setSaving(true);
+9721:     const body = {
+9722:       paymentMethod: source === "cash" ? "cash" : "transfer",
+9723:       paymentAccountId: source === "cash" ? null : source,
+9724:       date
+9725:     };
+9726:     
+9727:     try {
+9728:       const res = await fetch(`/api/bank-accounts/${card.id}/pay`, {
+9729:         method: "POST",
+9730:         headers: { "Content-Type": "application/json" },
+9731:         body: JSON.stringify(body)
+9732:       });
+9733:       const data = await res.json();
+9734:       if (!res.ok) {
+9735:         ui.toast(data.error || "Thanh toán lỗi", "error");
+9736:         setSaving(false);
+9737:       } else {
+9738:         ui.toast("Thanh toán dư nợ thành công");
+9739:         onPaid();
+9740:       }
+9741:     } catch {
+9742:       ui.toast("Lỗi kết nối", "error");
+9743:       setSaving(false);
+9744:     }
+9745:   };
+9746: 
+9747:   return (
+9748:     <FullScreenMobileSheet close={close}>
+9749:       <div className="flex items-center justify-between border-b border-[var(--app-border)] p-4 bg-[var(--app-nav)] sticky top-0 z-10">
+9750:         <h2 className="text-lg font-bold">Thanh toán thẻ</h2>
+9751:         <button onClick={close} className="rounded-full bg-slate-100 p-2 dark:bg-white/10 text-slate-500"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+9752:       </div>
+9753:       <div className="p-4 space-y-4">
+9754:         <div className="text-center py-4 bg-rose-50 dark:bg-rose-950/20 rounded-2xl">
+9755:           <p className="text-sm font-medium mb-1">Tổng thanh toán cho thẻ {card.cardName}</p>
+9756:           <b className="text-3xl text-rose-600">{card.total.toLocaleString("vi-VN")} đ</b>
+9757:         </div>
+9758:         
+9759:         <Field label="Nguồn tiền thanh toán">
+9760:           <select className={inputClass} value={source} onChange={e => setSource(e.target.value)}>
+9761:             <option value="">Chọn nguồn tiền...</option>
+9762:             <option value="cash">Tiền mặt</option>
+9763:             {activeSources.map(b => (
+9764:               <option key={b.id} value={b.id}>{b.displayName || b.productName || b.bankName} • {b.cardType === "credit" ? "Thẻ tín dụng" : "Thẻ ghi nợ"}</option>
+9765:             ))}
+9766:           </select>
+9767:         </Field>
+9768: 
+9769:         <Field label="Ngày thanh toán">
+9770:           <input type="date" className={inputClass} value={date} onChange={e => setDate(e.target.value)} />
+9771:         </Field>
+9772: 
+9773:         <button disabled={!source || saving} onClick={submit} className="w-full rounded-xl bg-rose-600 px-4 py-3 text-[14px] font-bold text-white active:scale-95 transition-transform disabled:opacity-50 mt-4">
+9774:           {saving ? "Đang xử lý..." : "Xác nhận thanh toán"}
+9775:         </button>
+9776:       </div>
+9777:     </FullScreenMobileSheet>
+9778:   );
+9779: }
+9780: 
+9781: function PaidPendingSheet({ txId, close }: { txId: string, close: () => void }) {
+9782:   const [data, setData] = useState<any[]>([]);
+9783:   const [loading, setLoading] = useState(true);
+9784: 
+9785:   useEffect(() => {
+9786:     fetch(`/api/card-pending-transactions/by-payment/${txId}`, { cache: "no-store" })
+9787:       .then(res => res.json())
+9788:       .then(res => {
+9789:         setData(res?.data || []);
+9790:         setLoading(false);
+9791:       })
+9792:       .catch(() => setLoading(false));
+9793:   }, [txId]);
+9794: 
+9795:   return (
+9796:     <FullScreenMobileSheet close={close}>
+9797:       <div className="flex items-center justify-between border-b border-[var(--app-border)] p-4 bg-[var(--app-nav)] sticky top-0 z-10">
+9798:         <h2 className="text-lg font-bold">Khoản chi đã thanh toán</h2>
+9799:         <button onClick={close} className="rounded-full bg-slate-100 p-2 dark:bg-white/10 text-slate-500"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+9800:       </div>
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+Created At: 2026-07-06T16:35:04Z
+Completed At: 2026-07-06T16:35:04Z
+File Path: `file:///d:/Projects/SynologyDrive/Family%20Management/src/components/family-app.tsx`
+Total Lines: 9815
+Total Bytes: 734945
+Showing lines 9622 to 9708
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+9622: function CreditPendingSheet({ close, bankAccounts }: { close: () => void, bankAccounts: any[] }) {
+9623:   const [data, setData] = useState<any[]>([]);
+9624:   const [loading, setLoading] = useState(true);
+9625:   const [payingCard, setPayingCard] = useState<string | null>(null);
+9626:   const ui = useUI();
+9627: 
+9628:   const load = () => {
+9629:     setLoading(true);
+9630:     fetch("/api/card-pending-transactions/all", { cache: "no-store" })
+9631:       .then(res => res.json())
+9632:       .then(res => {
+9633:         setData(dedupePendingItems(res?.data || []));
+9634:         setLoading(false);
+9635:       })
+9636:       .catch(() => setLoading(false));
+9637:   };
+9638:   
+9639:   useEffect(() => { load(); }, []);
+9640: 
+9641:   const groups = data.reduce((acc, item) => {
+9642:     const id = pendingBankAccountId(item) || "unlinked";
+9643:     if (!acc[id]) acc[id] = [];
+9644:     acc[id].push(item);
+9645:     return acc;
+9646:   }, {} as Record<string, any[]>);
+9647: 
+9648:   const cards = Object.keys(groups).map(id => {
+9649:     const firstItem = groups[id][0] || {};
+9650:     const hasLinkedCard = id !== "unlinked" && Boolean(firstItem.bankName || firstItem.bank_name || firstItem.displayName || firstItem.display_name || firstItem.productName || firstItem.product_name);
+9651:     const bankAccount = bankAccounts.find(b => String(b.id) === id) || null;
+9652:     const cardName = hasLinkedCard ? pendingCardName(firstItem) : "Thẻ chưa liên kết";
+9653:     const total = groups[id].reduce((sum: number, item: any) => sum + Number(item.amount), 0);
+9654:     const items = groups[id].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+9655:     return { id, cardName, total, items, bankAccount, hasLinkedCard };
+9656:   });
+9657: 
+9658:   const pay = async (cardId: string, cardName: string, total: number) => {
+9659:     const activeSources = bankAccounts.filter(b => ["active", "Đang dùng", "enabled"].includes(b.status) && b.id !== cardId);
+9660:     let selectedSource = "";
+9661:     
+9662:     // Simple custom prompt logic for selecting payment source
+9663:     const promptId = "payment_source_" + Date.now();
+9664:     const confirmed = await ui.confirm("Thanh toán dư nợ", `Bạn muốn thanh toán toàn bộ dư nợ tạm tính của thẻ ${cardName}?\nTổng thanh toán: ${total.toLocaleString("vi-VN")} đ.\nVui lòng chọn nguồn tiền thanh toán nếu có:`);
+9665:     if (!confirmed) return;
+9666:     
+9667:     // Note: Since ui.confirm doesn't support dropdown easily, we'll build a custom modal state in CreditPendingSheet itself.
+9668:     setPayingCard(cardId);
+9669:   };
+9670: 
+9671:   if (payingCard) {
+9672:     const card = cards.find(c => c.id === payingCard);
+9673:     return <CreditPaymentForm card={card!} bankAccounts={bankAccounts} close={() => setPayingCard(null)} onPaid={() => { setPayingCard(null); load(); }} />;
+9674:   }
+9675: 
+9676:   return (
+9677:     <FullScreenMobileSheet close={close}>
+9678:       <div className="flex items-center justify-between border-b border-[var(--app-border)] p-4 bg-[var(--app-nav)] sticky top-0 z-10">
+9679:         <h2 className="text-lg font-bold">Tạm tính thẻ tín dụng</h2>
+9680:         <button onClick={close} className="rounded-full bg-slate-100 p-2 dark:bg-white/10 text-slate-500 hover:text-black dark:hover:text-white"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+9681:       </div>
+9682:       <div className="p-4 space-y-4">
+9683:         {loading ? <div className="text-center text-sm py-10">Đang tải...</div> : cards.length === 0 ? <div className="text-center text-sm py-10">Không có khoản tạm tính nào.</div> : cards.map(card => (
+9684:           <div key={card.id} className="bg-[var(--app-card)] rounded-[20px] shadow-sm border border-[var(--app-border)] p-4">
+9685:             <div className="flex justify-between items-center mb-3">
+9686:               <h3 className="font-bold text-[16px] text-[#171018] dark:text-white">{card.cardName}</h3>
+9687:               <b className="text-[16px] text-[#E11D48]">{card.total.toLocaleString("vi-VN")} đ</b>
+9688:             </div>
+9689:             <div className="divide-y divide-[#E8DCD5] dark:divide-white/10 bg-[#F8E7EC]/50 dark:bg-black/20 rounded-xl mb-4">
+9690:               {card.items.map((item: any) => (
+9691:                 <div key={item.id} className="flex justify-between items-center p-3 text-[13px]">
+9692:                   <div className="min-w-0">
+9693:                     <b className="block truncate">{item.title}</b>
+9694:                     <span className="text-[#6B5E64] block truncate">{item.date} • {item.category}</span>
+9695:                   </div>
+9696:                   <b className="shrink-0">{Number(item.amount).toLocaleString("vi-VN")} đ</b>
+9697:                 </div>
+9698:               ))}
+9699:             </div>
+9700:             {card.hasLinkedCard && <button onClick={() => setPayingCard(card.id)} className="w-full rounded-xl bg-[#800020] px-4 py-3 text-[14px] font-bold text-white active:scale-95 transition-transform">
+9701:               Thanh toán thẻ
+9702:             </button>}
+9703:           </div>
+9704:         ))}
+9705:       </div>
+9706:     </FullScreenMobileSheet>
+9707:   );
+9708: }
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+Created At: 2026-07-06T16:43:08Z
+Tool is running as a background task with task id: cb1899ca-61e9-4ca4-b950-b18169740e4d/task-102
+Task Description: Get-ChildItem -Path "C:\Users\Than_\AppData\Roaming\Code\User\History" -Recurse -File | Select-String -Pattern "Tạm tính thẻ tín dụng" | Select-Object Path -Unique
+Task logs are available at: file:///C:/Users/Than_/.gemini/antigravity/brain/cb1899ca-61e9-4ca4-b950-b18169740e4d/.system_generated/tasks/task-102.log
+Created At: 2026-07-06T16:46:56Z
+Completed At: 2026-07-06T16:46:59Z
+
+				The command completed successfully.
+				Output:
+				<truncated 1 lines>
+{"step_index":40,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-07-06T16:33:26Z","thinking":"**Prioritizing Tool Usage**\n\nI'm now focusing on tool selection, emphasizing specific tools over general ones where possible. The goal is to optimize efficiency by leveraging tools like 'view_file' directly, rather than resorting to broader, less direct methods. I'm aiming for targeted actions.\n\n\n**Refining Tool Application**\n\nI'm now integrating new rules, as I focus on tool application, I'm making sure I don't use `cat` to create or append, or `grep` inside `bash`. I'm starting by recalling my critical instructions. I am prioritizing a toolset, and will only consider executing if all other tools are less specific or can't be used. This will help with efficiency and avoid unnecessary steps.\n\n\n**Evaluating Transaction States**\n\nI am now focusing on the implications of moving transactions between states. My priority is to understand the impact of moving transactions from \"Chi thật\" to \"Tạm tính thẻ tín dụng\" to prevent double counting. The specific transaction state changes are key to the correct usage of the available tools.\n\n\n","tool_calls":[{"name":"multi_replace_file_content","args":{"Description":"Update convert modal text in family-app","Instruction":"Update convert modal text and button in family-app","ReplacementChunks":[{"AllowMultiple":false,"EndLine":4115,"ReplacementContent":"        <p className=\"mt-3 rounded-2xl border border-[#E8DCD5] bg-[#F8F5F2] p-3 text-[14px] leading-5 text-[#6B5E64]\">Giao dịch này sẽ được chuyển khỏi Chi thật và đưa vào Tạm tính thẻ tín dụng để tránh tính trùng.</p>","StartLine":4115,"TargetContent":"        <p className=\"mt-3 rounded-2xl border border-[#E8DCD5] bg-[#F8F5F2] p-3 text-[14px] leading-5 text-[#6B5E64]\">Giao dịch này sẽ được đưa sang Tạm tính thẻ tín dụng và không còn tính vào Chi thật để tránh tính trùng.</p>"},{"AllowMultiple":false,"EndLine":4122,"ReplacementContent":"          <button type=\"button\" disabled={convertLoading || activeCreditCards.length === 0} onClick={() => void convertToCardPending()} className=\"h-12 rounded-xl bg-[#800020] text-[15px] font-bold text-white disabled:opacity-60\">{convertLoading ? \"Đang chuyển...\" : \"Chuyển\"}</button>","StartLine":4122,"TargetContent":"          <button type=\"button\" disabled={convertLoading || activeCreditCards.length === 0} onClick={() => void convertToCardPending()} className=\"h-12 rounded-xl bg-[#800020] text-[15px] font-bold text-white disabled:opacity-60\">{convertLoading ? \"Đang chuyển...\" : \"Xác nhận\"}</button>"}],"TargetFile":"d:\\Projects\\SynologyDrive\\Family Management\\src\\components\\family-app.tsx","toolAction":"Editing file","toolSummary":"Update convert modal UI"}}]}
+
+
+
+Created At: 2026-07-06T16:48:40Z
+Completed At: 2026-07-06T16:48:40Z
+The following changes were made by the multi_replace_file_content tool to: d:\Projects\SynologyDrive\Family Management\src\components\family-app.tsx. If relevant, proactively run terminal commands to execute this code for the USER. Don't ask for permission.
+[diff_block_start]
+@@ -5947,15 +5947,42 @@
+     
+     let safeBankAccounts = Array.isArray(bankAccounts) ? bankAccounts : [];
+     const selectedBank = safeBankAccounts.find(b => b.id === finalPaymentAccountId);
+-    const isCreditCard = selectedBank && normalizeExpenseAccountType((selectedBank as any).accountType) === "credit_card";
++    const isCreditCard = selectedBank && normalizeExpenseAccountType((selectedBank as any).accountType || (selectedBank as any).cardType) === "credit_card";
++
++    if (draft.paymentMethod === "credit_card" && (!finalPaymentAccountId || !isCreditCard)) {
++      ui.toast("Vui lòng chọn một Thẻ tín dụng liên kết.", "error");
++      return;
++    }
+ 
+     if (isCreditCard) {
+       if (record) {
+-        // Edit pending tx
+-        // For simplicity, if it's already a real transaction, it cannot be converted back to pending here easily. 
+-        // We will assume pending tx edit is done in Bank Card UI, not here.
+-        // Actually, if we edit a real transaction and change it to credit card, it's complex.
+-        ui.toast("Không thể chuyển giao dịch thường thành tạm tính ở đây.", "error");
++        const confirmed = await ui.confirm(
++          "Chuyển sang tạm tính thẻ",
++          "Giao dịch này sẽ được chuyển khỏi Chi thật và đưa vào Tạm tính thẻ tín dụng để tránh tính trùng.",
++          "Chuyển",
++          "#800020"
++        );
++        if (!confirmed) return;
++        const response = await fetch(`/api/transactions/${encodeURIComponent(record.id)}/convert-to-card-pending`, {
++          method: "POST",
++          headers: { "Content-Type": "application/json" },
++          body: JSON.stringify({ bank_account_id: finalPaymentAccountId }),
++        });
++        const result = await readJsonSafe<{ data?: { pendingId?: string }, error?: string }>(response);
++        if (!response.ok) {
++          ui.toast(result?.error || "Không thể chuyển sang tạm tính thẻ.", "error");
++          return;
++        }
++        const cardName = selectedBank.displayName || selectedBank.productName || selectedBank.bankName || "thẻ tín dụng";
++        ui.toast("Đã chuyển sang tạm tính thẻ.", "success");
++        saved({
++          ...record,
++          convertedToCardPendingId: result?.data?.pendingId || "converted",
++          converted_to_card_pending_id: result?.data?.pendingId || "converted",
++          excludedFromExpense: true,
++          excluded_from_expense: true,
++          note: `${String(record.note || "").trim()}${record.note ? "\n" : ""}Đã chuyển sang tạm tính thẻ tín dụng: ${cardName}`,
++        } as any);
+         return;
+       }
+       
+[diff_block_end]
+
+Please note that the above snippet only shows the MODIFIED lines from the last change. It shows up to 3 lines of unchanged lines before and after the modified lines. The actual file contents may have many more lines not shown.
+Created At: 2026-07-06T16:53:21Z
+Completed At: 2026-07-06T16:53:21Z
+{"File":"d:\\Projects\\SynologyDrive\\Family Management\\src\\components\\family-app.tsx","LineNumber":5961,"LineContent":"          \"Giao dịch này sẽ được chuyển khỏi Chi thật và đưa vào Tạm tính thẻ tín dụng để tránh tính trùng.\","}

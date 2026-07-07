@@ -44,7 +44,10 @@ export async function POST(request: NextRequest) {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ ok: false, error: "Chưa đăng nhập." }, { status: 401 });
     await ensureBankAccountsTable();
-    const account = normalizeBankBody(await request.json());
+    const body = await request.json();
+    console.log("[api/bank-accounts] POST received body:", body);
+    const account = normalizeBankBody(body);
+    console.log("[api/bank-accounts] POST normalized account:", account);
     if (!account.memberId || !account.bankName || !account.accountType || !account.status) {
       return NextResponse.json({ ok: false, error: "Vui lòng nhập đủ thông tin cơ bản." }, { status: 400 });
     }
@@ -59,6 +62,7 @@ export async function POST(request: NextRequest) {
     if (!await bankMemberExists(account.memberId)) return NextResponse.json({ ok: false, error: "Không tìm thấy thành viên." }, { status: 404 });
     if (!await canAccessBankMember(user, account.memberId)) return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });
     const saved = await upsertBankAccount(account);
+    console.log("[api/bank-accounts] POST saved to DB successfully:", saved?.id);
     return NextResponse.json({ ok: true, data: saved }, { status: 201 });
   } catch (error) {
     console.error("[api/bank-accounts] POST failed", error);

@@ -1,0 +1,210 @@
+Created At: 2026-07-06T16:34:46Z
+Completed At: 2026-07-06T16:34:46Z
+File Path: `file:///d:/Projects/SynologyDrive/Family%20Management/src/components/family-app.tsx`
+Total Lines: 9815
+Total Bytes: 734945
+Showing lines 9600 to 9800
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+9600: 
+9601:   const total = data.reduce((sum: number, item: any) => sum + Number(item.amount), 0);
+9602:   const cardsCount = new Set(data.map(pendingBankAccountId).filter(Boolean)).size;
+9603: 
+9604:   return (
+9605:     <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-4 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
+9606:       <div className="flex items-center justify-between">
+9607:         <div>
+9608:           <p className="mb-1 text-[13px] font-medium text-[#6B5E64]">Tạm tính thẻ tín dụng</p>
+9609:           <b className="block break-words text-[clamp(23px,7.5vw,31px)] font-bold leading-tight tracking-tight text-[#E11D48]">
+9610:             {total.toLocaleString("vi-VN")} đ
+9611:           </b>
+9612:           <p className="mt-1 text-[12px] font-medium text-[#800020]">{cardsCount} thẻ đang có dư nợ</p>
+9613:         </div>
+9614:         <button onClick={onOpen} className="shrink-0 rounded-xl bg-[#800020] px-4 py-2 text-sm font-bold text-white shadow-sm active:scale-95 transition-transform">
+9615:           Xem chi tiết
+9616:         </button>
+9617:       </div>
+9618:     </div>
+9619:   );
+9620: }
+9621: 
+9622: function CreditPendingSheet({ close, bankAccounts }: { close: () => void, bankAccounts: any[] }) {
+9623:   const [data, setData] = useState<any[]>([]);
+9624:   const [loading, setLoading] = useState(true);
+9625:   const [payingCard, setPayingCard] = useState<string | null>(null);
+9626:   const ui = useUI();
+9627: 
+9628:   const load = () => {
+9629:     setLoading(true);
+9630:     fetch("/api/card-pending-transactions/all", { cache: "no-store" })
+9631:       .then(res => res.json())
+9632:       .then(res => {
+9633:         setData(dedupePendingItems(res?.data || []));
+9634:         setLoading(false);
+9635:       })
+9636:       .catch(() => setLoading(false));
+9637:   };
+9638:   
+9639:   useEffect(() => { load(); }, []);
+9640: 
+9641:   const groups = data.reduce((acc, item) => {
+9642:     const id = pendingBankAccountId(item) || "unlinked";
+9643:     if (!acc[id]) acc[id] = [];
+9644:     acc[id].push(item);
+9645:     return acc;
+9646:   }, {} as Record<string, any[]>);
+9647: 
+9648:   const cards = Object.keys(groups).map(id => {
+9649:     const firstItem = groups[id][0] || {};
+9650:     const hasLinkedCard = id !== "unlinked" && Boolean(firstItem.bankName || firstItem.bank_name || firstItem.displayName || firstItem.display_name || firstItem.productName || firstItem.product_name);
+9651:     const bankAccount = bankAccounts.find(b => String(b.id) === id) || null;
+9652:     const cardName = hasLinkedCard ? pendingCardName(firstItem) : "Thẻ chưa liên kết";
+9653:     const total = groups[id].reduce((sum: number, item: any) => sum + Number(item.amount), 0);
+9654:     const items = groups[id].sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+9655:     return { id, cardName, total, items, bankAccount, hasLinkedCard };
+9656:   });
+9657: 
+9658:   const pay = async (cardId: string, cardName: string, total: number) => {
+9659:     const activeSources = bankAccounts.filter(b => ["active", "Đang dùng", "enabled"].includes(b.status) && b.id !== cardId);
+9660:     let selectedSource = "";
+9661:     
+9662:     // Simple custom prompt logic for selecting payment source
+9663:     const promptId = "payment_source_" + Date.now();
+9664:     const confirmed = await ui.confirm("Thanh toán dư nợ", `Bạn muốn thanh toán toàn bộ dư nợ tạm tính của thẻ ${cardName}?\nTổng thanh toán: ${total.toLocaleString("vi-VN")} đ.\nVui lòng chọn nguồn tiền thanh toán nếu có:`);
+9665:     if (!confirmed) return;
+9666:     
+9667:     // Note: Since ui.confirm doesn't support dropdown easily, we'll build a custom modal state in CreditPendingSheet itself.
+9668:     setPayingCard(cardId);
+9669:   };
+9670: 
+9671:   if (payingCard) {
+9672:     const card = cards.find(c => c.id === payingCard);
+9673:     return <CreditPaymentForm card={card!} bankAccounts={bankAccounts} close={() => setPayingCard(null)} onPaid={() => { setPayingCard(null); load(); }} />;
+9674:   }
+9675: 
+9676:   return (
+9677:     <FullScreenMobileSheet close={close}>
+9678:       <div className="flex items-center justify-between border-b border-[var(--app-border)] p-4 bg-[var(--app-nav)] sticky top-0 z-10">
+9679:         <h2 className="text-lg font-bold">Tạm tính thẻ tín dụng</h2>
+9680:         <button onClick={close} className="rounded-full bg-slate-100 p-2 dark:bg-white/10 text-slate-500 hover:text-black dark:hover:text-white"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+9681:       </div>
+9682:       <div className="p-4 space-y-4">
+9683:         {loading ? <div className="text-center text-sm py-10">Đang tải...</div> : cards.length === 0 ? <div className="text-center text-sm py-10">Không có khoản tạm tính nào.</div> : cards.map(card => (
+9684:           <div key={card.id} className="bg-[var(--app-card)] rounded-[20px] shadow-sm border border-[var(--app-border)] p-4">
+9685:             <div className="flex justify-between items-center mb-3">
+9686:               <h3 className="font-bold text-[16px] text-[#171018] dark:text-white">{card.cardName}</h3>
+9687:               <b className="text-[16px] text-[#E11D48]">{card.total.toLocaleString("vi-VN")} đ</b>
+9688:             </div>
+9689:             <div className="divide-y divide-[#E8DCD5] dark:divide-white/10 bg-[#F8E7EC]/50 dark:bg-black/20 rounded-xl mb-4">
+9690:               {card.items.map((item: any) => (
+9691:                 <div key={item.id} className="flex justify-between items-center p-3 text-[13px]">
+9692:                   <div className="min-w-0">
+9693:                     <b className="block truncate">{item.title}</b>
+9694:                     <span className="text-[#6B5E64] block truncate">{item.date} • {item.category}</span>
+9695:                   </div>
+9696:                   <b className="shrink-0">{Number(item.amount).toLocaleString("vi-VN")} đ</b>
+9697:                 </div>
+9698:               ))}
+9699:             </div>
+9700:             {card.hasLinkedCard && <button onClick={() => setPayingCard(card.id)} className="w-full rounded-xl bg-[#800020] px-4 py-3 text-[14px] font-bold text-white active:scale-95 transition-transform">
+9701:               Thanh toán thẻ
+9702:             </button>}
+9703:           </div>
+9704:         ))}
+9705:       </div>
+9706:     </FullScreenMobileSheet>
+9707:   );
+9708: }
+9709: 
+9710: function CreditPaymentForm({ card, bankAccounts, close, onPaid }: { card: any, bankAccounts: any[], close: () => void, onPaid: () => void }) {
+9711:   const [source, setSource] = useState("");
+9712:   const [method, setMethod] = useState("transfer");
+9713:   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+9714:   const [saving, setSaving] = useState(false);
+9715:   const ui = useUI();
+9716: 
+9717:   const activeSources = bankAccounts.filter(b => ["active", "Đang dùng", "enabled"].includes(b.status) && b.id !== card.id);
+9718: 
+9719:   const submit = async () => {
+9720:     setSaving(true);
+9721:     const body = {
+9722:       paymentMethod: source === "cash" ? "cash" : "transfer",
+9723:       paymentAccountId: source === "cash" ? null : source,
+9724:       date
+9725:     };
+9726:     
+9727:     try {
+9728:       const res = await fetch(`/api/bank-accounts/${card.id}/pay`, {
+9729:         method: "POST",
+9730:         headers: { "Content-Type": "application/json" },
+9731:         body: JSON.stringify(body)
+9732:       });
+9733:       const data = await res.json();
+9734:       if (!res.ok) {
+9735:         ui.toast(data.error || "Thanh toán lỗi", "error");
+9736:         setSaving(false);
+9737:       } else {
+9738:         ui.toast("Thanh toán dư nợ thành công");
+9739:         onPaid();
+9740:       }
+9741:     } catch {
+9742:       ui.toast("Lỗi kết nối", "error");
+9743:       setSaving(false);
+9744:     }
+9745:   };
+9746: 
+9747:   return (
+9748:     <FullScreenMobileSheet close={close}>
+9749:       <div className="flex items-center justify-between border-b border-[var(--app-border)] p-4 bg-[var(--app-nav)] sticky top-0 z-10">
+9750:         <h2 className="text-lg font-bold">Thanh toán thẻ</h2>
+9751:         <button onClick={close} className="rounded-full bg-slate-100 p-2 dark:bg-white/10 text-slate-500"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+9752:       </div>
+9753:       <div className="p-4 space-y-4">
+9754:         <div className="text-center py-4 bg-rose-50 dark:bg-rose-950/20 rounded-2xl">
+9755:           <p className="text-sm font-medium mb-1">Tổng thanh toán cho thẻ {card.cardName}</p>
+9756:           <b className="text-3xl text-rose-600">{card.total.toLocaleString("vi-VN")} đ</b>
+9757:         </div>
+9758:         
+9759:         <Field label="Nguồn tiền thanh toán">
+9760:           <select className={inputClass} value={source} onChange={e => setSource(e.target.value)}>
+9761:             <option value="">Chọn nguồn tiền...</option>
+9762:             <option value="cash">Tiền mặt</option>
+9763:             {activeSources.map(b => (
+9764:               <option key={b.id} value={b.id}>{b.displayName || b.productName || b.bankName} • {b.cardType === "credit" ? "Thẻ tín dụng" : "Thẻ ghi nợ"}</option>
+9765:             ))}
+9766:           </select>
+9767:         </Field>
+9768: 
+9769:         <Field label="Ngày thanh toán">
+9770:           <input type="date" className={inputClass} value={date} onChange={e => setDate(e.target.value)} />
+9771:         </Field>
+9772: 
+9773:         <button disabled={!source || saving} onClick={submit} className="w-full rounded-xl bg-rose-600 px-4 py-3 text-[14px] font-bold text-white active:scale-95 transition-transform disabled:opacity-50 mt-4">
+9774:           {saving ? "Đang xử lý..." : "Xác nhận thanh toán"}
+9775:         </button>
+9776:       </div>
+9777:     </FullScreenMobileSheet>
+9778:   );
+9779: }
+9780: 
+9781: function PaidPendingSheet({ txId, close }: { txId: string, close: () => void }) {
+9782:   const [data, setData] = useState<any[]>([]);
+9783:   const [loading, setLoading] = useState(true);
+9784: 
+9785:   useEffect(() => {
+9786:     fetch(`/api/card-pending-transactions/by-payment/${txId}`, { cache: "no-store" })
+9787:       .then(res => res.json())
+9788:       .then(res => {
+9789:         setData(res?.data || []);
+9790:         setLoading(false);
+9791:       })
+9792:       .catch(() => setLoading(false));
+9793:   }, [txId]);
+9794: 
+9795:   return (
+9796:     <FullScreenMobileSheet close={close}>
+9797:       <div className="flex items-center justify-between border-b border-[var(--app-border)] p-4 bg-[var(--app-nav)] sticky top-0 z-10">
+9798:         <h2 className="text-lg font-bold">Khoản chi đã thanh toán</h2>
+9799:         <button onClick={close} className="rounded-full bg-slate-100 p-2 dark:bg-white/10 text-slate-500"><svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+9800:       </div>
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+

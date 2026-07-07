@@ -11,6 +11,7 @@ export async function GET() {
     const where = isAdmin ? '1=1' : 'member_id = $1';
     const taskWhere = isAdmin ? '1=1' : '(member_id = $1 OR assignee = $1)';
     const params = isAdmin ? [] : [user.memberId];
+    await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS excluded_from_expense BOOLEAN DEFAULT false");
 
     const membersRes = await pool.query("SELECT COUNT(*) as count FROM members WHERE deleted_at IS NULL");
     const totalMembers = parseInt(membersRes.rows[0].count, 10) || 0;
@@ -24,7 +25,7 @@ export async function GET() {
     const incomeRes = await pool.query(`SELECT SUM(amount) as sum FROM transactions WHERE type = 'income' AND date IS NOT NULL AND date != '' AND EXTRACT(MONTH FROM date::date) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM date::date) = EXTRACT(YEAR FROM CURRENT_DATE) AND ${where}`, params);
     const monthlyIncome = parseFloat(incomeRes.rows[0].sum) || 0;
 
-    const expenseRes = await pool.query(`SELECT SUM(amount) as sum FROM transactions WHERE type = 'expense' AND date IS NOT NULL AND date != '' AND EXTRACT(MONTH FROM date::date) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM date::date) = EXTRACT(YEAR FROM CURRENT_DATE) AND ${where}`, params);
+    const expenseRes = await pool.query(`SELECT SUM(amount) as sum FROM transactions WHERE type = 'expense' AND COALESCE(excluded_from_expense, false) = false AND date IS NOT NULL AND date != '' AND EXTRACT(MONTH FROM date::date) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM date::date) = EXTRACT(YEAR FROM CURRENT_DATE) AND ${where}`, params);
     const monthlyExpense = parseFloat(expenseRes.rows[0].sum) || 0;
 
     const monthlyBalance = monthlyIncome - monthlyExpense;

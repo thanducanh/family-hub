@@ -28,6 +28,18 @@ type UserRole = "full_access" | "self_only";
 export interface AuthUser { id: string; username: string; displayName: string; avatar: string; coverUrl?: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; email?: string; passwordPlain?: string | null; }
 
 export type AppLogType = "ERROR" | "WARN" | "INFO" | "ACTION" | "API";
+
+export function normalizeCardType(value: string | undefined | null): string {
+  if (!value) return "other";
+  const lower = String(value).toLowerCase().trim();
+  if (lower === "credit" || lower.includes("thẻ tín dụng") || lower.includes("tín dụng")) return "credit";
+  if (lower === "debit" || lower.includes("ghi nợ") || lower.includes("atm")) return "debit";
+  if (lower === "bank_account" || lower.includes("tài khoản")) return "bank_account";
+  if (lower === "wallet" || lower.includes("ví điện tử")) return "wallet";
+  if (lower === "cash" || lower.includes("tiền mặt")) return "cash";
+  return "other";
+}
+
 export interface AppLog {
   id: string;
   type: AppLogType;
@@ -3804,6 +3816,7 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
   const [subTab, setSubTab] = useState<"all" | "income" | "expense">("all");
   const [incomes, setIncomes] = useState<any[]>([]);
   const [loadingIncomes, setLoadingIncomes] = useState(true);
+  const [showCreditPendingSheet, setShowCreditPendingSheet] = useState(false);
   const [overviewDataCache, setOverviewDataCache] = useState<Record<number, any>>({});
   const [loadingOverview, setLoadingOverview] = useState(false);
   
@@ -3873,7 +3886,14 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
     });
   }, [appData?.transactions, incomes, month, year]);
 
-  const availableThisMonth = calculateMonthlyUsableBalance(month, year, toArray(appData?.transactions), toArray(incomes), "all");
+  
+  const trackingStartMonth = Number(overviewData?.settings?.trackingStartMonth || 7);
+  const trackingStartYear = Number(overviewData?.settings?.trackingStartYear || 2026);
+  const isHistorical = year < trackingStartYear || (year === trackingStartYear && month < trackingStartMonth);
+  const availableThisMonth = Number(overviewDataCache[year]?.availableCash ?? 0);
+  const pendingCredit = Number(overviewDataCache[year]?.pendingCreditTotal ?? 0);
+  const afterCreditPayment = Number(overviewDataCache[year]?.afterCreditPayment ?? 0);
+
 
   const displayList = monthItems.filter(item => subTab === "all" || (subTab === "income" ? item._isIncome : !item._isIncome));
   const groupedItems = displayList.reduce((groups: Record<string, any[]>, item: any) => {
@@ -3892,17 +3912,45 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
       </div>
     </div>
 
-    <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-4 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
-      <p className="mb-1 text-[13px] font-medium text-[#6B5E64]">Có thể dùng tháng này</p>
-      <b className={`block break-words text-[clamp(23px,7.5vw,31px)] font-bold leading-tight tracking-tight ${availableThisMonth >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{money(availableThisMonth)}</b>
-      <p className="mb-3 mt-2 text-[11px] leading-4 text-[#6B5E64]">Tiền đang có hiện tại: <span className="font-semibold text-[#171018]">{loadingOverview ? "..." : (overviewDataCache[year] ? money(totalMoneyOnHand) : "-")}</span></p>
-      
-      <div className="grid grid-cols-3 border-t border-[#E8DCD5] pt-3 gap-1">
+    {isHistorical ? (
+      <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[#F8F5F2] p-4 text-center shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
+        <p className="text-[14px] font-medium text-[#6B5E64]">Dữ liệu lịch sử</p>
+        <p className="text-[12px] text-[#9A8F95] mt-1">Không tính vào số dư hiện tại</p>
+      </div>
+    ) : (
+      <>
+        {/* Box A: Tiền dùng được */}
+        <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-4 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
+          <p className="mb-1 text-[13px] font-medium text-[#6B5E64]">Tiền dùng được</p>
+          <b className={`block break-words text-[clamp(23px,7.5vw,31px)] font-bold leading-tight tracking-tight ${availableThisMonth >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{loadingOverview ? "..." : money(availableThisMonth)}</b>
+          
+          <div className="mt-3 pt-3 border-t border-[#E8DCD5]/50 flex justify-between items-center">
+            <span className="text-[13px] font-medium text-[#6B5E64]">Sau khi trả thẻ</span>
+            <span className="font-semibold text-[#171018]">{loadingOverview ? "..." : money(afterCreditPayment)}</span>
+          </div>
+        </div>
+
+        {/* Box B: Tạm tính thẻ tín dụng */}
+        <div 
+          className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[#FFF5F7] p-4 text-[#171018] shadow-[0_6px_18px_rgba(225,29,72,0.07)] cursor-pointer active:opacity-70"
+          onClick={() => setShowCreditPendingSheet && setShowCreditPendingSheet(true)}
+        >
+          <div className="flex justify-between items-center">
+            <span className="text-[13px] font-semibold text-[#800020] flex items-center gap-1">
+              Tạm tính thẻ tín dụng
+              <svg className="size-3.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </span>
+            <span className="font-bold text-[#E11D48] text-[15px]">{loadingOverview ? "..." : money(pendingCredit)}</span>
+          </div>
+        </div>
+      </>
+    )}
+    <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-3 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
+      <div className="grid grid-cols-3 gap-1">
         {([['all', 'Chi tiết'], ['income', 'Thu nhập'], ['expense', 'Chi tiêu']] as const).map(([value, label]) => (
           <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] transition-colors ${subTab === value ? "bg-[#800020] border border-transparent font-semibold text-white shadow-sm" : "bg-[#F8E7EC] border border-[#E8DCD5] font-medium text-[#800020] active:opacity-70"}`}>{label}</button>
         ))}
       </div>
-
     </div>
 
     <div className="min-h-[300px] pb-4">
@@ -9084,7 +9132,6 @@ function FinanceSettingsSheet({ close }: { close: () => void }) {
           <h2 className="text-[15px] font-bold text-[#171018]">Tóm tắt</h2>
           <div className="mt-3 grid grid-cols-1 gap-3 min-[360px]:grid-cols-2">
             <div className="rounded-xl bg-[#F8F5F2] p-3"><p className="text-[12px] font-semibold text-[#6B5E64]">Có thể dùng tháng này</p><b className={(availableThisMonth >= 0 ? "text-[#059669]" : "text-[#E11D48]") + " mt-1 block text-[18px] leading-tight"}>{summaryLoading ? "..." : money(availableThisMonth)}</b></div>
-            <div className="rounded-xl bg-[#F8F5F2] p-3"><p className="text-[12px] font-semibold text-[#6B5E64]">Tiền đang có hiện tại</p><b className={(currentCash >= 0 ? "text-[#800020]" : "text-[#E11D48]") + " mt-1 block text-[18px] leading-tight"}>{summaryLoading ? "..." : money(currentCash)}</b></div>
           </div>
         </section>
 
@@ -9413,5 +9460,136 @@ function MobileHome({
       </div>
       {financeSettingsOpen && <FinanceSettingsSheet close={() => setFinanceSettingsOpen(false)} />}
     </div>
+  );
+}
+
+
+function CreditPendingSheet({ close }: { close: () => void }) {
+  const [loading, setLoading] = useState(true);
+  const [cards, setCards] = useState<any[]>([]);
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [allAccounts, setAllAccounts] = useState<any[]>([]);
+  
+  const [payingCard, setPayingCard] = useState<any>(null);
+  const [paySourceId, setPaySourceId] = useState("");
+  const [paying, setPaying] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      fetch("/api/bank-accounts").then(res => res.json()),
+      fetch("/api/card-pending-transactions?status=pending").then(res => res.json())
+    ]).then(([accountsRes, pendingRes]) => {
+      const accounts = toArray(accountsRes?.data || accountsRes);
+      setAllAccounts(accounts);
+      const allPending = toArray(pendingRes?.data || pendingRes);
+      
+      const creditCards = accounts.filter(a => normalizeCardType(a.cardType) === "credit" || normalizeCardType(a.type) === "credit");
+      
+      let total = 0;
+      const cardsWithPending = creditCards.map(card => {
+        const cardPendingTxs = allPending.filter(tx => String(tx.bankAccountId || tx.bank_account_id) === String(card.id));
+        const pendingAmount = cardPendingTxs.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+        total += pendingAmount;
+        return {
+          ...card,
+          pendingAmount
+        };
+      });
+      
+      setCards(cardsWithPending);
+      setPendingTotal(total);
+      setLoading(false);
+    }).catch(err => {
+      console.error(err);
+      setLoading(false);
+    });
+  }, []);
+
+  const handlePay = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payingCard || !paySourceId) return;
+    setPaying(true);
+    try {
+      const res = await fetch(`/api/bank-accounts/${payingCard.id}/pay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentAccountId: paySourceId, paymentMethod: "transfer", date: new Date().toISOString().slice(0, 10) })
+      });
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        const json = await res.json();
+        alert(json.error || "Thanh toán thất bại");
+        setPaying(false);
+      }
+    } catch (err) {
+      alert("Lỗi kết nối");
+      setPaying(false);
+    }
+  };
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex flex-col justify-end min-[769px]:hidden">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={close} />
+      <div className="relative flex flex-col max-h-[85vh] w-full animate-slide-up rounded-t-[24px] bg-[#F8F5F2] shadow-2xl">
+        <div className="shrink-0 flex items-center justify-between p-4 border-b border-[#E8DCD5]">
+          <h2 className="text-[17px] font-bold text-[#171018]">Tạm tính thẻ tín dụng</h2>
+          <button type="button" onClick={close} className="grid size-8 place-items-center rounded-full bg-black/5 active:bg-black/10 text-[#6B5E64]">
+            <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="rounded-2xl border border-[#E8DCD5] bg-white p-4 shadow-sm text-center">
+            <p className="text-[13px] font-medium text-[#6B5E64]">Tổng nợ thẻ tín dụng</p>
+            <p className="mt-1 text-[24px] font-bold text-[#E11D48]">{loading ? "..." : money(pendingTotal)}</p>
+          </div>
+          
+          <div className="space-y-3">
+            <h3 className="text-[14px] font-bold text-[#171018] ml-1">Danh sách thẻ</h3>
+            {loading ? <p className="text-center text-sm text-[#6B5E64] py-8">Đang tải...</p> : cards.length === 0 ? <p className="text-center text-sm text-[#6B5E64] py-8">Không có thẻ tín dụng</p> : cards.map(card => (
+              <div key={card.id} className="rounded-2xl border border-[#E8DCD5] bg-white p-4 shadow-sm">
+                <div className="flex justify-between items-start gap-3">
+                  <div>
+                    <h4 className="font-semibold text-[#171018]">{card.productName || card.product_name || card.bankName || card.bank_name || "Thẻ tín dụng"}</h4>
+                    <p className="text-[12px] text-[#6B5E64] mt-0.5">{card.bankName || card.bank_name}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[15px] font-bold text-[#E11D48]">{card.pendingAmount > 0 ? money(card.pendingAmount) : "0 đ"}</p>
+                    {card.pendingAmount > 0 && <button onClick={() => setPayingCard(card)} className="mt-2 text-[12px] font-bold text-[#800020] bg-[#F8E7EC] px-3 py-1.5 rounded-lg active:opacity-70">Thanh toán thẻ</button>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      
+      {payingCard && (
+        <div className="fixed inset-0 z-[70] flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setPayingCard(null)} />
+          <form onSubmit={handlePay} className="relative flex flex-col w-full animate-slide-up rounded-t-[24px] bg-white shadow-2xl p-5">
+            <h3 className="text-[16px] font-bold text-[#171018] mb-4">Thanh toán thẻ {payingCard.productName || payingCard.bankName}</h3>
+            <p className="text-[14px] text-[#6B5E64] mb-4">Số tiền: <b className="text-[#E11D48]">{money(payingCard.pendingAmount)}</b></p>
+            
+            <label className="block mb-2 text-[13px] font-semibold text-[#171018]">Nguồn tiền thanh toán</label>
+            <select required value={paySourceId} onChange={e => setPaySourceId(e.target.value)} className="w-full rounded-xl border border-[#E8DCD5] bg-[#F8F5F2] px-3 h-12 text-[14px] outline-none focus:border-[#800020] mb-6">
+              <option value="">Chọn nguồn tiền...</option>
+              {allAccounts.filter(a => normalizeCardType(a.cardType) !== "credit" && normalizeCardType(a.type) !== "credit").map(a => (
+                <option key={a.id} value={a.id}>{a.productName || a.product_name || a.bankName || a.bank_name}</option>
+              ))}
+            </select>
+            
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setPayingCard(null)} className="flex-1 rounded-xl bg-[#F8F5F2] h-12 text-[14px] font-semibold text-[#171018] active:opacity-70">Hủy</button>
+              <button type="submit" disabled={paying} className="flex-1 rounded-xl bg-[#800020] h-12 text-[14px] font-semibold text-white active:opacity-70 disabled:opacity-50">{paying ? "Đang xử lý..." : "Xác nhận trả"}</button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>,
+    document.body
   );
 }

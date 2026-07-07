@@ -648,3 +648,6 @@ CREATE TABLE IF NOT EXISTS savings_records (
 );
 CREATE INDEX IF NOT EXISTS idx_savings_records_year_month ON savings_records(year, month);
 CREATE INDEX IF NOT EXISTS idx_savings_records_member_id ON savings_records(member_id);
+
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS converted_to_card_pending_id UUID;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS excluded_from_expense BOOLEAN DEFAULT false;
