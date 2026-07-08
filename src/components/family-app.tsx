@@ -28,18 +28,6 @@ type UserRole = "full_access" | "self_only";
 export interface AuthUser { id: string; username: string; displayName: string; avatar: string; coverUrl?: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; email?: string; passwordPlain?: string | null; }
 
 export type AppLogType = "ERROR" | "WARN" | "INFO" | "ACTION" | "API";
-
-export function normalizeCardType(value: string | undefined | null): string {
-  if (!value) return "other";
-  const lower = String(value).toLowerCase().trim();
-  if (lower === "credit" || lower.includes("thẻ tín dụng") || lower.includes("tín dụng")) return "credit";
-  if (lower === "debit" || lower.includes("ghi nợ") || lower.includes("atm")) return "debit";
-  if (lower === "bank_account" || lower.includes("tài khoản")) return "bank_account";
-  if (lower === "wallet" || lower.includes("ví điện tử")) return "wallet";
-  if (lower === "cash" || lower.includes("tiền mặt")) return "cash";
-  return "other";
-}
-
 export interface AppLog {
   id: string;
   type: AppLogType;
@@ -3816,12 +3804,14 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
   const [subTab, setSubTab] = useState<"all" | "income" | "expense">("all");
   const [incomes, setIncomes] = useState<any[]>([]);
   const [loadingIncomes, setLoadingIncomes] = useState(true);
-  const [showCreditPendingSheet, setShowCreditPendingSheet] = useState(false);
   const [overviewDataCache, setOverviewDataCache] = useState<Record<number, any>>({});
   const [loadingOverview, setLoadingOverview] = useState(false);
+  const [pendingCreditTotal, setPendingCreditTotal] = useState<number | null>(null);
+  const [pendingCreditCards, setPendingCreditCards] = useState<any[]>([]);
   
   const [editor, setEditor] = useState<any>(null);
   const [detail, setDetail] = useState<any>(null);
+  const [showCreditSheet, setShowCreditSheet] = useState(false);
 
   const year = selectedDate.getFullYear();
   const month = selectedDate.getMonth() + 1;
@@ -3836,6 +3826,20 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
       })
       .catch(() => setLoadingOverview(false));
   }, [year, refreshTrigger]);
+
+  useEffect(() => {
+    fetch("/api/credit-cards/summary", { cache: "no-store" })
+      .then(res => res.json())
+      .then(res => {
+        const payload = res?.data || res || {};
+        setPendingCreditTotal(Number(payload.pendingCreditTotal || 0));
+        setPendingCreditCards(toArray(payload.cards));
+      })
+      .catch(() => {
+        setPendingCreditTotal(null);
+        setPendingCreditCards([]);
+      });
+  }, [refreshTrigger]);
 
   const loadIncomes = () => {
     setLoadingIncomes(true);
@@ -3886,14 +3890,91 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
     });
   }, [appData?.transactions, incomes, month, year]);
 
-  
-  const trackingStartMonth = Number(overviewData?.settings?.trackingStartMonth || 7);
-  const trackingStartYear = Number(overviewData?.settings?.trackingStartYear || 2026);
-  const isHistorical = year < trackingStartYear || (year === trackingStartYear && month < trackingStartMonth);
-  const availableThisMonth = Number(overviewDataCache[year]?.availableCash ?? 0);
-  const pendingCredit = Number(overviewDataCache[year]?.pendingCreditTotal ?? 0);
-  const afterCreditPayment = Number(overviewDataCache[year]?.afterCreditPayment ?? 0);
+  const monthlyDataArray = overviewDataCache[year]?.monthlyData || [];
+  const currentMonthData = monthlyDataArray.find((m: any) => m.month === month);
+  const localMonthlyData = useMemo(() => {
+    const anchorYear = 2026;
+    const anchorMonth = 6;
+    const anchorEndBalance = 10492370;
+    const buildMonthTotals = (targetMonth: number, targetYear: number) => {
+      const summary = getMonthlyFinanceSummary(toArray(appData?.transactions), toArray(incomes), targetMonth, targetYear, "all");
+      const savingsFromTransactions = toArray(appData?.transactions)
+        .filter((t: any) => (String(t.type).toLowerCase() === "expense" || Number(t.amount) < 0) && isSavingTransaction(t))
+        .filter((t: any) => {
+          const d = getFinanceDate(t);
+          return !Number.isNaN(d.getTime()) && d.getMonth() === targetMonth - 1 && d.getFullYear() === targetYear;
+        })
+        .reduce((sum: number, t: any) => sum + Math.abs(Number(t.amount) || 0), 0);
+      const savingsFromRecords = toArray(appData?.savingsRecords || appData?.savings_records || appData?.savings)
+        .filter((r: any) => Number(r.month) === targetMonth && Number(r.year) === targetYear)
+        .reduce((sum: number, r: any) => {
+          const amount = Math.abs(Number(r.amount) || 0);
+          return String(r.type || "monthly") === "withdraw" ? sum - amount : sum + amount;
+        }, 0);
+      return {
+        income: summary.incomeTotal,
+        expense: summary.expenseTotal,
+        savingsInExpense: savingsFromTransactions,
+        savingsRecords: savingsFromRecords,
+      };
+    };
 
+    if (year < anchorYear || (year === anchorYear && month < anchorMonth)) return null;
+    if (year === anchorYear && month === anchorMonth) {
+      return {
+        month,
+        inTrackingRange: true,
+        isFuture: false,
+        openingBalance: 0,
+        income: 46780870,
+        expense: 11288500,
+        savingsInExpense: 0,
+        savingsRecords: 25000000,
+        cumulativeCash: anchorEndBalance,
+      };
+    }
+
+    let running = anchorEndBalance;
+    for (let y = anchorYear; y <= year; y++) {
+      const startMonth = y === anchorYear ? anchorMonth + 1 : 1;
+      const endMonth = y === year ? month : 12;
+      for (let m = startMonth; m <= endMonth; m++) {
+        const totals = buildMonthTotals(m, y);
+        const openingBalance = running;
+        running = openingBalance + totals.income - totals.expense - totals.savingsInExpense - totals.savingsRecords;
+        if (y === year && m === month) {
+          return {
+            month,
+            inTrackingRange: true,
+            isFuture: false,
+            openingBalance,
+            ...totals,
+            cumulativeCash: running,
+          };
+        }
+      }
+    }
+    return null;
+  }, [appData?.transactions, appData?.savingsRecords, appData?.savings_records, appData?.savings, incomes, month, year]);
+  const monthListHasData = monthItems.length > 0;
+  const overviewLooksEmpty = !currentMonthData || (
+    Number(currentMonthData.openingBalance || 0) === 0 &&
+    Number(currentMonthData.income || 0) === 0 &&
+    Number(currentMonthData.expense || 0) === 0 &&
+    Number(currentMonthData.savingsInExpense || 0) === 0 &&
+    Number(currentMonthData.savingsRecords || 0) === 0 &&
+    Number(currentMonthData.cumulativeCash || 0) === 0
+  );
+  const displayMonthData = monthListHasData && localMonthlyData && overviewLooksEmpty ? localMonthlyData : (currentMonthData || localMonthlyData);
+  
+  const isHistorical = displayMonthData && !displayMonthData.inTrackingRange;
+  const isFuture = displayMonthData && displayMonthData.isFuture;
+  const availableThisMonth = displayMonthData && !isHistorical && !isFuture ? Number(displayMonthData.cumulativeCash || 0) : null;
+  const pendingCredit = pendingCreditTotal ?? Number(overviewDataCache[year]?.pendingCreditTotal || 0);
+  const afterCreditPayment = availableThisMonth !== null ? availableThisMonth - pendingCredit : null;
+  const detailMonthLabel = `T${month}`;
+  const prevDetailMonthLabel = `T${month === 1 ? 12 : month - 1}`;
+  const compactCreditCards = [...pendingCreditCards].sort((a, b) => Number(b.pendingTotal || 0) - Number(a.pendingTotal || 0));
 
   const displayList = monthItems.filter(item => subTab === "all" || (subTab === "income" ? item._isIncome : !item._isIncome));
   const groupedItems = displayList.reduce((groups: Record<string, any[]>, item: any) => {
@@ -3912,45 +3993,62 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
       </div>
     </div>
 
-    {isHistorical ? (
-      <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[#F8F5F2] p-4 text-center shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
-        <p className="text-[14px] font-medium text-[#6B5E64]">Dữ liệu lịch sử</p>
-        <p className="text-[12px] text-[#9A8F95] mt-1">Không tính vào số dư hiện tại</p>
-      </div>
-    ) : (
-      <>
-        {/* Box A: Tiền dùng được */}
-        <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-4 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
-          <p className="mb-1 text-[13px] font-medium text-[#6B5E64]">Tiền dùng được</p>
-          <b className={`block break-words text-[clamp(23px,7.5vw,31px)] font-bold leading-tight tracking-tight ${availableThisMonth >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{loadingOverview ? "..." : money(availableThisMonth)}</b>
-          
-          <div className="mt-3 pt-3 border-t border-[#E8DCD5]/50 flex justify-between items-center">
-            <span className="text-[13px] font-medium text-[#6B5E64]">Sau khi trả thẻ</span>
-            <span className="font-semibold text-[#171018]">{loadingOverview ? "..." : money(afterCreditPayment)}</span>
-          </div>
-        </div>
+    <div className="mb-3 grid grid-cols-1 gap-2">
+      <div className="rounded-[18px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-3.5 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
+        <p className="mb-1 text-[13px] font-medium text-[#6B5E64]">Có thể dùng</p>
+        
+        {isHistorical ? (
+          <>
+            <b className="block break-words text-[clamp(23px,7.5vw,31px)] font-bold leading-tight tracking-tight text-[#6B5E64]">Dữ liệu lịch sử</b>
+            <p className="mt-2 text-[12px] leading-relaxed text-[#6B5E64]">Không tính vào số dư hiện tại</p>
+          </>
+        ) : isFuture ? (
+          <>
+            <b className="block break-words text-[clamp(23px,7.5vw,31px)] font-bold leading-tight tracking-tight text-[#6B5E64]">Chưa phát sinh</b>
+          </>
+        ) : (
+          <>
+            <b className={`block break-words text-[clamp(22px,6.5vw,24px)] font-bold leading-tight tracking-tight ${availableThisMonth! >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{loadingOverview ? "..." : money(availableThisMonth!)}</b>
+            
+            <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-xl bg-black/5 p-2.5 text-[12px] leading-5 text-[#171018]">
+              <p>Dư {prevDetailMonthLabel}: <span className="font-semibold text-[#059669]">{money(displayMonthData?.openingBalance || 0)}</span></p>
+              <p>Thu {detailMonthLabel}: <span className="font-semibold text-[#059669]">{money(displayMonthData?.income || 0)}</span></p>
+              <p>Chi {detailMonthLabel}: <span className="font-semibold text-[#E11D48]">{money(displayMonthData?.expense || 0)}</span></p>
+              <p>TK {detailMonthLabel}: <span className="font-semibold text-[#2563EB]">{money((displayMonthData?.savingsInExpense || 0) + (displayMonthData?.savingsRecords || 0))}</span></p>
+            </div>
 
-        {/* Box B: Tạm tính thẻ tín dụng */}
-        <div 
-          className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[#FFF5F7] p-4 text-[#171018] shadow-[0_6px_18px_rgba(225,29,72,0.07)] cursor-pointer active:opacity-70"
-          onClick={() => setShowCreditPendingSheet && setShowCreditPendingSheet(true)}
-        >
-          <div className="flex justify-between items-center">
-            <span className="text-[13px] font-semibold text-[#800020] flex items-center gap-1">
-              Tạm tính thẻ tín dụng
-              <svg className="size-3.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-            </span>
-            <span className="font-bold text-[#E11D48] text-[15px]">{loadingOverview ? "..." : money(pendingCredit)}</span>
-          </div>
+            {pendingCredit > 0 && <p className="mb-0 mt-2.5 text-[12px] leading-4 text-[#6B5E64]">Sau trả thẻ: <span className={`font-semibold ${afterCreditPayment! >= 0 ? "text-[#059669]" : "text-[#E11D48]"}`}>{loadingOverview ? "..." : money(afterCreditPayment!)}</span></p>}
+          </>
+        )}
+      </div>
+
+      <div onClick={() => setShowCreditSheet(true)} className="cursor-pointer rounded-[18px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-3.5 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)] active:scale-[0.98] transition-transform">
+        <div className="flex items-center justify-between">
+          <p className="mb-1 text-[13px] font-medium text-[#6B5E64]">Tạm tính thẻ</p>
+          <svg className="size-4 text-[#6B5E64]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
         </div>
-      </>
-    )}
-    <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-3 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
+        <b className="block break-words text-[clamp(22px,6.5vw,24px)] font-bold leading-tight tracking-tight text-[#E11D48]">{money(pendingCredit)}</b>
+        {compactCreditCards.length > 0 && (
+          <div className="mt-2.5 space-y-1.5 text-[12px] leading-4">
+            {compactCreditCards.map(card => (
+              <div key={card.id} className="flex min-w-0 items-center gap-1.5 text-[#171018]">
+                <span className="min-w-0 flex-1 truncate">{shortCreditCardName(card)}</span>
+                <span className="shrink-0 font-semibold">{money(Number(card.pendingTotal || 0))}</span>
+                <span className={`shrink-0 font-semibold ${creditDueTextClass(card.due_date)}`}>· {creditDueLabel(card.due_date)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+
+    <div className="mb-3 rounded-[20px] border border-[#E8DCD5] bg-[var(--mobile-card)] p-4 text-[#171018] shadow-[0_6px_18px_rgba(128,0,32,0.07)]">
       <div className="grid grid-cols-3 gap-1">
         {([['all', 'Chi tiết'], ['income', 'Thu nhập'], ['expense', 'Chi tiêu']] as const).map(([value, label]) => (
           <button key={value} onClick={() => setSubTab(value)} className={`min-w-0 rounded-lg px-1 py-2 text-[13px] transition-colors ${subTab === value ? "bg-[#800020] border border-transparent font-semibold text-white shadow-sm" : "bg-[#F8E7EC] border border-[#E8DCD5] font-medium text-[#800020] active:opacity-70"}`}>{label}</button>
         ))}
       </div>
+
     </div>
 
     <div className="min-h-[300px] pb-4">
@@ -3983,6 +4081,7 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
 
     {detail && <MobileTransactionDetail item={detail} close={() => setDetail(null)} onEdit={() => editItem(detail)} onDeleted={() => { refresh(); setDetail(null); }} data={appData} update={update} />}
     {editor && <MobileTransactionEditor item={editor.isNew ? null : editor} defaultType={editor.type} allowTypeChange={editor.isNew && subTab === "all"} close={() => setEditor(null)} onSaved={() => { refresh(); }} user={user} data={appData} update={update} />}
+    {showCreditSheet && <CreditCardSheet close={() => setShowCreditSheet(false)} user={user} refresh={refresh} />}
   </div>;
 }
 
@@ -4100,19 +4199,20 @@ function MobileTransactionDetail({ item, close, onEdit, onDeleted, data, update 
 function MobileTransactionEditor({ item, defaultType, allowTypeChange = false, close, onSaved, user, data, update }: any) {
   const ui = useUI();
   const [type, setType] = useState<"income" | "expense">(defaultType || "expense");
+  const [expenseSubmitting, setExpenseSubmitting] = useState(false);
   const incomeRecord = item?._isIncome ? item as IncomeRecord : null;
   const expenseRecord = item && !item?._isIncome ? item as Transaction : null;
   const finish = () => { onSaved(); close(); };
 
   const shortTitle = `${item?.id ? "Sửa" : "Thêm"} ${type === "income" ? "thu" : "chi"}`;
   const formId = type === "income" ? "mobile-income-transaction-form" : "mobile-expense-transaction-form";
-  return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="submit" form={formId} onClick={() => (document.getElementById(formId) as HTMLFormElement | null)?.requestSubmit()} className="px-4 min-h-[40px] text-[15px] font-bold text-[#800020] active:opacity-60 transition-opacity">Lưu</button>}>
+  return <FullScreenMobileSheet title={shortTitle} close={close} headerRight={<button type="submit" form={formId} disabled={type === "expense" && expenseSubmitting} className="px-4 min-h-[40px] text-[15px] font-bold text-[#800020] active:opacity-60 transition-opacity disabled:opacity-50">{type === "expense" && expenseSubmitting ? "Đang lưu..." : "Lưu"}</button>}>
     <div className="p-4 pt-6 bg-[#F8F5F2] min-h-0 pb-[calc(104px+env(safe-area-inset-bottom))]">
       {(!item?.id && allowTypeChange) && <div className="sticky top-0 z-10 mb-4 flex rounded-xl bg-[#FFFFFF] p-1.5 shadow-sm border border-[#E8DCD5]">
         <button type="button" onClick={() => setType("income")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "income" ? "bg-[#F8F5F2] text-[#059669] shadow-sm" : "text-[#6B5E64]"}`}>Thu nhập</button>
         <button type="button" onClick={() => setType("expense")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "expense" ? "bg-[#F8F5F2] text-[#E11D48] shadow-sm" : "text-[#6B5E64]"}`}>Chi tiêu</button>
       </div>}
-      {type === "income" ? <IncomeRecordForm record={incomeRecord} members={toArray(data?.members).map((member: Member) => ({ id: member.id, name: member.name }))} templates={incomeTemplates} user={user} back={close} saved={finish} notify={(message, toastType) => ui.toast(message, toastType)} compactMobile /> : <ExpenseForm record={expenseRecord} members={toArray(data?.members)} user={user} close={close} compactMobile saved={(record) => {
+      {type === "income" ? <IncomeRecordForm record={incomeRecord} members={toArray(data?.members).map((member: Member) => ({ id: member.id, name: member.name }))} templates={incomeTemplates} user={user} back={close} saved={finish} notify={(message, toastType) => ui.toast(message, toastType)} compactMobile /> : <ExpenseForm record={expenseRecord} members={toArray(data?.members)} user={user} close={close} compactMobile onSubmittingChange={setExpenseSubmitting} onCreditSaved={finish} saved={(record) => {
         const transactions = toArray<Transaction>(data?.transactions);
         update({ ...data, transactions: transactions.some(current => current.id === record.id) ? transactions.map(current => current.id === record.id ? record : current) : [record, ...transactions] });
         finish();
@@ -5828,9 +5928,10 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
   );
 }
 
-function ExpenseForm({ record, members, user, close, saved, compactMobile = false }: { record: Transaction | null; members: Member[]; user: AuthUser; close: () => void; saved: (record: Transaction) => void; compactMobile?: boolean }) {
+function ExpenseForm({ record, members, user, close, saved, compactMobile = false, onSubmittingChange, onCreditSaved }: { record: Transaction | null; members: Member[]; user: AuthUser; close: () => void; saved: (record: Transaction) => void; compactMobile?: boolean; onSubmittingChange?: (submitting: boolean) => void; onCreditSaved?: () => void }) {
   const ui = useUI();
   const today = new Date().toISOString().slice(0, 10);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [draft, setDraft] = useState<ExpenseDraft>(() => {
     const cat = record?.category || expenseCategories[0];
     const subcat = record?.subcategory || expenseCategoryTree[cat]?.[0] || "Khác";
@@ -5976,6 +6077,10 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
   function patch(value: Partial<ExpenseDraft>) { setDraft(current => ({ ...current, ...value })); }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    onSubmittingChange?.(true);
+    try {
     if (dataService.getStatus().source === "localStorage") {
       ui.toast("Mất kết nối với cơ sở dữ liệu. Không thể lưu khoản chi lúc này.", "error");
       return;
@@ -6014,6 +6119,7 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
         amount: totalAmount,
         date: draft.date,
         category: draft.category,
+        subcategory: draft.subcategory,
         note: draft.note
       };
       
@@ -6024,7 +6130,8 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
         return;
       }
       ui.toast("Đã ghi nhận chi tiêu thẻ vào phần Tạm tính.", "success");
-      close();
+      if (onCreditSaved) onCreditSaved();
+      else close();
       return;
     }
 
@@ -6038,6 +6145,10 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
     const savedRecord = await response.json();
     savedRecord.amount = Number(savedRecord.amount);
     saved(savedRecord);
+    } finally {
+      setIsSubmitting(false);
+      onSubmittingChange?.(false);
+    }
   }
   
   const paymentMethods = [
@@ -6148,7 +6259,7 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
         })()}
         <div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} placeholder="Coopmart: rau 30k, thịt 120k, sữa 70k" /></Field></div>
       </div></Card>
-      {!compactMobile && <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={close} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold">Hủy</button><button className="rounded-xl bg-rose-500 px-6 py-3 text-sm font-bold text-white">Lưu phiếu chi</button></div>}
+      {!compactMobile && <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={close} disabled={isSubmitting} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold disabled:opacity-50">Hủy</button><button type="submit" disabled={isSubmitting} className="rounded-xl bg-rose-500 px-6 py-3 text-sm font-bold text-white disabled:opacity-50">{isSubmitting ? "Đang lưu..." : "Lưu phiếu chi"}</button></div>}
     </form>
   </div>;
 }
@@ -7551,6 +7662,46 @@ export function isSavingTransaction(t: any) {
   return catStr.includes('tiết kiệm') || titleStr.includes('tiết kiệm') || typeStr.includes('tiết kiệm') || t.savingsApplied || t.savings_applied;
 }
 
+function countsAsRealExpense(t: any) {
+  const explicit = t.countsForPersonalExpense ?? t.counts_for_personal_expense ?? t.countsForStatistics ?? t.counts_for_statistics;
+  if (explicit === false || explicit === "false" || explicit === 0 || explicit === "0") return false;
+  const category = String(t.category || "").toLowerCase();
+  return !isSavingTransaction(t) && !category.includes("thanh toán hộ") && !category.includes("thanh toan ho");
+}
+
+function shortCreditCardName(card: any) {
+  const raw = String(card?.name || card?.display_name || card?.displayName || card?.product_name || card?.productName || card?.bank_name || card?.bankName || "Thẻ").trim();
+  const compact = raw.replace(/\s*\+\s*/g, "+");
+  if (/BIDV Visa Platinum Cashback 360/i.test(compact)) return "BIDV Cashback 360";
+  return compact;
+}
+
+function creditCardTabName(card: any) {
+  const name = shortCreditCardName(card);
+  if (/^Live\+$/i.test(name)) return "Live+";
+  if (/^BIDV/i.test(name)) return "BIDV";
+  if (/^UOB/i.test(name)) return "UOB";
+  return name.split(/\s+/)[0] || "Thẻ";
+}
+
+function creditDueLabel(dueDay: unknown) {
+  const day = Number(dueDay);
+  return Number.isFinite(day) && day > 0 ? `hạn ${day}` : "chưa có hạn";
+}
+
+function creditDueTextClass(dueDay: unknown) {
+  const day = Number(dueDay);
+  if (!Number.isFinite(day) || day <= 0) return "text-[#6B5E64]";
+  const todayDay = new Date().getDate();
+  if (todayDay >= day || day - todayDay <= 3) return "text-[#E11D48]";
+  return "text-[#059669]";
+}
+
+function dueDayText(dueDay: unknown) {
+  const day = Number(dueDay);
+  return Number.isFinite(day) && day > 0 ? `Hạn: ngày ${day}` : "Hạn: chưa có hạn";
+}
+
 export function getMonthlyIncomeTotal(incomes: any[], month: number, year: number, memberFilterId: string = "all") {
   return incomes.filter(t => {
     const d = getFinanceDate(t);
@@ -7608,7 +7759,7 @@ export function getMonthlyFinanceSummary(
     .filter(t => String(t.type).toLowerCase() === "expense" || Number(t.amount) < 0)
     .filter(filterByMonth)
     .filter(memberFilter)
-    .filter(t => !isSavingTransaction(t));
+    .filter(countsAsRealExpense);
 
   const monthIncs = incomes
     .filter(filterByMonth)
@@ -9132,6 +9283,7 @@ function FinanceSettingsSheet({ close }: { close: () => void }) {
           <h2 className="text-[15px] font-bold text-[#171018]">Tóm tắt</h2>
           <div className="mt-3 grid grid-cols-1 gap-3 min-[360px]:grid-cols-2">
             <div className="rounded-xl bg-[#F8F5F2] p-3"><p className="text-[12px] font-semibold text-[#6B5E64]">Có thể dùng tháng này</p><b className={(availableThisMonth >= 0 ? "text-[#059669]" : "text-[#E11D48]") + " mt-1 block text-[18px] leading-tight"}>{summaryLoading ? "..." : money(availableThisMonth)}</b></div>
+            <div className="rounded-xl bg-[#F8F5F2] p-3"><p className="text-[12px] font-semibold text-[#6B5E64]">Tiền đang có hiện tại</p><b className={(currentCash >= 0 ? "text-[#800020]" : "text-[#E11D48]") + " mt-1 block text-[18px] leading-tight"}>{summaryLoading ? "..." : money(currentCash)}</b></div>
           </div>
         </section>
 
@@ -9464,132 +9616,231 @@ function MobileHome({
 }
 
 
-function CreditPendingSheet({ close }: { close: () => void }) {
+function CreditCardSheet({ close, user, refresh }: { close: () => void, user: any, refresh: () => void }) {
+  const ui = useUI();
   const [loading, setLoading] = useState(true);
-  const [cards, setCards] = useState<any[]>([]);
-  const [pendingTotal, setPendingTotal] = useState(0);
-  const [allAccounts, setAllAccounts] = useState<any[]>([]);
-  
-  const [payingCard, setPayingCard] = useState<any>(null);
-  const [paySourceId, setPaySourceId] = useState("");
-  const [paying, setPaying] = useState(false);
+  const [data, setData] = useState<{ cards: any[], pendingCreditTotal: number }>({ cards: [], pendingCreditTotal: 0 });
+  const [activeTab, setActiveTab] = useState<string>("all");
+  const [payCard, setPayCard] = useState<any>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/credit-cards/summary');
+      const json = await res.json();
+      if (json.ok) {
+        setData(json.data);
+      }
+    } catch {}
+    setLoading(false);
+  };
 
   useEffect(() => {
-    setLoading(true);
-    Promise.all([
-      fetch("/api/bank-accounts").then(res => res.json()),
-      fetch("/api/card-pending-transactions?status=pending").then(res => res.json())
-    ]).then(([accountsRes, pendingRes]) => {
-      const accounts = toArray(accountsRes?.data || accountsRes);
-      setAllAccounts(accounts);
-      const allPending = toArray(pendingRes?.data || pendingRes);
-      
-      const creditCards = accounts.filter(a => normalizeCardType(a.cardType) === "credit" || normalizeCardType(a.type) === "credit");
-      
-      let total = 0;
-      const cardsWithPending = creditCards.map(card => {
-        const cardPendingTxs = allPending.filter(tx => String(tx.bankAccountId || tx.bank_account_id) === String(card.id));
-        const pendingAmount = cardPendingTxs.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
-        total += pendingAmount;
-        return {
-          ...card,
-          pendingAmount
+    load();
+  }, []);
+
+  const handlePaymentSuccess = () => {
+    load();
+    refresh();
+  };
+
+  return <FullScreenMobileSheet close={close} title="Tạm tính thẻ">
+    <div className="min-h-[100dvh] bg-[#F8F5F2] px-4 pb-28 pt-3 text-[#171018]">
+      {loading ? <p className="text-center mt-10 text-sm text-[#6B5E64]">Đang tải...</p> : <>
+        <div className="mb-3 rounded-[18px] border border-[#E8DCD5] bg-white p-3.5 shadow-sm">
+          <p className="text-[13px] font-medium text-[#6B5E64]">Tổng tạm tính</p>
+          <b className="block text-[24px] font-bold leading-tight text-[#E11D48]">{money(data.pendingCreditTotal)}</b>
+        </div>
+        
+        <div className="mb-3 flex gap-2 overflow-x-auto pb-1.5 scrollbar-hide">
+          <button onClick={() => setActiveTab("all")} className={"whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors " + (activeTab === "all" ? "bg-[#800020] text-white shadow-md" : "bg-[#F8E7EC] text-[#800020]")}>Tất cả</button>
+          {data.cards.map(c => (
+            <button key={c.id} onClick={() => setActiveTab(c.id)} className={"whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors " + (activeTab === c.id ? "bg-[#800020] text-white shadow-md" : "bg-[#F8E7EC] text-[#800020]")}>{creditCardTabName(c)}</button>
+          ))}
+        </div>
+
+        <div className="space-y-3">
+          {activeTab === "all" ? (
+            data.cards.length === 0 ? <p className="text-center text-sm text-[#6B5E64]">Không có thẻ tín dụng nào.</p> : 
+            data.cards.map(c => (
+              <div key={c.id} className="rounded-[16px] bg-white p-3.5 shadow-sm">
+                <div className="mb-2.5 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <b className="block text-[15px] font-bold leading-tight text-[#171018]">{c.name}</b>
+                    <p className={`mt-1 text-[12px] ${creditDueTextClass(c.due_date)}`}>{dueDayText(c.due_date)}</p>
+                  </div>
+                  <b className={`shrink-0 text-[15px] font-bold ${Number(c.pendingTotal || 0) > 0 ? "text-[#E11D48]" : "text-[#6B5E64]"}`}>{money(c.pendingTotal)}</b>
+                </div>
+                {c.pendingTransactions?.length > 0 ? (
+                  <div className="mb-3 space-y-2 border-t border-[#F8F5F2] pt-2.5">
+                    {c.pendingTransactions.map((t: any) => (
+                      <div key={t.id} className="flex justify-between gap-3 text-[13px]">
+                        <span className="truncate pr-2 text-[#171018]">{t.description || "Giao dịch"}</span>
+                        <span className="shrink-0 font-medium text-[#E11D48]">{money(t.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mb-3 mt-2 text-[12px] italic text-[#6B5E64]">Chưa có khoản tạm tính cần thanh toán.</p>
+                )}
+                <div className="flex gap-2 border-t border-[#F8F5F2] pt-3">
+                  <button onClick={() => window.location.href = `/members/${user?.memberId || user?.id}/bank-cards/${c.id}`} className="w-1/3 shrink-0 rounded-xl bg-[#F8E7EC] py-2.5 text-[13px] font-bold text-[#800020] shadow-sm active:scale-[0.98] transition-transform">Chi tiết</button>
+                  <button onClick={() => {
+                    if (Number(c.pendingTotal || 0) <= 0) {
+                      ui.toast("Thẻ này chưa có khoản tạm tính cần thanh toán.", "error");
+                    } else {
+                      setPayCard(c);
+                    }
+                  }} className="flex-1 rounded-xl bg-[#800020] py-2.5 text-[13px] font-bold text-white shadow-sm active:scale-[0.98] transition-transform">Thanh toán thẻ</button>
+                </div>
+              </div>
+            ))
+          ) : (() => {
+            const c = data.cards.find(x => x.id === activeTab);
+            if (!c) return null;
+            return (
+              <div className="rounded-[16px] bg-white p-3.5 shadow-sm">
+                <div className="mb-2.5 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <b className="block text-[15px] font-bold leading-tight text-[#171018]">{c.name}</b>
+                    <p className={`mt-1 text-[12px] ${creditDueTextClass(c.due_date)}`}>{dueDayText(c.due_date)}</p>
+                  </div>
+                  <b className={`shrink-0 text-[15px] font-bold ${Number(c.pendingTotal || 0) > 0 ? "text-[#E11D48]" : "text-[#6B5E64]"}`}>{money(c.pendingTotal)}</b>
+                </div>
+                {c.pendingTransactions?.length > 0 ? (
+                  <div className="mb-3 space-y-2 border-t border-[#F8F5F2] pt-2.5">
+                    {c.pendingTransactions.map((t: any) => (
+                      <div key={t.id} className="flex justify-between gap-3 text-[13px]">
+                        <span className="truncate pr-2 text-[#171018]">{t.description || "Giao dịch"}</span>
+                        <span className="shrink-0 font-medium text-[#E11D48]">{money(t.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mb-3 mt-2 text-[12px] italic text-[#6B5E64]">Chưa có khoản tạm tính cần thanh toán.</p>
+                )}
+                <div className="flex gap-2 border-t border-[#F8F5F2] pt-3">
+                  <button onClick={() => window.location.href = `/members/${user?.memberId || user?.id}/bank-cards/${c.id}`} className="w-1/3 shrink-0 rounded-xl bg-[#F8E7EC] py-2.5 text-[13px] font-bold text-[#800020] shadow-sm active:scale-[0.98] transition-transform">Chi tiết</button>
+                  <button onClick={() => {
+                    if (Number(c.pendingTotal || 0) <= 0) {
+                      ui.toast("Thẻ này chưa có khoản tạm tính cần thanh toán.", "error");
+                    } else {
+                      setPayCard(c);
+                    }
+                  }} className="flex-1 rounded-xl bg-[#800020] py-2.5 text-[13px] font-bold text-white shadow-sm active:scale-[0.98] transition-transform">Thanh toán thẻ</button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </>}
+    </div>
+    {payCard && <CreditCardPaymentModal card={payCard} close={() => setPayCard(null)} onSuccess={handlePaymentSuccess} />}
+  </FullScreenMobileSheet>;
+}
+
+function CreditCardPaymentModal({ card, close, onSuccess }: any) {
+  const ui = useUI();
+  const [saving, setSaving] = useState(false);
+  const [sourceId, setSourceId] = useState("");
+  const [sources, setSources] = useState<any[]>([]);
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
+
+  useEffect(() => {
+    fetch('/api/bank-accounts').then(r => r.json()).then(res => {
+      if (res.ok) {
+        const list = Array.isArray(res.data) ? res.data : [];
+        // filter out credit cards
+        const normalizeCardType = (value: string) => {
+          if (!value) return "other";
+          const v = String(value).toLowerCase().trim();
+          if (v === "credit" || v === "thẻ tín dụng") return "credit";
+          if (v === "debit" || v.includes("thẻ ghi nợ") || v === "atm") return "debit";
+          if (v === "wallet" || v === "ví điện tử") return "wallet";
+          if (v === "bank_account" || v === "tài khoản ngân hàng") return "bank_account";
+          if (v === "cash" || v === "tiền mặt") return "cash";
+          return v;
         };
-      });
-      
-      setCards(cardsWithPending);
-      setPendingTotal(total);
-      setLoading(false);
-    }).catch(err => {
-      console.error(err);
-      setLoading(false);
+
+        const isValidCreditPaymentSource = (account: any) => {
+          const t = normalizeCardType(account.card_type);
+          const st = String(account.status || "").toLowerCase().trim();
+          if (t === "credit") return false;
+          if (st === "inactive" || st === "disabled" || st === "ngừng dùng") return false;
+          return t === "cash" || t === "bank_account" || t === "debit" || t === "wallet";
+        };
+
+        const validSources = list.filter(isValidCreditPaymentSource);
+        if (validSources.length === 0) {
+          validSources.push({ id: "cash", name: "Tiền mặt", card_type: "cash" });
+        }
+        
+        // Auto select first debit card if possible, else first item
+        const defaultSource = validSources.find((x: any) => normalizeCardType(x.card_type) === "debit") || validSources[0];
+        setSources(validSources);
+        setSourceId(defaultSource.id);
+      }
     });
   }, []);
 
-  const handlePay = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!payingCard || !paySourceId) return;
-    setPaying(true);
+  const handlePay = async () => {
+    if (!sourceId) return ui.toast("Vui lòng chọn nguồn tiền thanh toán", "error");
+    if (!paymentDate) return ui.toast("Vui lòng chọn ngày thanh toán", "error");
+    setSaving(true);
     try {
-      const res = await fetch(`/api/bank-accounts/${payingCard.id}/pay`, {
+      const res = await fetch('/api/credit-cards/pay', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentAccountId: paySourceId, paymentMethod: "transfer", date: new Date().toISOString().slice(0, 10) })
+        body: JSON.stringify({ cardId: card.id, sourceId, paymentDate })
       });
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        const json = await res.json();
-        alert(json.error || "Thanh toán thất bại");
-        setPaying(false);
-      }
-    } catch (err) {
-      alert("Lỗi kết nối");
-      setPaying(false);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || "Thanh toán thất bại");
+      ui.toast("Đã thanh toán thẻ thành công!", "success");
+      onSuccess();
+      close();
+    } catch (err: any) {
+      ui.toast(err.message, "error");
     }
+    setSaving(false);
   };
 
-  if (typeof document === "undefined") return null;
-  return createPortal(
-    <div className="fixed inset-0 z-[60] flex flex-col justify-end min-[769px]:hidden">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={close} />
-      <div className="relative flex flex-col max-h-[85vh] w-full animate-slide-up rounded-t-[24px] bg-[#F8F5F2] shadow-2xl">
-        <div className="shrink-0 flex items-center justify-between p-4 border-b border-[#E8DCD5]">
-          <h2 className="text-[17px] font-bold text-[#171018]">Tạm tính thẻ tín dụng</h2>
-          <button type="button" onClick={close} className="grid size-8 place-items-center rounded-full bg-black/5 active:bg-black/10 text-[#6B5E64]">
-            <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <div className="rounded-2xl border border-[#E8DCD5] bg-white p-4 shadow-sm text-center">
-            <p className="text-[13px] font-medium text-[#6B5E64]">Tổng nợ thẻ tín dụng</p>
-            <p className="mt-1 text-[24px] font-bold text-[#E11D48]">{loading ? "..." : money(pendingTotal)}</p>
-          </div>
-          
-          <div className="space-y-3">
-            <h3 className="text-[14px] font-bold text-[#171018] ml-1">Danh sách thẻ</h3>
-            {loading ? <p className="text-center text-sm text-[#6B5E64] py-8">Đang tải...</p> : cards.length === 0 ? <p className="text-center text-sm text-[#6B5E64] py-8">Không có thẻ tín dụng</p> : cards.map(card => (
-              <div key={card.id} className="rounded-2xl border border-[#E8DCD5] bg-white p-4 shadow-sm">
-                <div className="flex justify-between items-start gap-3">
-                  <div>
-                    <h4 className="font-semibold text-[#171018]">{card.productName || card.product_name || card.bankName || card.bank_name || "Thẻ tín dụng"}</h4>
-                    <p className="text-[12px] text-[#6B5E64] mt-0.5">{card.bankName || card.bank_name}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[15px] font-bold text-[#E11D48]">{card.pendingAmount > 0 ? money(card.pendingAmount) : "0 đ"}</p>
-                    {card.pendingAmount > 0 && <button onClick={() => setPayingCard(card)} className="mt-2 text-[12px] font-bold text-[#800020] bg-[#F8E7EC] px-3 py-1.5 rounded-lg active:opacity-70">Thanh toán thẻ</button>}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+  return <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div className="w-full max-w-sm rounded-[24px] bg-white p-5 shadow-2xl animate-in slide-in-from-bottom-8 sm:slide-in-from-bottom-0 sm:zoom-in-95">
+      <div className="mb-4 text-center">
+        <h3 className="text-[18px] font-bold text-[#171018]">Thanh toán dư nợ</h3>
+        <p className="mt-1 text-[13px] text-[#6B5E64]">{card.name}</p>
       </div>
       
-      {payingCard && (
-        <div className="fixed inset-0 z-[70] flex flex-col justify-end">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setPayingCard(null)} />
-          <form onSubmit={handlePay} className="relative flex flex-col w-full animate-slide-up rounded-t-[24px] bg-white shadow-2xl p-5">
-            <h3 className="text-[16px] font-bold text-[#171018] mb-4">Thanh toán thẻ {payingCard.productName || payingCard.bankName}</h3>
-            <p className="text-[14px] text-[#6B5E64] mb-4">Số tiền: <b className="text-[#E11D48]">{money(payingCard.pendingAmount)}</b></p>
-            
-            <label className="block mb-2 text-[13px] font-semibold text-[#171018]">Nguồn tiền thanh toán</label>
-            <select required value={paySourceId} onChange={e => setPaySourceId(e.target.value)} className="w-full rounded-xl border border-[#E8DCD5] bg-[#F8F5F2] px-3 h-12 text-[14px] outline-none focus:border-[#800020] mb-6">
-              <option value="">Chọn nguồn tiền...</option>
-              {allAccounts.filter(a => normalizeCardType(a.cardType) !== "credit" && normalizeCardType(a.type) !== "credit").map(a => (
-                <option key={a.id} value={a.id}>{a.productName || a.product_name || a.bankName || a.bank_name}</option>
-              ))}
-            </select>
-            
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setPayingCard(null)} className="flex-1 rounded-xl bg-[#F8F5F2] h-12 text-[14px] font-semibold text-[#171018] active:opacity-70">Hủy</button>
-              <button type="submit" disabled={paying} className="flex-1 rounded-xl bg-[#800020] h-12 text-[14px] font-semibold text-white active:opacity-70 disabled:opacity-50">{paying ? "Đang xử lý..." : "Xác nhận trả"}</button>
-            </div>
-          </form>
-        </div>
-      )}
-    </div>,
-    document.body
-  );
+      <div className="mb-5 rounded-xl bg-[#F8E7EC] p-4 text-center">
+        <p className="text-[12px] font-semibold text-[#800020]">Tổng tiền thanh toán</p>
+        <b className="block text-[24px] font-bold text-[#E11D48]">{money(card.pendingTotal)}</b>
+      </div>
+
+      <div className="space-y-4">
+        <label className="block">
+          <span className="mb-1.5 block text-[13px] font-semibold text-[#6B5E64]">Nguồn tiền thanh toán (Tiền mặt, ATM, Ví)</span>
+          <select value={sourceId} onChange={e => setSourceId(e.target.value)} className="h-12 w-full rounded-xl border border-[#E8DCD5] bg-white px-3 text-[14px] text-[#171018] outline-none focus:border-[#800020] focus:ring-2 focus:ring-[#800020]/10">
+            {sources.map(s => {
+              const t = String(s.card_type || "").toLowerCase().trim();
+              const isCash = t === "cash" || t === "tiền mặt";
+              const isWallet = t === "wallet" || t === "ví điện tử";
+              const isDebit = t === "debit" || t.includes("thẻ ghi nợ") || t === "atm";
+              const typeStr = isCash ? "Tiền mặt" : isWallet ? "Ví điện tử" : isDebit ? "Thẻ ghi nợ / ATM" : "Tài khoản";
+              return <option key={s.id} value={s.id}>{s.name}{isCash && s.id === "cash" ? "" : ` · ${typeStr}`}</option>;
+            })}
+          </select>
+          {sources.length === 1 && sources[0].id === "cash" && <p className="mt-2 text-[11px] text-[#6B5E64]">Bạn chưa có thẻ ghi nợ/tài khoản thanh toán. Có thể thêm trong Thẻ ngân hàng.</p>}
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-[13px] font-semibold text-[#6B5E64]">Ngày thanh toán</span>
+          <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="h-12 w-full rounded-xl border border-[#E8DCD5] bg-white px-3 text-[14px] text-[#171018] outline-none focus:border-[#800020] focus:ring-2 focus:ring-[#800020]/10" />
+        </label>
+      </div>
+
+      <div className="mt-6 flex gap-3">
+        <button type="button" onClick={close} disabled={saving} className="h-12 flex-1 rounded-xl bg-[#F8F5F2] text-[14px] font-bold text-[#171018] active:scale-95 transition-transform disabled:opacity-50">Hủy</button>
+        <button type="button" onClick={handlePay} disabled={saving} className="h-12 flex-1 rounded-xl bg-[#800020] text-[14px] font-bold text-white shadow-md active:scale-95 transition-transform disabled:opacity-50">{saving ? "Đang xử lý..." : "Xác nhận"}</button>
+      </div>
+    </div>
+  </div>;
 }

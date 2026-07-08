@@ -37,6 +37,7 @@ export async function POST(request: Request) {
     amount: Number(body.amount),
     date: body.date,
     category: body.category || "Khác",
+    subcategory: body.subcategory || "",
     note: body.note || ""
   });
 

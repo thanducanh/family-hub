@@ -90,6 +90,24 @@ export async function getCardPendingTransactions(bankAccountId: string) {
 }
 
 export async function createCardPendingTransaction(data: Omit<CardPendingTransaction, "id" | "status" | "paymentTransactionId" | "createdAt" | "updatedAt">) {
+  const duplicate = await pool.query(
+    `SELECT *
+     FROM card_pending_transactions
+     WHERE member_id = $1
+       AND bank_account_id = $2
+       AND title = $3
+       AND amount = $4
+       AND category = $5
+       AND COALESCE(subcategory, '') = $6
+       AND date = $7::date
+       AND status = 'pending'
+       AND created_at >= CURRENT_TIMESTAMP - INTERVAL '5 seconds'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [data.memberId, data.bankAccountId, data.title, data.amount, data.category, data.subcategory || "", data.date]
+  );
+  if (duplicate.rows[0]) return fromRow(duplicate.rows[0]);
+
   const result = await pool.query(
     `INSERT INTO card_pending_transactions (id, member_id, bank_account_id, title, amount, date, category, subcategory, note, status)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
