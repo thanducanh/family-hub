@@ -48,7 +48,20 @@ export async function ensureCardPendingTransactionsTable() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_card_pending_tx_member_id ON card_pending_transactions(member_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_card_pending_tx_bank_account_id ON card_pending_transactions(bank_account_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_card_pending_tx_status ON card_pending_transactions(status)`);
-  await pool.query(`ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS subcategory TEXT`);
+  for (const statement of [
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS member_id UUID",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS bank_account_id UUID",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS amount NUMERIC NOT NULL DEFAULT 0",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS date DATE NOT NULL DEFAULT CURRENT_DATE",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS category VARCHAR(128) NOT NULL DEFAULT 'Khác'",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS subcategory TEXT",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS note TEXT",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'pending'",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS payment_transaction_id UUID",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    "ALTER TABLE card_pending_transactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP"
+  ]) await pool.query(statement);
 }
 
 function fromRow(row: any): CardPendingTransaction {

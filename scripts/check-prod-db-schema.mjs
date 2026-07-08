@@ -1,72 +1,151 @@
-import { Pool } from 'pg';
-import dotenv from 'dotenv';
-import path from 'path';
+import { Pool } from "pg";
+import dotenv from "dotenv";
+import path from "path";
 
-// Try to load .env.production first, then .env, then .env.local
-dotenv.config({ path: path.resolve(process.cwd(), '.env.production') });
-if (!process.env.DATABASE_URL) dotenv.config({ path: path.resolve(process.cwd(), '.env') });
-if (!process.env.DATABASE_URL) dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+dotenv.config({ path: path.resolve(process.cwd(), ".env.production") });
+if (!process.env.DATABASE_URL) dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+if (!process.env.DATABASE_URL) dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 
-console.log("Checking DB URL:", process.env.DATABASE_URL ? "SET" : "NOT SET");
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  console.error("DATABASE_URL is not set.");
+  process.exit(1);
+}
+
+function safeDatabaseInfo(rawUrl) {
+  const url = new URL(rawUrl);
+  return {
+    protocol: url.protocol,
+    host: url.hostname,
+    port: url.port || "(default)",
+    database: url.pathname.replace(/^\//, ""),
+    isLanHost: /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(url.hostname),
+  };
+}
+
+const dbInfo = safeDatabaseInfo(databaseUrl);
+console.log("DATABASE_URL safe info:", dbInfo);
+if (dbInfo.isLanHost) {
+  console.warn("WARNING: DATABASE_URL points to a private LAN host. Vercel cannot reach 192.168.x.x / private network databases.");
+}
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('neon.tech') ? { rejectUnauthorized: false } : false
+  connectionString: databaseUrl,
+  ssl: databaseUrl.includes("neon.tech") || databaseUrl.includes("sslmode=require")
+    ? { rejectUnauthorized: false }
+    : undefined,
 });
 
-async function check() {
+const required = {
+  bank_accounts: [
+    "id",
+    "member_id",
+    "bank_name",
+    "product_name",
+    "display_name",
+    "card_type",
+    "status",
+    "credit_limit",
+    "statement_day",
+    "due_day",
+    "opened_at",
+    "created_at",
+    "updated_at",
+  ],
+  card_pending_transactions: [
+    "id",
+    "member_id",
+    "bank_account_id",
+    "title",
+    "amount",
+    "date",
+    "category",
+    "note",
+    "status",
+    "payment_transaction_id",
+    "created_at",
+    "updated_at",
+  ],
+  finance_settings: ["id", "created_at", "updated_at"],
+};
+
+async function tableExists(client, tableName) {
+  const result = await client.query(
+    `SELECT EXISTS (
+       SELECT 1 FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = $1
+     ) AS exists`,
+    [tableName]
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
+async function columnsFor(client, tableName) {
+  const result = await client.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1
+     ORDER BY ordinal_position`,
+    [tableName]
+  );
+  return new Set(result.rows.map(row => row.column_name));
+}
+
+async function main() {
   const client = await pool.connect();
   try {
-    console.log("Connected to DB successfully.");
+    await client.query("SELECT 1");
+    console.log("DB connection: ok");
 
-    const checkTable = async (table) => {
-      const res = await client.query(`
-        SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
-          AND table_name = $1
-        );
-      `, [table]);
-      console.log(`Table ${table} exists:`, res.rows[0].exists);
-      return res.rows[0].exists;
-    };
+    for (const [tableName, columns] of Object.entries(required)) {
+      const exists = await tableExists(client, tableName);
+      console.log(`Table ${tableName}:`, exists ? "exists" : "missing");
+      if (!exists) continue;
 
-    const checkColumn = async (table, column) => {
-      const res = await client.query(`
-        SELECT EXISTS (
-          SELECT FROM information_schema.columns 
-          WHERE table_schema = 'public' 
-          AND table_name = $1
-          AND column_name = $2
-        );
-      `, [table, column]);
-      console.log(`Column ${table}.${column} exists:`, res.rows[0].exists);
-    };
-
-    const tables = ['bank_accounts', 'card_pending_transactions', 'finance_settings'];
-    for (const t of tables) {
-      const exists = await checkTable(t);
-      if (exists && t === 'bank_accounts') {
-        await checkColumn(t, 'opened_at');
-      }
-      if (exists && t === 'card_pending_transactions') {
-        await checkColumn(t, 'payment_transaction_id');
-      }
-      if (exists && t === 'finance_settings') {
-        await checkColumn(t, 'opening_cash_amount');
-        await checkColumn(t, 'opening_debit_amount');
-        await checkColumn(t, 'opening_wallet_amount');
-      }
+      const actual = await columnsFor(client, tableName);
+      const missing = columns.filter(column => !actual.has(column));
+      console.log(`Missing columns ${tableName}:`, missing.length ? missing : []);
     }
-    
-    console.log("Done checking schema.");
 
-  } catch (err) {
-    console.error("DB Check failed:", err.message, err.stack);
+    const cards = await client.query(
+      `SELECT id,
+              member_id,
+              bank_name,
+              product_name,
+              display_name,
+              card_type,
+              status,
+              due_day
+       FROM bank_accounts
+       ORDER BY created_at DESC`
+    );
+    console.log("Production bank_accounts:", cards.rows);
+
+    const pending = await client.query(
+      `SELECT cpt.id,
+              cpt.member_id,
+              cpt.bank_account_id,
+              cpt.title,
+              cpt.amount,
+              cpt.status,
+              ba.bank_name,
+              ba.product_name,
+              ba.display_name,
+              ba.card_type,
+              ba.status AS card_status
+       FROM card_pending_transactions cpt
+       LEFT JOIN bank_accounts ba ON ba.id = cpt.bank_account_id
+       WHERE cpt.status = 'pending'
+       ORDER BY cpt.created_at DESC`
+    );
+    console.log("Production pending card transactions:", pending.rows);
   } finally {
     client.release();
-    pool.end();
+    await pool.end();
   }
 }
 
-check();
+main().catch(error => {
+  console.error("DB check failed:", error instanceof Error ? { message: error.message, stack: error.stack } : error);
+  process.exitCode = 1;
+});

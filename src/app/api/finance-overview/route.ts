@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { requireSession, getSessionUser, buildDataFilter } from "@/lib/auth";
+import { ensureCardPendingTransactionsTable } from "@/lib/card-pending-transactions";
 
 async function hasColumn(tableName: string, columnName: string) {
   const result = await pool.query(
@@ -29,8 +30,13 @@ async function ensureFinanceSettingsTable() {
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS tracking_start_month INTEGER DEFAULT 1");
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS tracking_start_year INTEGER DEFAULT 2024");
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_cash_balance NUMERIC DEFAULT 0");
+  await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_cash_amount NUMERIC DEFAULT 0");
+  await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_debit_amount NUMERIC DEFAULT 0");
+  await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_wallet_amount NUMERIC DEFAULT 0");
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_savings_balance NUMERIC DEFAULT 0");
   await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS opening_investment_balance NUMERIC DEFAULT 0");
+  await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()");
+  await pool.query("ALTER TABLE finance_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now()");
 }
 
 async function ensureSavingsRecordsTable() {
@@ -109,6 +115,7 @@ export async function GET(req: NextRequest) {
       : "COALESCE(date, created_at)";
     
     await ensureSavingsRecordsTable();
+    await ensureCardPendingTransactionsTable();
     await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS linked_savings_id UUID");
     await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS counts_for_personal_expense BOOLEAN NOT NULL DEFAULT TRUE");
     await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS counts_for_card_spending BOOLEAN NOT NULL DEFAULT TRUE");

@@ -63,6 +63,22 @@ export async function ensureBankAccountsTable() {
     "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS last4 TEXT"
   ];
   for (const statement of alter) await pool.query(statement);
+  for (const statement of [
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS member_id UUID",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS bank_name TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS account_holder TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS account_number TEXT DEFAULT ''",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS card_number TEXT DEFAULT ''",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS card_type TEXT DEFAULT 'debit'",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS branch TEXT DEFAULT ''",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS expiry_month TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS expiry_year TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS opened_at DATE",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    "ALTER TABLE bank_accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP"
+  ]) await pool.query(statement);
   for (const column of ["account_number", "card_number", "branch", "statement_day", "due_day", "credit_limit"]) await pool.query(`ALTER TABLE bank_accounts ALTER COLUMN ${column} DROP NOT NULL`);
   
   // Data migration for last4 and display_name
