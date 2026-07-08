@@ -323,7 +323,7 @@ export async function GET(req: NextRequest) {
         settings,
       }
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("[GET /api/finance-overview]", error);
     return NextResponse.json({ ok: false, error: "Không thể tải tổng quan thu chi." }, { status: 500 });
   }

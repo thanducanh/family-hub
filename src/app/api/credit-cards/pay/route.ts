@@ -93,13 +93,13 @@ export async function POST(req: NextRequest) {
           totalAmount
         }
       });
-    } catch (err) {
+    } catch (err: any) {
       await client.query('ROLLBACK');
       throw err;
     } finally {
       client.release();
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("[POST /api/credit-cards/pay]", error);
     return NextResponse.json({ ok: false, error: "Không thể thanh toán thẻ." }, { status: 500 });
   }

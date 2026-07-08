@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const accounts = await bankAccountsFromRows(result.rows);
     accounts.forEach(a => { a.cardNumber = ""; a.accountNumber = ""; });
     return NextResponse.json({ ok: true, data: accounts });
-  } catch (error) {
+  } catch (error: any) {
     console.error("[api/bank-accounts] GET failed", error);
     return NextResponse.json({ ok: false, error: "Lỗi máy chủ. Vui lòng thử lại." }, { status: 500 });
   }
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     const saved = await upsertBankAccount(account);
     console.log("[api/bank-accounts] POST saved to DB successfully:", saved?.id);
     return NextResponse.json({ ok: true, data: saved }, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error("[api/bank-accounts] POST failed", error);
     return NextResponse.json({ ok: false, error: "Lỗi máy chủ. Vui lòng thử lại." }, { status: 500 });
   }
