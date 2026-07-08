@@ -4,6 +4,9 @@ import { getSessionUser, buildDataFilter } from "@/lib/auth";
 import { ensureBankAccountsTable } from "@/lib/bank-accounts";
 import { ensureCardPendingTransactionsTable } from "@/lib/card-pending-transactions";
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 function normalizeText(value: unknown) {
   return String(value || "")
     .trim()

@@ -3,6 +3,9 @@ import { getSessionUser } from "@/lib/auth";
 import { bankAccountFields, bankAccountFromRow, bankAccountsFromRows, bankMemberExists, canAccessBankMember, ensureBankAccountsTable, isCreditBankType, normalizeBankBody, upsertBankAccount } from "@/lib/bank-accounts";
 import { pool } from "@/lib/db";
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 function logBankAccountsError(error: unknown, queryName: string) {
   const err = error instanceof Error ? error : new Error(String(error));
   console.error("[api/bank-accounts] error", {

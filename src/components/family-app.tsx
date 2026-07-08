@@ -290,7 +290,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
       try { localItems = fixVietnameseMojibake(JSON.parse(localStorage.getItem(key) || "[]")) as any[]; } catch(e){}
       
       try {
-        const res = await fetch("/api/notifications");
+        const res = await fetch("/api/notifications", { cache: 'no-store' });
         if (res.ok) {
           const data = fixVietnameseMojibake(await res.json()) as any;
           if (data.ok && data.notifications) {
@@ -545,7 +545,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   useEffect(() => {
     if (!user) return;
     const today = new Date(), date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    void Promise.all([fetch("/api/calendars", { cache: "no-store" }), fetch("/api/events", { cache: "no-store" })]).then(async ([calendarResponse, eventResponse]) => {
+    void Promise.all([fetch("/api/calendars", { cache: 'no-store' }), fetch("/api/events", { cache: 'no-store' })]).then(async ([calendarResponse, eventResponse]) => {
       const calendarResult = await readJsonSafe<{ data?: { id: string }[] }>(calendarResponse), eventResult = await readJsonSafe<{ data?: { title: string; calendarId: string; startDate: string; startTime: string; allDay: boolean }[] }>(eventResponse);
       if (!calendarResponse.ok || !eventResponse.ok) return;
       const visibleCalendarIds = new Set((calendarResult?.data || []).map(calendar => calendar.id));
@@ -577,7 +577,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   }
   async function logout() {
     addAppLog("ACTION", "User logged out", { screen: "global" });
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch("/api/auth/logout", { cache: 'no-store',  method: "POST" });
     const keysToPreserve = [
       "familyHubLastUser", "lastUserName", "lastUsername", "lastAvatarUrl", "lastUserCoverUrl", "lastCoverUrl", "lastBackgroundUrl", "familyHubAppLogs",
       "theme", "language", "mobileTheme", "mobile_theme", "appTheme", "appLanguage", "familyHubTheme", "familyHubLanguage", "pwaInstallDismissed", "appSettings"
@@ -596,7 +596,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
   }
   async function refreshCurrentUser() {
     try {
-      const response = await fetch("/api/auth/me", { cache: "no-store", credentials: "include" });
+      const response = await fetch("/api/auth/me", { cache: 'no-store', credentials: "include" });
       const result = await readJsonSafe<{ user?: AuthUser; member?: Member }>(response);
       if (!response.ok || !result?.user) return null;
       const nextUser = { ...result.user, member: result.member || result.user.member };
@@ -887,7 +887,7 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
         notes: activeMember?.notes || ""
       };
 
-      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const result = await readJsonSafe<{ user?: AuthUser; error?: string }>(response);
       
       if (response.ok && result?.user) {
@@ -906,7 +906,7 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
 
   async function handleAvatarDelete() {
     if (!await ui.confirm("Xóa ảnh đại diện?", "Bạn có chắc chắn muốn xóa ảnh đại diện hiện tại?")) return;
-    const response = await fetch("/api/auth/avatar", { method: "DELETE" });
+    const response = await fetch("/api/auth/avatar", { cache: 'no-store',  method: "DELETE" });
     if (response.ok) {
       savedUser({ ...user, avatar: "", member: activeMember ? { ...activeMember, avatar: "", avatarUrl: "" } : undefined });
       await refreshCurrentUser();
@@ -925,7 +925,7 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
       ui.toast("Đang xử lý ảnh...", "success");
       const base64 = await compressImage(file);
       const payload = { coverUrl: base64, displayName: displayName || "Quản trị viên", name: activeMember?.name || displayName || "Quản trị viên", nickname: activeMember?.nickname || "", phone: activeMember?.phone || "", birthday: activeMember?.birthday || null, gender: activeMember?.gender || "", notes: activeMember?.notes || "" };
-      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const result = await readJsonSafe<{ user?: AuthUser; member?: Member; error?: string }>(response);
       if (response.ok && result?.user) {
         const nextMember = result.member || activeMember;
@@ -945,7 +945,7 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
     if (!await ui.confirm("Xóa ảnh bìa?", "Bạn có chắc chắn muốn xóa ảnh bìa hiện tại?")) return;
     try {
       const payload = { coverUrl: "", displayName: displayName || "Quản trị viên", name: activeMember?.name || displayName || "Quản trị viên", nickname: activeMember?.nickname || "", phone: activeMember?.phone || "", birthday: activeMember?.birthday || null, gender: activeMember?.gender || "", notes: activeMember?.notes || "" };
-      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (response.ok) {
         const nextUser = { ...user, coverUrl: "", member: activeMember ? { ...activeMember, coverUrl: "" } : undefined };
         savedUser(nextUser as any);
@@ -1051,7 +1051,7 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
                     });
                   }} className="w-full py-3 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition">Bật thông báo</button>
                   <button onClick={() => {
-                    fetch('/api/push/send-test', { method: 'POST' })
+                    fetch('/api/push/send-test', { cache: 'no-store',  method: 'POST' })
                       .then(res => res.json())
                       .then(data => alert(data.success ? 'Đã gửi thông báo thử nghiệm' : 'Lỗi: ' + data.error))
                       .catch(() => alert('Lỗi khi gửi test'));
@@ -1167,14 +1167,14 @@ function SystemAdminProfile({ user, openChangePassword, logout, savedUser, refre
   const [editOpen, setEditOpen] = useState(true);
   const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
   useEffect(() => {
-    void fetch("/api/auth/profile").then(async response => {
+    void fetch("/api/auth/profile", { cache: 'no-store' }).then(async response => {
       const result = await readJsonSafe<{ user?: ProfileUser }>(response);
       if (response.ok && result?.user) setForm({ displayName: result.user.displayName || "Quản trị viên", email: result.user.email || "", avatar: result.user.avatar || "" });
     }).catch(() => undefined);
   }, []);
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setError(""); setMessage("");
-    const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    const response = await fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
     const result = await readJsonSafe<{ error?: string; user?: AuthUser }>(response);
     if (!response.ok || !result?.user) return setError(result?.error || "Không thể lưu hồ sơ tài khoản.");
     savedUser(result.user); await refreshCurrentUser(); setMessage("Đã lưu hồ sơ tài khoản hệ thống.");
@@ -1216,7 +1216,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setLoading(true); setError("");
     try {
-      const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, remember }) });
+      const response = await fetch("/api/auth/login", { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, remember }) });
       const result = await readJsonSafe<{ error?: string; user?: AuthUser; member?: Member }>(response);
       if (!response.ok || !result?.user) {
         addAppLog("ERROR", `Login failed: ${result?.error || "Unknown Error"}`, { screen: "login" });
@@ -1250,7 +1250,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser, nextScreen?: Scree
   async function requestPasswordReset(event: React.FormEvent) {
     event.preventDefault(); setLoading(true); setError(""); setForgotMessage("");
     try {
-      const response = await fetch("/api/auth/password-reset-request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usernameOrEmail: forgotAccount }) });
+      const response = await fetch("/api/auth/password-reset-request", { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usernameOrEmail: forgotAccount }) });
       const result = await readJsonSafe<{ error?: string; message?: string }>(response);
       if (!response.ok || !result?.message) throw new Error(result?.error || "Không thể gửi yêu cầu. Vui lòng thử lại.");
       setForgotMessage(result.message);
@@ -1468,7 +1468,7 @@ function ChangePasswordSheet({ close, saved }: { close: () => void; saved: (user
     if (newPassword === currentPassword) return setError("Mật khẩu mới không được trùng mật khẩu hiện tại.");
     setLoading(true);
     try {
-      const response = await fetch("/api/auth/change-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) });
+      const response = await fetch("/api/auth/change-password", { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) });
       const result = await readJsonSafe<{ error?: string; user?: AuthUser }>(response);
       if (!response.ok || !result?.user) throw new Error(result?.error || "Không thể đổi mật khẩu. Vui lòng thử lại.");
       addAccountPasswordNotification(result.user.id, "Bạn đã đổi mật khẩu thành công.", { id: result.user.id, name: result.user.displayName, avatar: result.user.avatar });
@@ -1518,7 +1518,7 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
   const inputClass = "w-full bg-transparent outline-none text-right placeholder:text-slate-300 dark:placeholder:text-slate-600";
   
   useEffect(() => { 
-    void fetch("/api/auth/profile").then(async response => { 
+    void fetch("/api/auth/profile", { cache: 'no-store' }).then(async response => { 
       const result = await readJsonSafe<{ error?: string; user?: ProfileUser }>(response); 
       if (!response.ok || !result?.user) throw new Error(result?.error || "Không thể tải hồ sơ."); 
       setProfile(result.user); 
@@ -1539,7 +1539,7 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
     }).catch(reason => setError(reason instanceof Error ? reason.message : "Không thể tải hồ sơ."));
     
     if (user.role === "full_access") {
-      void fetch("/api/members").then(async response => {
+      void fetch("/api/members", { cache: 'no-store' }).then(async response => {
         const json = await response.json();
         const members = Array.isArray(json) ? json : (json.data ?? []);
         if (response.ok) setMembers(members);
@@ -1550,7 +1550,7 @@ export function ProfileSheet({ user, close, saved, profileSaved, refreshCurrentU
   async function submit(event?: React.FormEvent | React.MouseEvent) {
     if (event) event.preventDefault(); setLoading(true); setError(""); setSuccess("");
     try {
-      const response = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(profileForm) });
+      const response = await fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(profileForm) });
       const result = await readJsonSafe<{ error?: string; profile?: ProfileUser; user?: AuthUser }>(response);
       if (!response.ok || !result?.profile || !result.user) throw new Error(result?.error || "Không thể cập nhật hồ sơ.");
       const refreshedUser = await refreshCurrentUser?.();
@@ -1688,14 +1688,14 @@ export function AccountSheet({ user, close, saved, openActivity, refreshCurrentU
     setLoading(true);
     try {
       if (usernameChanged) {
-        const res = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username }) });
+        const res = await fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username }) });
         const resData = await readJsonSafe<{ error?: string; user?: AuthUser; profile?: any }>(res);
         if (!res.ok) throw new Error(resData?.error || "Không thể đổi tên đăng nhập. Có thể đã bị trùng.");
         updatedUser = { ...updatedUser, username: resData?.profile?.username || username };
       }
 
       if (passwordChanged) {
-        const pwRes = await fetch("/api/auth/change-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) });
+        const pwRes = await fetch("/api/auth/change-password", { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) });
         const pwData = await readJsonSafe<{ error?: string; user?: AuthUser }>(pwRes);
         if (!pwRes.ok) throw new Error(pwData?.error || "Không thể đổi mật khẩu.");
         updatedUser = pwData?.user || updatedUser;
@@ -1758,7 +1758,7 @@ export function MobileWorkSheet({ member, close }: { member?: Member | null; clo
   const [data, setData] = useState<any[] | null>(null);
   useEffect(() => {
     if (!member) { setData([]); return; }
-    fetch(`/api/member-jobs?memberId=${encodeURIComponent(member.id)}`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => setData(res?.data || [])).catch(() => setData([]));
+    fetch(`/api/member-jobs?memberId=${encodeURIComponent(member.id)}`, { cache: 'no-store' }).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => setData(res?.data || [])).catch(() => setData([]));
   }, [member]);
 
   return <FullScreenMobileSheet title="Công việc" close={close}>
@@ -1782,7 +1782,7 @@ export function MobileBankSheet({ member, close, user }: { member?: Member | nul
   const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
 
   const load = useCallback(() => {
-    fetch(`/api/bank-accounts`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => {
+    fetch(`/api/bank-accounts`, { cache: 'no-store' }).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => {
       const all = res?.data || [];
       setData(member ? all.filter((x: any) => x.memberId === member.id) : all);
     }).catch(() => setData([]));
@@ -1805,7 +1805,7 @@ export function MobileBankSheet({ member, close, user }: { member?: Member | nul
   const remove = async (id: string) => {
     if (!await ui.confirm("Xóa thẻ ngân hàng?", "Bạn có chắc chắn muốn xóa thẻ này?")) return;
     setLoading(true);
-    const response = await fetch(`/api/bank-accounts/${id}`, { method: "DELETE" });
+    const response = await fetch(`/api/bank-accounts/${id}`, { cache: 'no-store',  method: "DELETE" });
     setLoading(false);
     if (!response.ok) return ui.toast("Lỗi khi xóa", "error");
     ui.toast("Đã xóa", "success");
@@ -1931,7 +1931,7 @@ export function MobileSimSheet({ member, close }: { member?: Member | null; clos
   };
 
   const load = useCallback(() => {
-    fetch(`/api/member-sims`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => {
+    fetch(`/api/member-sims`, { cache: 'no-store' }).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => {
       const all = res?.data || [];
       const userSims = member ? all.filter((x: any) => x.memberId === member.id || x.member_id === member.id) : all;
       const map = new Map<string, any>();
@@ -1961,7 +1961,7 @@ export function MobileSimSheet({ member, close }: { member?: Member | null; clos
 
   const loadPayments = useCallback(() => {
     if (selected?.id) {
-      fetch(`/api/sim-payments?simId=${encodeURIComponent(selected.id)}`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => setPayments(res?.data || [])).catch(() => setPayments([]));
+      fetch(`/api/sim-payments?simId=${encodeURIComponent(selected.id)}`, { cache: 'no-store' }).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => setPayments(res?.data || [])).catch(() => setPayments([]));
     } else {
       setPayments([]);
     }
@@ -1969,7 +1969,7 @@ export function MobileSimSheet({ member, close }: { member?: Member | null; clos
 
   const loadPlanHistory = useCallback(() => {
     if (selected?.id) {
-      fetch(`/api/member-sims/${selected.id}/history`).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => setPlanHistory(res?.data || [])).catch(() => setPlanHistory([]));
+      fetch(`/api/member-sims/${selected.id}/history`, { cache: 'no-store' }).then(r => readJsonSafe<{ data?: any[] }>(r)).then(res => setPlanHistory(res?.data || [])).catch(() => setPlanHistory([]));
     } else {
       setPlanHistory([]);
     }
@@ -2003,7 +2003,7 @@ export function MobileSimSheet({ member, close }: { member?: Member | null; clos
     const method = isNew ? "POST" : "PUT";
     
     let submitPayload = { ...payload };
-    const response = await fetch("/api/sim-payments", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(submitPayload) });
+    const response = await fetch("/api/sim-payments", { cache: 'no-store',  method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(submitPayload) });
     const result = await readJsonSafe<{ ok?: boolean; error?: string }>(response);
     setLoading(false);
     if (!response.ok || !result?.ok) return setError(result?.error || "Lỗi lưu thanh toán.");
@@ -2020,7 +2020,7 @@ export function MobileSimSheet({ member, close }: { member?: Member | null; clos
     }
     if (!await ui.confirm("Xóa thanh toán?", "Bạn có chắc chắn muốn xóa bản ghi thanh toán này?")) return;
     setLoading(true);
-    const response = await fetch(`/api/sim-payments?id=${paymentId}`, { method: "DELETE" });
+    const response = await fetch(`/api/sim-payments?id=${paymentId}`, { cache: 'no-store',  method: "DELETE" });
     setLoading(false);
     if (!response.ok) return ui.toast("Lỗi khi xóa", "error");
     ui.toast("Đã xóa thanh toán", "success");
@@ -2030,7 +2030,7 @@ export function MobileSimSheet({ member, close }: { member?: Member | null; clos
   const savePlanChange = async (payload: any) => {
     if (!selected?.id) return;
     setLoading(true); setError("");
-    const response = await fetch(`/api/member-sims/${selected.id}/plan-history`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const response = await fetch(`/api/member-sims/${selected.id}/plan-history`, { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const result = await readJsonSafe<{ ok?: boolean; data?: any; error?: string }>(response);
     setLoading(false);
     if (!response.ok || !result?.ok) return setError(result?.error || "Không thể đổi gói.");
@@ -2045,7 +2045,7 @@ export function MobileSimSheet({ member, close }: { member?: Member | null; clos
   const remove = async (id: string) => {
     if (!await ui.confirm("Xóa SIM/Data?", "Bạn có chắc chắn muốn xóa SIM này? (Sẽ không xóa các thanh toán cũ)")) return;
     setLoading(true);
-    const response = await fetch(`/api/member-sims/${id}`, { method: "DELETE" });
+    const response = await fetch(`/api/member-sims/${id}`, { cache: 'no-store',  method: "DELETE" });
     setLoading(false);
     if (!response.ok) return ui.toast("Lỗi khi xóa", "error");
     ui.toast("Đã xóa SIM", "success");
@@ -2056,7 +2056,7 @@ export function MobileSimSheet({ member, close }: { member?: Member | null; clos
   const syncFromTransactions = async () => {
     if (!selected?.id) return;
     setLoading(true);
-    const response = await fetch(`/api/member-sims/${selected.id}/sync`, { method: "POST" });
+    const response = await fetch(`/api/member-sims/${selected.id}/sync`, { cache: 'no-store',  method: "POST" });
     const result = await readJsonSafe<{ ok?: boolean; error?: string }>(response);
     setLoading(false);
     if (!response.ok || !result?.ok) return ui.toast(result?.error || "Lỗi đồng bộ", "error");
@@ -2399,13 +2399,13 @@ function UserEditor({ user, close, saved, presetMemberId = "" }: { user: Managed
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ username: existing?.username ?? "", email: existing?.email ?? "", displayName: existing?.displayName ?? "", avatar: existing?.avatar ?? "", role: existing?.role ?? "self_only" as UserRole, memberId: existing?.memberId ?? presetMemberId, active: existing?.active ?? true, password: "" });
   const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
-  useEffect(() => { void fetch("/api/members").then(async response => { const json = await response.json(); const members = Array.isArray(json) ? json : (json.data ?? []); if (response.ok) setMembers(members); }); }, []);
+  useEffect(() => { void fetch("/api/members", { cache: 'no-store' }).then(async response => { const json = await response.json(); const members = Array.isArray(json) ? json : (json.data ?? []); if (response.ok) setMembers(members); }); }, []);
   const set = (key: string, value: string | boolean) => setForm(current => ({ ...current, [key]: value }));
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true); setError(""); setSuccess("");
     try {
-      const response = await fetch("/api/users", { method: existing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, id: existing?.id }) });
+      const response = await fetch("/api/users", { cache: 'no-store',  method: existing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, id: existing?.id }) });
       const result = await readJsonSafe<{ ok?: boolean; error?: string; message?: string }>(response);
       console.log("CREATE USER STATUS", response.status, result);
       if (!response.ok) return setError(result?.error || result?.message || "Không thể tạo user.");
@@ -2450,7 +2450,7 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
       ? { ...account, username: form.username, role: form.role, active: form.active, memberId: member.id } 
       : { username: form.username, role: form.role, active: true, memberId: member.id, password: form.newPassword, displayName: member.nickname || member.name };
     
-    const response = await fetch("/api/users", { 
+    const response = await fetch("/api/users", { cache: 'no-store',  
       method: account ? "PUT" : "POST", 
       headers: { "Content-Type": "application/json" }, 
       body: JSON.stringify(payload) 
@@ -2467,7 +2467,7 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
     if (form.newPassword.length < 6) return setError("Mật khẩu mới cần ít nhất 6 ký tự.");
     if (form.newPassword !== form.confirmPassword) return setError("Nhập lại mật khẩu mới chưa khớp.");
     
-    const response = await fetch("/api/auth/change-password", { 
+    const response = await fetch("/api/auth/change-password", { cache: 'no-store',  
       method: "POST", 
       headers: { "Content-Type": "application/json" }, 
       body: JSON.stringify({ newPassword: form.newPassword }) 
@@ -2485,7 +2485,7 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
     if (!account || !canManage) return;
     if (form.newPassword.length < 6) return setError("Mật khẩu mới cần ít nhất 6 ký tự.");
     if (form.newPassword !== form.confirmPassword) return setError("Nhập lại mật khẩu mới chưa khớp.");
-    const response = await fetch("/api/users/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: account.id, password: form.newPassword }) });
+    const response = await fetch("/api/users/reset-password", { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: account.id, password: form.newPassword }) });
     const result = await readJsonSafe<{ error?: string }>(response);
     if (!response.ok) return setError(result?.error || "Không thể reset mật khẩu.");
     addAccountPasswordNotification(account.id, "Quản trị viên đã đổi mật khẩu tài khoản của bạn.", { id: actor.id, name: actor.displayName, avatar: actor.avatar });
@@ -2497,7 +2497,7 @@ function LoginAccountTab({ account, member, actor, canManage, isCurrent, savedUs
 
   async function deleteAccount() {
     if (!account || !canManage || account.isSystem || !await ui.confirm("Xóa liên kết tài khoản?", `Xác nhận xóa liên kết tài khoản ${account.username}?`)) return;
-    const response = await fetch(`/api/users?id=${account.id}`, { method: "DELETE" });
+    const response = await fetch(`/api/users?id=${account.id}`, { cache: 'no-store',  method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
     if (!response.ok) return setError(result?.error || "Không thể xóa tài khoản.");
     setSuccess("Đã xóa liên kết tài khoản.");
@@ -2801,7 +2801,7 @@ const filterClass = "w-full min-w-0 max-w-full rounded-xl border border-[var(--a
 function Dashboard({ data, go, notifications, user }: { data: AppData; go: (s: Screen) => void; notifications: CalendarNotification[]; user: AuthUser }) {
   const [pendingStats, setPendingStats] = useState({ totalPending: 0, pendingThisMonth: 0 });
   useEffect(() => {
-    fetch("/api/card-pending-transactions/all").then(r => r.json()).then(res => {
+    fetch("/api/card-pending-transactions/all", { cache: 'no-store' }).then(r => r.json()).then(res => {
       if (res.ok && res.data) {
         const now = new Date();
         const thisMonth = (date: string) => {
@@ -2937,7 +2937,7 @@ function NotificationsView({ user, notifications, setNotifications, go }: { user
       setPermissionState(permission);
       if (permission === "granted" && "serviceWorker" in navigator) {
         const reg = await navigator.serviceWorker.register("/sw.js");
-        const response = await fetch("/api/vapid-public-key").catch(() => null);
+        const response = await fetch("/api/vapid-public-key", { cache: 'no-store' }).catch(() => null);
         if (response && response.ok) {
           const { publicKey } = await response.json();
           if (publicKey) {
@@ -2948,7 +2948,7 @@ function NotificationsView({ user, notifications, setNotifications, go }: { user
             for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
 
             const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: outputArray });
-            await fetch("/api/push-subscriptions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sub) });
+            await fetch("/api/push-subscriptions", { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sub) });
           }
         }
       }
@@ -2967,7 +2967,7 @@ function NotificationsView({ user, notifications, setNotifications, go }: { user
     localStorage.setItem(key, JSON.stringify(updated));
 
     try {
-      await fetch("/api/notifications/mark-read", { method: "PATCH", headers: { "Content-Type": "application/json" } });
+      await fetch("/api/notifications/mark-read", { cache: 'no-store',  method: "PATCH", headers: { "Content-Type": "application/json" } });
     } catch (e) {}
   };
 
@@ -2982,7 +2982,7 @@ function NotificationsView({ user, notifications, setNotifications, go }: { user
       localStorage.setItem(key, JSON.stringify(updated));
 
       try {
-        await fetch(`/api/notifications/${item.id}/read`, { method: "PATCH", headers: { "Content-Type": "application/json" } });
+        await fetch(`/api/notifications/${item.id}/read`, { cache: 'no-store',  method: "PATCH", headers: { "Content-Type": "application/json" } });
       } catch (e) {}
     }
     if (item.actionUrl) {
@@ -3072,7 +3072,7 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
     if (cachedMembers) {
       return;
     }
-    void fetch("/api/members").then(async response => {
+    void fetch("/api/members", { cache: 'no-store' }).then(async response => {
       const json = await response.json();
       const parsedMembers = (Array.isArray(json) ? json : (json.data ?? [])) as Member[];
       setLocalMembers(current => {
@@ -3098,7 +3098,7 @@ function Members({ data, user, update }: { data: AppData; user: AuthUser; update
   });
 
   async function remove(member: Member) {
-    const response = await fetch(`/api/members?id=${encodeURIComponent(member.id)}`, { method: "DELETE" });
+    const response = await fetch(`/api/members?id=${encodeURIComponent(member.id)}`, { cache: 'no-store',  method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
     if (!response.ok) return setWarning(result?.error || "Không thể ẩn thành viên.");
     update({ ...data, members: data.members.filter(item => item.id !== member.id) });
@@ -3146,11 +3146,11 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
   const notes = data.notes.filter(note => note.memberId === form.id);
   useEffect(() => {
     if (!canManage || !existing) return;
-    void fetch("/api/users").then(async response => { const result = await readJsonSafe<{ users?: ManagedUser[] }>(response); if (response.ok && result?.users) setLinkedUsers(result.users.filter(account => account.memberId === existing.id)); });
+    void fetch("/api/users", { cache: 'no-store' }).then(async response => { const result = await readJsonSafe<{ users?: ManagedUser[] }>(response); if (response.ok && result?.users) setLinkedUsers(result.users.filter(account => account.memberId === existing.id)); });
   }, [canManage, existing?.id]);
   useEffect(() => {
     if (!existing) return;
-    void fetch(`/api/members?id=${existing.id}`).then(async response => {
+    void fetch(`/api/members?id=${existing.id}`, { cache: 'no-store' }).then(async response => {
       const result = await readJsonSafe<{ ok?: boolean; data?: Member }>(response);
       if (response.ok && result?.data) {
         setForm(current => ({ ...current, ...result.data }));
@@ -3163,7 +3163,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
   function cancel() { if (!existing) return close(); setForm(existing); setEditing(false); setError(""); }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const response = await fetch("/api/members", { method: existing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    const response = await fetch("/api/members", { cache: 'no-store',  method: existing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
     const result = await readJsonSafe<{ ok?: boolean; data?: Member; error?: string }>(response);
     if (!response.ok || !result?.ok || !result.data) return setError(result?.error || "Không thể lưu hồ sơ thành viên.");
     saved(result.data); setEditing(false); setError("");
@@ -3171,7 +3171,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
   const linkedAccount = linkedUsers[0] || (form.user ? { ...form.user, avatar: "", mustChangePassword: false } as ManagedUser : personal ? { ...user, email: "", active: true, isSystem: false, createdAt: "", updatedAt: "" } : null);
   const refreshLinkedAccount = () => {
     if (!canManage) return;
-    void fetch("/api/users").then(async response => { const result = await readJsonSafe<{ users?: ManagedUser[] }>(response); if (response.ok && result?.users) setLinkedUsers(result.users.filter(account => account.memberId === form.id)); });
+    void fetch("/api/users", { cache: 'no-store' }).then(async response => { const result = await readJsonSafe<{ users?: ManagedUser[] }>(response); if (response.ok && result?.users) setLinkedUsers(result.users.filter(account => account.memberId === form.id)); });
   };
   const menu: [MemberProfileTab, string][] = [["profile", "Thông tin cá nhân"], ["account", "Tài khoản đăng nhập"], ["work", "Công việc"], ["bank", "Thẻ ngân hàng"], ["bankRaw", "Nội dung gốc ngân hàng"], ["security", "Bảo mật"], ["tasks", "Việc nhà liên quan"], ["events", "Sự kiện liên quan"], ["notes", "Ghi chú"]];
   const profileMenu = menu.flatMap(([value, label]) => value === "bank" ? [[value, label], ["sims", "SIM / Data"]] as [MemberProfileTab, string][] : [[value, label]] as [MemberProfileTab, string][]);
@@ -3310,8 +3310,8 @@ function MemberWorkHistory({ member, user }: { member: Member; user: AuthUser })
   const load = useCallback(async () => {
     setLoading(true); setError("");
     const [response, incomeResponse] = await Promise.all([
-      fetch(`/api/member-jobs?memberId=${encodeURIComponent(member.id)}`, { cache: "no-store" }),
-      fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" }),
+      fetch(`/api/member-jobs?memberId=${encodeURIComponent(member.id)}`, { cache: 'no-store' }),
+      fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: 'no-store' }),
     ]);
     const result = await readJsonSafe<{ ok?: boolean; data?: MemberJob[]; error?: string }>(response);
     const incomeResult = await readJsonSafe<{ ok?: boolean; data?: { allRecords?: IncomeRecord[] }; error?: string }>(incomeResponse);
@@ -3323,7 +3323,7 @@ function MemberWorkHistory({ member, user }: { member: Member; user: AuthUser })
   useEffect(() => { queueMicrotask(() => void load()); }, [load]);
   async function remove(job: MemberJob) {
     if (!await ui.confirm("Xóa công việc?", `Xóa công việc ${job.title}?`)) return;
-    const response = await fetch(`/api/member-jobs?id=${encodeURIComponent(job.id)}`, { method: "DELETE" });
+    const response = await fetch(`/api/member-jobs?id=${encodeURIComponent(job.id)}`, { cache: 'no-store',  method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
     if (!response.ok) return ui.toast(result?.error || "Không thể xóa công việc.", "error");
     setJobs(current => current.filter(item => item.id !== job.id));
@@ -3441,7 +3441,7 @@ function FinanceOverview() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/finance-overview?year=${yearStr}`, { cache: "no-store" });
+      const response = await fetch(`/api/finance-overview?year=${yearStr}`, { cache: 'no-store' });
       const result = await readJsonSafe<any>(response);
       if (response.ok) {
         setData(result?.data || result || {});
@@ -3490,7 +3490,7 @@ function FinanceOverview() {
   async function saveFinanceSettings() {
     setSavingSettings(true);
     try {
-      const response = await fetch("/api/finance-settings", {
+      const response = await fetch("/api/finance-settings", { cache: 'no-store', 
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3818,7 +3818,7 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
 
   useEffect(() => {
     setLoadingOverview(true);
-    fetch(`/api/finance-overview?year=${year}`)
+    fetch(`/api/finance-overview?year=${year}`, { cache: 'no-store' })
       .then(res => res.json())
       .then(res => {
         setOverviewDataCache(prev => ({ ...prev, [year]: res?.data || res || {} }));
@@ -3828,7 +3828,7 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
   }, [year, refreshTrigger]);
 
   useEffect(() => {
-    fetch("/api/credit-cards/summary", { cache: "no-store" })
+    fetch("/api/credit-cards/summary", { cache: 'no-store' })
       .then(res => res.json())
       .then(res => {
         const payload = res?.data || res || {};
@@ -3843,7 +3843,7 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
 
   const loadIncomes = () => {
     setLoadingIncomes(true);
-    fetch(`/api/incomes?year=${year}`).then(r => r.json()).then(res => {
+    fetch(`/api/incomes?year=${year}`, { cache: 'no-store' }).then(r => r.json()).then(res => {
       const payload = res?.data || res;
       setIncomes(toArray(payload?.allRecords?.length ? payload.allRecords : payload?.records || payload));
       setLoadingIncomes(false);
@@ -4104,7 +4104,7 @@ function MobileTransactionDetail({ item, close, onEdit, onDeleted, data, update 
   useEffect(() => {
     if (!accountId) return;
     const query = memberId ? `?memberId=${encodeURIComponent(memberId)}` : "";
-    void fetch(`/api/bank-accounts${query}`, { cache: "no-store" }).then(async response => {
+    void fetch(`/api/bank-accounts${query}`, { cache: 'no-store' }).then(async response => {
       const result = await readJsonSafe<any>(response);
       if (!response.ok) return;
       const account = toArray<any>(result?.data || result).find(candidate => String(candidate.id) === accountId);
@@ -4227,7 +4227,7 @@ function MobileSavingsList({ data: appData, update, user, refreshTrigger, refres
   const [records, setRecords] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch("/api/savings-records", { cache: "no-store" }).then(async response => {
+    fetch("/api/savings-records", { cache: 'no-store' }).then(async response => {
       const result = await readJsonSafe<any>(response);
       if (!response.ok) throw new Error(result?.error || "Không thể tải tiết kiệm");
       setRecords(toArray(result));
@@ -4289,7 +4289,7 @@ function MobileSavingsDetail({ item, close, onEdit, onDeleted, data, update }: a
     if (!item?.id || String(item.id).startsWith("transaction-") || !await ui.confirm("Xóa khoản tiết kiệm?", `Xóa "${item.description || "khoản tiết kiệm"}"?`)) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/savings-records/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      const res = await fetch(`/api/savings-records/${encodeURIComponent(item.id)}`, { cache: 'no-store',  method: "DELETE" });
       if (!res.ok) throw new Error("Lỗi khi xóa");
       if (data && update) update({ ...data, savingsRecords: toArray(data.savingsRecords).filter((t:any) => t.id !== item.id) });
       ui.toast("Đã xóa", "success");
@@ -4416,7 +4416,7 @@ function MobileInvestmentList({ data: appData, update, user, refreshTrigger, ref
   const [records, setRecords] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch("/api/investments", { cache: "no-store" }).then(async response => {
+    fetch("/api/investments", { cache: 'no-store' }).then(async response => {
       const result = await readJsonSafe<any>(response);
       if (!response.ok) throw new Error(result?.error || "Không thể tải đầu tư");
       setRecords(toArray(result));
@@ -4478,7 +4478,7 @@ function MobileInvestmentDetail({ item, close, onEdit, onDeleted, data, update }
     if (!item?.id || !await ui.confirm("Xóa giao dịch đầu tư?", `Xóa giao dịch ${item.stockCode || "này"}?`)) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/investments/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+      const res = await fetch(`/api/investments/${encodeURIComponent(item.id)}`, { cache: 'no-store',  method: "DELETE" });
       if (!res.ok) throw new Error("Lỗi khi xóa");
       if (data && update) update({ ...data, investments: toArray(data.investments).filter((t:any) => t.id !== item.id) });
       ui.toast("Đã xóa", "success");
@@ -4610,7 +4610,7 @@ function MobileFinanceSettingsSheet({ close, data, onSaved }: { close: () => voi
   const save = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/finance-settings", {
+      const response = await fetch("/api/finance-settings", { cache: 'no-store', 
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -4707,7 +4707,7 @@ function InvestmentSheet() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/investments", { cache: "no-store" });
+      const response = await fetch("/api/investments", { cache: 'no-store' });
       const result = await readJsonSafe<any>(response);
       if (!response.ok) {
         setData([]);
@@ -4825,7 +4825,7 @@ function SavingsSheet() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/savings-records`, { cache: "no-store" });
+      const response = await fetch(`/api/savings-records`, { cache: 'no-store' });
       const result = await readJsonSafe<any>(response);
       if (!response.ok) {
         setError(result?.error || "Không thể tải dữ liệu tiết kiệm.");
@@ -4993,7 +4993,7 @@ function normalizeIncomeApiData(value: unknown): IncomeApiData {
 }
 async function fetchIncomeApiData(year: string): Promise<IncomeApiData> {
   try {
-    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
+    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: 'no-store' });
     const result = await readJsonSafe<unknown>(response);
     if (!response.ok) {
       if (process.env.NODE_ENV === "development") console.warn("[income] load fallback", { status: response.status, body: result });
@@ -5310,7 +5310,7 @@ function LegacyIncomeSheetManagement() {
   const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
     setLoading(true);
-    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
+    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: 'no-store' });
     const result = await readJsonSafe<{ data?: IncomeApiData; error?: string }>(response);
     if (response.ok && result?.data) setIncomeData(result.data);
     else ui.toast(result?.error || "Không thể tải dữ liệu thu nhập.", "error");
@@ -5324,7 +5324,7 @@ function LegacyIncomeSheetManagement() {
   const maxMonth = Math.max(1, ...monthlyTotals.map(item => item.total));
   async function remove(record: IncomeRecord) {
     if (!await ui.confirm("Xóa dòng thu?", `Xóa dòng thu "${record.name}"?`)) return;
-    const response = await fetch(`/api/incomes?id=${encodeURIComponent(record.id)}`, { method: "DELETE" });
+    const response = await fetch(`/api/incomes?id=${encodeURIComponent(record.id)}`, { cache: 'no-store',  method: "DELETE" });
     if (!response.ok) ui.toast("Không thể xóa dòng thu nhập.", "error");
     void load();
   }
@@ -5373,7 +5373,7 @@ function IncomeRecordForm({ record, members: initialMembers, templates, user, ba
   useEffect(() => {
     let active = true;
     if (isAdmin && otherMember && !fixedMemberId) {
-      fetch("/api/members").then(res => res.json()).then(data => {
+      fetch("/api/members", { cache: 'no-store' }).then(res => res.json()).then(data => {
         if (active && data.ok && Array.isArray(data.data)) setApiMembers(data.data);
       });
     }
@@ -5384,7 +5384,7 @@ function IncomeRecordForm({ record, members: initialMembers, templates, user, ba
   useEffect(() => {
     let active = true;
     if (effectiveMemberId) {
-      fetch(`/api/member-jobs?memberId=${encodeURIComponent(effectiveMemberId)}`)
+      fetch(`/api/member-jobs?memberId=${encodeURIComponent(effectiveMemberId)}`, { cache: 'no-store' })
         .then(res => res.json())
         .then(data => {
           if (active && data.ok && Array.isArray(data.data)) {
@@ -5476,7 +5476,7 @@ function IncomeManagement() {
   const [openMenu, setOpenMenu] = useState("");
   const load = useCallback(async () => {
     setLoading(true);
-    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
+    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: 'no-store' });
     const result = await readJsonSafe<{ data?: IncomeApiData; error?: string }>(response);
     if (response.ok && result?.data) setIncomeData(result.data);
     else ui.toast(result?.error || "Không thể tải dữ liệu thu nhập.", "error");
@@ -5502,7 +5502,7 @@ function IncomeManagement() {
   }
   async function remove(source: IncomeSource) {
     if (!await ui.confirm("Xóa nguồn thu?", `Xóa nguồn thu "${source.name}"?`)) return;
-    const response = await fetch(`/api/incomes?id=${encodeURIComponent(source.id)}`, { method: "DELETE" });
+    const response = await fetch(`/api/incomes?id=${encodeURIComponent(source.id)}`, { cache: 'no-store',  method: "DELETE" });
     if (!response.ok) {
       const result = await readJsonSafe<{ error?: string }>(response);
       ui.toast(result?.error || "Không thể xóa nguồn thu.", "error");
@@ -5556,7 +5556,7 @@ function OldIncomeManagement() {
   const visibleMemberIds = new Set((incomeData?.members || []).filter(member => !hiddenMembers.has(member.id) && (memberFilter === "all" || member.id === memberFilter)).map(member => member.id));
   const load = useCallback(async () => {
     setLoading(true);
-    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: "no-store" });
+    const response = await fetch(`/api/incomes?year=${encodeURIComponent(year)}`, { cache: 'no-store' });
     const result = await readJsonSafe<{ data?: IncomeApiData; error?: string }>(response);
     if (response.ok && result?.data) setIncomeData(result.data);
     else ui.toast(result?.error || "Không thể tải dữ liệu thu nhập.", "error");
@@ -5579,7 +5579,7 @@ function OldIncomeManagement() {
   }
   async function remove(source: IncomeSource) {
     if (!await ui.confirm("Xóa nguồn thu?", `Xóa nguồn thu "${source.name}"?`)) return;
-    const response = await fetch(`/api/incomes?id=${encodeURIComponent(source.id)}`, { method: "DELETE" });
+    const response = await fetch(`/api/incomes?id=${encodeURIComponent(source.id)}`, { cache: 'no-store',  method: "DELETE" });
     if (!response.ok) {
       const result = await readJsonSafe<{ error?: string }>(response);
       ui.toast(result?.error || "Không thể xóa nguồn thu.", "error");
@@ -5672,7 +5672,7 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch("/api/bank-accounts", { cache: "no-store" }).then(async response => {
+    fetch("/api/bank-accounts", { cache: 'no-store' }).then(async response => {
       const json = await response.json().catch(() => null);
       const rows = Array.isArray(json)
         ? json
@@ -5747,7 +5747,7 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
   }, {})).sort((a, b) => b.total - a.total);
   const [pendingStats, setPendingStats] = useState({ totalPending: 0, pendingThisMonth: 0, pendingThisYear: 0 });
   useEffect(() => {
-    fetch("/api/card-pending-transactions/all").then(r => r.json()).then(res => {
+    fetch("/api/card-pending-transactions/all", { cache: 'no-store' }).then(r => r.json()).then(res => {
       if (res.ok && res.data) {
         let total = 0, monthSum = 0, yearSum = 0;
         for (const tx of res.data) {
@@ -5801,7 +5801,7 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
   }
 
   async function remove(record: Transaction) {
-    const response = await fetch(`/api/transactions?id=${encodeURIComponent(record.id)}`, { method: "DELETE" });
+    const response = await fetch(`/api/transactions?id=${encodeURIComponent(record.id)}`, { cache: 'no-store',  method: "DELETE" });
     if (!response.ok) {
       ui.toast("Không thể xóa khoản chi.", "error");
       return;
@@ -5829,7 +5829,7 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
       countsForCardSpending: true,
       counts_for_card_spending: true,
     };
-    const response = await fetch("/api/transactions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) });
+    const response = await fetch("/api/transactions", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) });
     const result = await readJsonSafe<Transaction & { error?: string }>(response);
     if (!response.ok || !result || (result as any).error) {
       ui.toast((result as any)?.error || "Không thể đánh dấu đã hoàn.", "error");
@@ -6023,7 +6023,7 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
     fetch(url).then(async res => {
       const json = await res.json().catch(() => null);
       if ((!res.ok || !json?.ok) && currentMemberId) {
-        const fallback = await fetch("/api/bank-accounts", { cache: "no-store" }).then(async fallbackRes => fallbackRes.json().catch(() => null)).catch(() => null);
+        const fallback = await fetch("/api/bank-accounts", { cache: 'no-store' }).then(async fallbackRes => fallbackRes.json().catch(() => null)).catch(() => null);
         const fallbackRows = Array.isArray(fallback)
           ? fallback
           : Array.isArray(fallback?.data)
@@ -6047,7 +6047,7 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
         setBankAccounts([]);
         return;
       }
-      fetch("/api/bank-accounts", { cache: "no-store" }).then(async res => {
+      fetch("/api/bank-accounts", { cache: 'no-store' }).then(async res => {
         const json = await res.json().catch(() => null);
         const rows = Array.isArray(json)
           ? json
@@ -6067,7 +6067,7 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
       setMemberSims([]);
       return;
     }
-    fetch(`/api/member-sims?memberId=${encodeURIComponent(currentMemberId)}`, { cache: "no-store" }).then(async response => {
+    fetch(`/api/member-sims?memberId=${encodeURIComponent(currentMemberId)}`, { cache: 'no-store' }).then(async response => {
       const json = await response.json().catch(() => null);
       const rows = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : Array.isArray(json?.rows) ? json.rows : [];
       setMemberSims(rows);
@@ -6123,7 +6123,7 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
         note: draft.note
       };
       
-      const response = await fetch("/api/card-pending-transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await fetch("/api/card-pending-transactions", { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!response.ok) {
         const result = await readJsonSafe<{ error?: string }>(response);
         ui.toast(result?.error || "Không thể lưu khoản chi tạm tính.", "error");
@@ -6136,7 +6136,7 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
     }
 
     const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, transactionTime: draft.transactionTime, transaction_time: draft.transactionTime, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: grossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, payment_method: draft.paymentMethod, paymentAccountId: finalPaymentAccountId || undefined, payment_account_id: finalPaymentAccountId || undefined, bankAccountId: finalPaymentAccountId || undefined, bank_account_id: finalPaymentAccountId || undefined, simId: finalSimId || undefined, sim_id: finalSimId || undefined, simTopupApplied: shouldTopupSim, sim_topup_applied: shouldTopupSim, isReimbursable: isReimbursement, is_reimbursable: isReimbursement, reimbursementPerson: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursement_person: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursementStatus, reimbursement_status: reimbursementStatus, reimbursedAmount: reimbursementAmount, reimbursed_amount: reimbursementAmount, reimbursedAt: isReimbursement ? draft.reimbursedAt || null : null, reimbursed_at: isReimbursement ? draft.reimbursedAt || null : null, countsForPersonalExpense: !isReimbursement && !isSavingExpense, counts_for_personal_expense: !isReimbursement && !isSavingExpense, countsForCardSpending: isReimbursement || !isSavingExpense, counts_for_card_spending: isReimbursement || !isSavingExpense } as Transaction & { simTopupApplied: boolean; sim_topup_applied: boolean; reimbursementPerson?: string | null; reimbursementStatus?: string; reimbursedAmount?: number };
-    const response = await fetch("/api/transactions", { method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
+    const response = await fetch("/api/transactions", { cache: 'no-store',  method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
     if (!response.ok) {
       const result = await readJsonSafe<{ error?: string }>(response);
       ui.toast(result?.error || "Không thể lưu khoản chi.", "error");
@@ -6273,7 +6273,7 @@ function ExpenseDetail({ record, close, edit, remove }: { record: Transaction; c
   
   useEffect(() => {
     if (paymentAccountId) {
-      fetch(`/api/bank-accounts?memberId=${record.memberId}`).then(r => r.json()).then(data => {
+      fetch(`/api/bank-accounts?memberId=${record.memberId}`, { cache: 'no-store' }).then(r => r.json()).then(data => {
         const rows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.rows) ? data.rows : [];
         const acc = rows.find((b: any) => String(b.id) === String(paymentAccountId));
         if (acc) setBankAccount(acc);
@@ -6283,7 +6283,7 @@ function ExpenseDetail({ record, close, edit, remove }: { record: Transaction; c
 
   useEffect(() => {
     if (!simId) { setLinkedSim(null); return; }
-    fetch(`/api/member-sims?memberId=${record.memberId}`).then(r => r.json()).then(data => {
+    fetch(`/api/member-sims?memberId=${record.memberId}`, { cache: 'no-store' }).then(r => r.json()).then(data => {
       const rows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : Array.isArray(data?.rows) ? data.rows : [];
       const found = rows.find((sim: MemberSim) => String(sim.id) === String(simId));
       setLinkedSim(found || null);
@@ -6385,7 +6385,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
     }
     setLoading(true);
     setError("");
-    const response = await fetch(`/api/bank-accounts?memberId=${encodeURIComponent(member.id)}`, { cache: "no-store" });
+    const response = await fetch(`/api/bank-accounts?memberId=${encodeURIComponent(member.id)}`, { cache: 'no-store' });
     const result = await readJsonSafe<{ ok?: boolean; data?: BankAccount[]; error?: string }>(response);
     setLoading(false);
     if (!response.ok || !result?.ok) return setError(result?.error || "Không thể tải thẻ ngân hàng. Vui lòng thử lại.");
@@ -6404,8 +6404,8 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
     setRewardsLoading(true);
     try {
       const [accountRes, rewardsRes] = await Promise.all([
-        fetch(`/api/bank-accounts?id=${account.id}`),
-        fetch(`/api/bank-card-rewards?bankAccountId=${account.id}`)
+        fetch(`/api/bank-accounts?id=${account.id}`, { cache: 'no-store' }),
+        fetch(`/api/bank-card-rewards?bankAccountId=${account.id}`, { cache: 'no-store' })
       ]);
       const accountJson = await accountRes.json();
       const rewardsJson = await rewardsRes.json();
@@ -6467,7 +6467,7 @@ function MemberBankAccounts({ member, user }: { member: Member; user: AuthUser }
 
   async function remove(account: BankAccount) {
     if (!await ui.confirm("Xóa thẻ/tài khoản?", `Xóa thẻ/tài khoản ${account.bankName}?`)) return false;
-    const response = await fetch(`/api/bank-accounts/${account.id}`, { method: "DELETE" });
+    const response = await fetch(`/api/bank-accounts/${account.id}`, { cache: 'no-store',  method: "DELETE" });
     const result = await readJsonSafe<{ error?: string }>(response);
     if (!response.ok) {
       ui.toast(result?.error || "Không thể xóa thẻ ngân hàng.", "error");
@@ -6564,7 +6564,7 @@ function MemberBankRawNotes({ member, user }: { member: Member; user: AuthUser }
   const [extracting, setExtracting] = useState<BankRawNote | null>(null);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
-    const [noteResponse, accountResponse] = await Promise.all([fetch("/api/bank-raw-notes", { cache: "no-store" }), fetch("/api/bank-accounts", { cache: "no-store" })]);
+    const [noteResponse, accountResponse] = await Promise.all([fetch("/api/bank-raw-notes", { cache: 'no-store' }), fetch("/api/bank-accounts", { cache: 'no-store' })]);
     const noteResult = await readJsonSafe<{ ok?: boolean; data?: BankRawNote[]; error?: string }>(noteResponse);
     const accountResult = await readJsonSafe<{ ok?: boolean; data?: BankAccount[] }>(accountResponse);
     if (!noteResponse.ok || !noteResult?.ok) return setError(noteResult?.error || "Không thể tải nội dung gốc ngân hàng.");
@@ -6582,7 +6582,7 @@ function MemberBankRawNotes({ member, user }: { member: Member; user: AuthUser }
   }
   async function remove(note: BankRawNote) {
     if (!await ui.confirm("Xóa nội dung gốc?", `Xóa nội dung "${note.title}"?`)) return;
-    const response = await fetch(`/api/bank-raw-notes/${note.id}`, { method: "DELETE" });
+    const response = await fetch(`/api/bank-raw-notes/${note.id}`, { cache: 'no-store',  method: "DELETE" });
     if (!response.ok) return ui.toast("Không thể xóa nội dung gốc.", "error");
     setNotes(current => current.filter(item => item.id !== note.id));
     ui.toast("Đã xóa nội dung gốc");
@@ -7151,8 +7151,8 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
     setCardStatsLoading(true);
     try {
       const [statsResponse, rewardsResponse] = await Promise.all([
-        fetch(`/api/bank-accounts/${encodeURIComponent(account.id)}/stats?year=${statsYear}`, { cache: "no-store" }),
-        fetch(`/api/card-rewards?bank_account_id=${encodeURIComponent(account.id)}&year=${statsYear}`, { cache: "no-store" })
+        fetch(`/api/bank-accounts/${encodeURIComponent(account.id)}/stats?year=${statsYear}`, { cache: 'no-store' }),
+        fetch(`/api/card-rewards?bank_account_id=${encodeURIComponent(account.id)}&year=${statsYear}`, { cache: 'no-store' })
       ]);
       const statsResult = await readJsonSafe<{ ok?: boolean; data?: CardYearStats; error?: string }>(statsResponse);
       const rewardsResult = await readJsonSafe<{ ok?: boolean; data?: CardReward[]; error?: string }>(rewardsResponse);
@@ -7219,7 +7219,7 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
 
   async function deleteCardReward(reward: CardReward) {
     if (!window.confirm("Bạn có chắc muốn xóa khoản hoàn tiền/điểm thưởng này không?")) return;
-    const response = await fetch(`/api/card-rewards/${reward.id}`, { method: "DELETE" });
+    const response = await fetch(`/api/card-rewards/${reward.id}`, { cache: 'no-store',  method: "DELETE" });
     const result = await readJsonSafe<{ ok?: boolean; error?: string }>(response);
     if (!response.ok || result?.ok === false) {
       ui.toast(result?.error || "Không thể xóa hoàn tiền/điểm thưởng.", "error");
@@ -7529,7 +7529,7 @@ export function BankAccountDetail({ account, memberName: owner, close, loading =
                           const updatedForm = { ...account, note: updatedNote };
                           
                           // Save to DB immediately
-                          const response = await fetch(`/api/bank-accounts/${account.id}`, {
+                          const response = await fetch(`/api/bank-accounts/${account.id}`, { cache: 'no-store', 
                             method: "PUT",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify(updatedForm)
@@ -7823,8 +7823,8 @@ function MobileStats({ data, user }: { data: AppData; user: AuthUser }) {
   useEffect(() => {
     setLoadingIncomes(true);
     Promise.all([
-      fetch(`/api/incomes?year=${selectedYear}`).then(r => r.json()),
-      fetch(`/api/incomes?year=${selectedYear - 1}`).then(r => r.json())
+      fetch(`/api/incomes?year=${selectedYear}`, { cache: 'no-store' }).then(r => r.json()),
+      fetch(`/api/incomes?year=${selectedYear - 1}`, { cache: 'no-store' }).then(r => r.json())
     ]).then(([res1, res2]) => {
       const p1 = res1?.data || res1;
       const p2 = res2?.data || res2;
@@ -8326,7 +8326,7 @@ function MobileSystemScreen({ go, user }: { go: (s: Screen) => void; user: any }
     setPermissionsLoading(true);
     setPermissionError("");
     try {
-      const res = await fetch("/api/members");
+      const res = await fetch("/api/members", { cache: 'no-store' });
       const result = await readJsonSafe<{ ok?: boolean; data?: Member[] }>(res);
       if (res.ok && result?.ok && result.data) setMembers(result.data);
     } catch {
@@ -8351,7 +8351,7 @@ function MobileSystemScreen({ go, user }: { go: (s: Screen) => void; user: any }
     setPermissionsLoading(true);
     setPermissionError("");
     try {
-      const response = await fetch(`/api/member-permissions/${encodeURIComponent(editingMember.id)}`, {
+      const response = await fetch(`/api/member-permissions/${encodeURIComponent(editingMember.id)}`, { cache: 'no-store', 
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(permissionDraft),
@@ -8760,8 +8760,8 @@ function Settings({ user, onLogout, openProfile, openChangePassword, language, s
     return () => window.removeEventListener("family-hub:system-status", refresh);
   }, []);
   useEffect(() => { if (user.role === "full_access") { void loadUsers(); void loadResetRequests(); } }, [user.role]);
-  async function loadUsers() { const response = await fetch("/api/users"); const result = await readJsonSafe<{ users?: ManagedUser[] }>(response); if (response.ok && result?.users) setUsers(result.users); }
-  async function loadResetRequests() { const response = await fetch("/api/users/password-reset-requests"); const result = await readJsonSafe<{ requests?: PasswordResetRequest[] }>(response); if (response.ok && result?.requests) setResetRequests(result.requests); }
+  async function loadUsers() { const response = await fetch("/api/users", { cache: 'no-store' }); const result = await readJsonSafe<{ users?: ManagedUser[] }>(response); if (response.ok && result?.users) setUsers(result.users); }
+  async function loadResetRequests() { const response = await fetch("/api/users/password-reset-requests", { cache: 'no-store' }); const result = await readJsonSafe<{ requests?: PasswordResetRequest[] }>(response); if (response.ok && result?.requests) setResetRequests(result.requests); }
   async function checkConnection() {
     setChecking(true); setSystemStatus(await dataService.checkConnection()); setChecking(false);
   }
@@ -8787,9 +8787,9 @@ function Settings({ user, onLogout, openProfile, openChangePassword, language, s
     updateData(dataService.reset());
     ui.toast("Đã reset dữ liệu.");
   }
-  async function resetPassword(target: ManagedUser) { const password = prompt(`Nhập mật khẩu mới cho ${target.username} (ít nhất 6 ký tự):`); if (!password || !await ui.confirm("Reset mật khẩu?", `Reset mật khẩu cho ${target.username}?`)) return; const response = await fetch("/api/users/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: target.id, password }) }); const result = await readJsonSafe<{ error?: string }>(response); ui.toast(response.ok ? "Đã reset mật khẩu." : result?.error || "Không thể reset mật khẩu.", response.ok ? "success" : "error"); void loadUsers(); }
-  async function handleResetRequest(request: PasswordResetRequest) { const password = prompt(`Nhập mật khẩu tạm mới cho ${request.username} (ít nhất 6 ký tự):`); if (!password || !await ui.confirm("Đặt mật khẩu tạm?", `Đặt mật khẩu tạm cho ${request.username}?`)) return; const response = await fetch("/api/users/password-reset-requests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: request.id, password }) }); const result = await readJsonSafe<{ error?: string }>(response); ui.toast(response.ok ? "Đã đặt mật khẩu tạm. User phải đổi mật khẩu sau khi đăng nhập." : result?.error || "Không thể đặt mật khẩu tạm.", response.ok ? "success" : "error"); void loadResetRequests(); void loadUsers(); }
-  async function deleteUser(target: ManagedUser) { if (!await ui.confirm("Xóa tài khoản?", `Xóa tài khoản ${target.username}?`)) return; const response = await fetch(`/api/users?id=${target.id}`, { method: "DELETE" }); const result = await readJsonSafe<{ error?: string }>(response); ui.toast(response.ok ? "Đã xóa tài khoản." : result?.error || "Không thể xóa tài khoản.", response.ok ? "success" : "error"); void loadUsers(); }
+  async function resetPassword(target: ManagedUser) { const password = prompt(`Nhập mật khẩu mới cho ${target.username} (ít nhất 6 ký tự):`); if (!password || !await ui.confirm("Reset mật khẩu?", `Reset mật khẩu cho ${target.username}?`)) return; const response = await fetch("/api/users/reset-password", { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: target.id, password }) }); const result = await readJsonSafe<{ error?: string }>(response); ui.toast(response.ok ? "Đã reset mật khẩu." : result?.error || "Không thể reset mật khẩu.", response.ok ? "success" : "error"); void loadUsers(); }
+  async function handleResetRequest(request: PasswordResetRequest) { const password = prompt(`Nhập mật khẩu tạm mới cho ${request.username} (ít nhất 6 ký tự):`); if (!password || !await ui.confirm("Đặt mật khẩu tạm?", `Đặt mật khẩu tạm cho ${request.username}?`)) return; const response = await fetch("/api/users/password-reset-requests", { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: request.id, password }) }); const result = await readJsonSafe<{ error?: string }>(response); ui.toast(response.ok ? "Đã đặt mật khẩu tạm. User phải đổi mật khẩu sau khi đăng nhập." : result?.error || "Không thể đặt mật khẩu tạm.", response.ok ? "success" : "error"); void loadResetRequests(); void loadUsers(); }
+  async function deleteUser(target: ManagedUser) { if (!await ui.confirm("Xóa tài khoản?", `Xóa tài khoản ${target.username}?`)) return; const response = await fetch(`/api/users?id=${target.id}`, { cache: 'no-store',  method: "DELETE" }); const result = await readJsonSafe<{ error?: string }>(response); ui.toast(response.ok ? "Đã xóa tài khoản." : result?.error || "Không thể xóa tài khoản.", response.ok ? "success" : "error"); void loadUsers(); }
   return <div className="max-w-2xl">{user.mustChangePassword && <Card className="mb-4 border-orange-200 bg-orange-50 dark:bg-orange-400/10"><b className="text-orange-600">Bạn đang dùng mật khẩu mặc định hoặc mật khẩu vừa được reset.</b><p className="mt-1 text-sm text-slate-500 dark:text-slate-300">Hãy đổi mật khẩu để bảo vệ tài khoản.</p><button onClick={openChangePassword} className="mt-3 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white">Đổi mật khẩu</button></Card>}<SectionTitle label="Tài khoản" /><Card className="flex items-center gap-3"><div className="min-w-0 flex-1"><b>{user.displayName}</b><p className="text-xs text-slate-400">{accessLabel(user.role)}</p></div><button onClick={openProfile} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-bold text-rose-500">Hồ sơ cá nhân</button><button onClick={onLogout} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-bold text-rose-500">Đăng xuất</button></Card>{user.role === "full_access" && <><SectionTitle label="Yêu cầu đặt lại mật khẩu" /><div className="space-y-3">{resetRequests.length ? resetRequests.map(request => <Card key={request.id} className="flex items-center justify-between gap-3"><div className="min-w-0"><b>{request.displayName}</b><p className="text-xs text-slate-400">{request.username} · {accessLabel(request.role)}</p><p className="mt-1 text-xs text-slate-400">{new Date(request.requestedAt).toLocaleString("vi-VN")}</p></div><button onClick={() => handleResetRequest(request)} className="rounded-xl bg-orange-500 px-3 py-2 text-xs font-bold text-white">Đặt mật khẩu tạm</button></Card>) : <Card className="text-sm text-slate-400">Không có yêu cầu đang chờ.</Card>}</div><SectionTitle label="Quản lý tài khoản" action="Thêm user" onClick={() => setEditingUser("new")} /><div className="space-y-3">{users.map(account => <Card key={account.id} className="flex items-center justify-between gap-3"><div className="min-w-0"><b>{account.displayName}</b><p className="text-xs text-slate-400">{account.username} · {accessLabel(account.role)} · {account.active ? "Đang hoạt động" : "Đã tắt"}</p></div><div className="flex gap-1"><EditButton onClick={() => setEditingUser(account)} /><button onClick={() => resetPassword(account)} className="rounded-xl px-2 py-2 text-xs font-bold text-orange-500">Reset</button>{!account.isSystem && <button onClick={() => deleteUser(account)} className="rounded-xl px-2 py-2 text-xs font-bold text-red-500">Xóa</button>}</div></Card>)}</div>{editingUser && <UserEditor user={editingUser} close={() => setEditingUser(null)} saved={() => { setEditingUser(null); void loadUsers(); }} />}</>}<SectionTitle label={t("language")} /><Card><select className="w-full bg-transparent outline-none" value={language} onChange={e => setLanguage(e.target.value as Language)}><option value="vi">Tiếng Việt</option><option value="en">English</option><option value="ja">日本語</option></select></Card><SectionTitle label={t("appearance")} /><Card className="flex gap-2">{(["light","dark","system"] as Theme[]).map(x => <button key={x} onClick={() => setTheme(x)} className={`flex-1 rounded-xl px-2 py-3 text-xs font-bold ${theme===x ? "bg-rose-400 text-white" : "bg-rose-50 text-slate-500 dark:bg-white/10 dark:text-slate-200"}`}>{t(x)}</button>)}</Card>
   <SectionTitle label="Sao lưu dữ liệu" /><Card className="space-y-3"><p className="text-sm text-slate-500 dark:text-slate-300">Xuất file JSON để lưu trữ hoặc import để khôi phục dữ liệu trên thiết bị này.</p><button onClick={exportData} className="w-full rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white">Export file JSON</button><label className="block w-full cursor-pointer rounded-xl border border-rose-300 px-4 py-3 text-center text-sm font-bold text-rose-500">Import file JSON<input type="file" accept="application/json,.json" className="hidden" onChange={importData} /></label><button onClick={resetData} className="w-full rounded-xl border border-red-200 px-4 py-3 text-sm font-bold text-red-500">Reset về dữ liệu mặc định</button></Card>
   <SectionTitle label="Trạng thái hệ thống" /><Card className="space-y-3"><div className="flex items-center justify-between gap-3"><div><b>{systemStatus.source === "nas" ? "PostgreSQL NAS" : "localStorage fallback"}</b><p className="mt-1 text-xs text-slate-400">{systemStatus.message}</p></div><span className={`size-3 shrink-0 rounded-full ${systemStatus.source === "nas" ? "bg-emerald-400" : "bg-orange-400"}`} /></div><p className="text-xs text-slate-400">Đồng bộ cuối: {systemStatus.lastSyncedAt ? new Date(systemStatus.lastSyncedAt).toLocaleString("vi-VN") : "Chưa có"}</p>{systemStatus.counts && <div className="grid grid-cols-2 gap-2 rounded-xl bg-rose-50 p-3 text-xs dark:bg-white/5"><span>Thành viên: <b>{systemStatus.counts.members}</b></span><span>Công việc: <b>{systemStatus.counts.tasks}</b></span><span>Thu chi: <b>{systemStatus.counts.transactions}</b></span><span>Sự kiện: <b>{systemStatus.counts.events}</b></span><span>Ghi chú: <b>{systemStatus.counts.notes}</b></span></div>}<button disabled={checking} onClick={checkConnection} className="w-full rounded-xl border border-rose-300 px-4 py-3 text-sm font-bold text-rose-500 disabled:opacity-50">{checking ? "Đang kiểm tra..." : "Kiểm tra kết nối database"}</button><button disabled={syncing} onClick={syncToNas} className="w-full rounded-xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{syncing ? "Đang đồng bộ..." : "Đồng bộ dữ liệu localStorage lên NAS"}</button></Card>
@@ -8835,7 +8835,7 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
   const [profileDraft, setProfileDraft] = useState(currentProfileForm);
 
   useEffect(() => {
-    fetch("/api/auth/profile", { credentials: "include" }).then(async res => {
+    fetch("/api/auth/profile", { cache: 'no-store',  credentials: "include" }).then(async res => {
       const result = await readJsonSafe<{ user?: { email?: string } }>(res);
       if (res.ok && result?.user?.email && !isEditing) {
         setFormData(prev => ({ ...prev, email: result.user!.email || "" }));
@@ -8890,7 +8890,7 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
   }
 
   const saveProfileRequest = (payload: any) =>
-    fetch("/api/auth/profile", { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
 
   function beginEditProfile(e?: React.MouseEvent) {
     if (e) {
@@ -9190,7 +9190,7 @@ function FinanceSettingsSheet({ close }: { close: () => void }) {
 
   const loadAdjustments = useCallback(async () => {
     try {
-      const response = await fetch("/api/finance-adjustments", { cache: "no-store" });
+      const response = await fetch("/api/finance-adjustments", { cache: 'no-store' });
       const result = await readJsonSafe<any>(response);
       if (response.ok) setAdjustments(toArray(result?.data || result));
     } catch {}
@@ -9199,7 +9199,7 @@ function FinanceSettingsSheet({ close }: { close: () => void }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/finance-settings", { cache: "no-store" });
+      const response = await fetch("/api/finance-settings", { cache: 'no-store' });
       const result = await readJsonSafe<any>(response);
       const data = result?.data || {};
       setSettings({
@@ -9231,7 +9231,7 @@ function FinanceSettingsSheet({ close }: { close: () => void }) {
         openingSavingsBalance: parseVndInput(settings.openingSavingsBalance),
         openingInvestmentBalance: parseVndInput(settings.openingInvestmentBalance),
       };
-      const response = await fetch("/api/finance-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await fetch("/api/finance-settings", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!response.ok) throw new Error("save failed");
       setSettings({ trackingStartMonth: String(payload.trackingStartMonth), trackingStartYear: String(payload.trackingStartYear), openingCashBalance: String(payload.openingCashBalance), openingSavingsBalance: String(payload.openingSavingsBalance), openingInvestmentBalance: String(payload.openingInvestmentBalance) });
       await loadOverview(selectedYear);
@@ -9249,7 +9249,7 @@ function FinanceSettingsSheet({ close }: { close: () => void }) {
     if (!amount) return ui.toast("Số tiền điều chỉnh không hợp lệ", "error");
     setAdjusting(true);
     try {
-      const response = await fetch("/api/finance-adjustments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...adjForm, amount }) });
+      const response = await fetch("/api/finance-adjustments", { cache: 'no-store',  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...adjForm, amount }) });
       if (!response.ok) throw new Error("add failed");
       setAdjForm(current => ({ ...current, amount: "", note: "" }));
       await Promise.all([loadAdjustments(), loadOverview(selectedYear)]);
@@ -9376,7 +9376,7 @@ function MobileHome({
 
   useEffect(() => {
     let active = true;
-    void fetch(`/api/finance-overview?year=${new Date().getFullYear()}`, { cache: "no-store" })
+    void fetch(`/api/finance-overview?year=${new Date().getFullYear()}`, { cache: 'no-store' })
       .then(async response => {
         const result = await readJsonSafe<any>(response);
         if (!active) return;
@@ -9626,7 +9626,7 @@ function CreditCardSheet({ close, user, refresh }: { close: () => void, user: an
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/credit-cards/summary');
+      const res = await fetch('/api/credit-cards/summary', { cache: 'no-store' });
       const json = await res.json();
       if (json.ok) {
         setData(json.data);
@@ -9747,7 +9747,7 @@ function CreditCardPaymentModal({ card, close, onSuccess }: any) {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
 
   useEffect(() => {
-    fetch('/api/bank-accounts').then(r => r.json()).then(res => {
+    fetch('/api/bank-accounts', { cache: 'no-store' }).then(r => r.json()).then(res => {
       if (res.ok) {
         const list = Array.isArray(res.data) ? res.data : [];
         // filter out credit cards
@@ -9788,7 +9788,7 @@ function CreditCardPaymentModal({ card, close, onSuccess }: any) {
     if (!paymentDate) return ui.toast("Vui lòng chọn ngày thanh toán", "error");
     setSaving(true);
     try {
-      const res = await fetch('/api/credit-cards/pay', {
+      const res = await fetch('/api/credit-cards/pay', { cache: 'no-store', 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cardId: card.id, sourceId, paymentDate })

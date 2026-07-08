@@ -3,6 +3,9 @@ import { pool } from "@/lib/db";
 import { requireSession, getSessionUser, buildDataFilter } from "@/lib/auth";
 import { ensureCardPendingTransactionsTable } from "@/lib/card-pending-transactions";
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 async function hasColumn(tableName: string, columnName: string) {
   const result = await pool.query(
     `SELECT 1
