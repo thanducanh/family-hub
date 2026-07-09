@@ -117,8 +117,9 @@ export async function buildProfileImageResponse(session: SessionUser, kind: Prof
     member = result.rows[0] ? toMemberProfile(result.rows[0]) : null;
   }
 
-  const avatarUrl = member?.avatarUrl || account?.avatar_url || account?.avatar || "";
-  const coverUrl = member?.coverUrl || account?.cover_url || "";
+  const validUrl = (url: any) => typeof url === 'string' && !url.startsWith('data:image') && url ? url : null;
+  const avatarUrl = validUrl(member?.avatarUrl) || validUrl(account?.avatar_url) || validUrl(member?.avatar) || validUrl(account?.avatar) || "";
+  const coverUrl = validUrl(member?.coverUrl) || validUrl(account?.cover_url) || "";
   const nextUser = {
     id: session.id,
     username: session.username,
