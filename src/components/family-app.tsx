@@ -957,7 +957,7 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return <div className="mx-auto max-w-md pb-8 w-full md:rounded-3xl bg-[#f8fafc] dark:bg-slate-950 min-h-full">
-    <div className="h-32 md:h-40 w-full relative cursor-pointer group" onClick={() => displayCover ? setCoverMenuOpen(true) : coverInputRef.current?.click()}>
+    <div className="h-32 md:h-40 w-full relative cursor-pointer group" onClick={() => setCoverMenuOpen(true)}>
       {displayCover ? (
         <Image unoptimized fill className="object-cover object-center" src={displayCover} alt="Cover" />
       ) : (
@@ -9042,10 +9042,9 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
     
     <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[calc(116px+env(safe-area-inset-bottom))] text-[#171018]">
       <div className="relative min-h-[260px] overflow-hidden bg-[#800020]">
-        <button type="button" onClick={() => { ui.toast("Đang mở chọn ảnh...", "success"); displayCover ? openCoverMenu() : coverInputRef.current?.click(); }} className="absolute inset-0 text-left w-full h-full block">
+        <button type="button" onClick={openCoverMenu} className="absolute inset-0 text-left w-full h-full block">
           {displayCover && <img src={displayCover} className="absolute inset-0 h-full w-full object-cover" alt="Ảnh bìa" />}
           <div className="absolute inset-0 bg-black/35 pointer-events-none" />
-          <span className="absolute bottom-4 right-4 rounded-full border border-white/25 bg-black/35 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur-sm pointer-events-none">{displayCover ? "Đổi ảnh bìa" : "Thêm ảnh bìa"}</span>
         </button>
         <div className="relative z-10 flex min-h-[260px] flex-col justify-end px-4 pb-5 pt-10 pointer-events-none">
           <button type="button" onClick={openAvatarMenu} className="relative size-24 rounded-full border-4 border-[#FFFFFF] bg-[#F8E7EC] shadow-lg pointer-events-auto">
