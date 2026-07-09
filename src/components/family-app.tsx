@@ -748,7 +748,8 @@ function visibleDataFor(user: AuthUser, data: AppData) {
 
 function AccountAvatar({ user, size = "size-10" }: { user: any; size?: string }) {
   const displayName = user.member?.name || user.displayName || "?";
-  const avatar = user.member?.avatar || user.avatar || user.profileImage || user.image || user.avatarUrl;
+  const rawAvatar = user.member?.avatarUrl || user.member?.avatar_url || user.avatarUrl || user.avatar_url || user.member?.avatar || user.avatar || user.profileImage || user.image;
+  const avatar = typeof rawAvatar === "string" && rawAvatar.startsWith("data:image") ? "" : rawAvatar;
   const [error, setError] = useState(false);
   useEffect(() => { setError(false); }, [avatar]);
   if (avatar && !error) return <Image unoptimized width={96} height={96} src={avatar} className={`${size} shrink-0 rounded-full object-cover`} alt={displayName} onError={() => setError(true)} />;
@@ -952,7 +953,7 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return <div className="mx-auto max-w-md pb-8 w-full md:rounded-3xl bg-[#f8fafc] dark:bg-slate-950 min-h-full">
-    <div className="h-32 md:h-40 w-full relative cursor-pointer group" onClick={() => setCoverMenuOpen(true)}>
+    <div className="h-32 md:h-40 w-full relative cursor-pointer group" onClick={() => displayCover ? setCoverMenuOpen(true) : coverInputRef.current?.click()}>
       {displayCover ? (
         <Image unoptimized fill className="object-cover object-center" src={displayCover} alt="Cover" />
       ) : (
@@ -1090,8 +1091,8 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
     )}
 
     {/* Hidden inputs for file upload */}
-    <input type="file" accept="image/*" className="hidden" ref={avatarInputRef} onChange={handleAvatarChange} />
-    <input type="file" accept="image/*" className="hidden" ref={coverInputRef} onChange={handleCoverChange} />
+    <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" className="hidden" ref={avatarInputRef} onChange={handleAvatarChange} />
+    <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" className="hidden" ref={coverInputRef} onChange={handleCoverChange} />
 
     {/* Action Menus */}
     <ActionMenu 
@@ -9037,7 +9038,7 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
     
     <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[calc(116px+env(safe-area-inset-bottom))] text-[#171018]">
       <div className="relative min-h-[260px] overflow-hidden bg-[#800020]">
-        <button type="button" onClick={openCoverMenu} className="absolute inset-0 text-left">
+        <button type="button" onClick={() => displayCover ? openCoverMenu() : coverInputRef.current?.click()} className="absolute inset-0 text-left">
           {displayCover && <img src={displayCover} className="absolute inset-0 h-full w-full object-cover" alt="Ảnh bìa" />}
           <div className="absolute inset-0 bg-black/35" />
           <span className="absolute bottom-4 right-4 rounded-full border border-white/25 bg-black/35 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur-sm">{displayCover ? "Đổi ảnh bìa" : "Thêm ảnh bìa"}</span>

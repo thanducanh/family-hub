@@ -2,34 +2,27 @@ import { NextResponse } from "next/server";
 import { getSessionUser, refreshedSessionCookie } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { ensureMemberAvatarUrlColumn, memberProfileFields, toMemberProfile } from "@/lib/member-profile";
-
-async function ensureUserCoverUrlColumn() {
-  try {
-    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT`);
-  } catch (err: any) {
-    console.error("[ensureUserCoverUrlColumn]", err.message);
-  }
-}
+import { ensureUserAvatarUrlColumn } from "@/lib/user-admin";
 
 export async function GET() {
   try {
     const user = await getSessionUser();
     if (!user) return NextResponse.json({ ok: false, error: "Unauthorized", user: null }, { status: 401 });
-    await ensureUserCoverUrlColumn();
+    await ensureUserAvatarUrlColumn();
     let account;
     try {
-      const accountResult = await pool.query("SELECT email, display_name, avatar, cover_url FROM users WHERE id = $1", [user.id]);
+      const accountResult = await pool.query("SELECT email, display_name, avatar, avatar_url, cover_url FROM users WHERE id = $1", [user.id]);
       account = accountResult.rows[0];
     } catch(err) {
       const accountResult = await pool.query("SELECT email, display_name, avatar FROM users WHERE id = $1", [user.id]);
-      account = { ...accountResult.rows[0], cover_url: null };
+      account = { ...accountResult.rows[0], avatar_url: null, cover_url: null };
     }
     if (user.memberId) await ensureMemberAvatarUrlColumn();
     const result = user.memberId
       ? await pool.query(`SELECT ${memberProfileFields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [user.memberId])
       : { rows: [] };
     const member = result.rows[0] ? toMemberProfile(result.rows[0]) : null;
-    const rawAvatarUrl = member?.avatarUrl || member?.avatar || account?.avatar || "";
+    const rawAvatarUrl = member?.avatarUrl || member?.avatar || account?.avatar_url || account?.avatar || "";
     const rawCoverUrl = member?.coverUrl || account?.cover_url || "";
     const avatarUrl = typeof rawAvatarUrl === 'string' && rawAvatarUrl.startsWith('data:image') ? '' : rawAvatarUrl;
     const coverUrl = typeof rawCoverUrl === 'string' && rawCoverUrl.startsWith('data:image') ? '' : rawCoverUrl;
@@ -38,14 +31,14 @@ export async function GET() {
       id: user.id,
       username: user.username,
       displayName: member?.name || account?.display_name || user.displayName,
-      avatar: avatarUrl,
+      memberName: member?.name || "",
       avatarUrl,
       coverUrl,
       role: user.role,
       memberId: member?.id || user.memberId || "",
       permissions: member?.permissions || {},
     };
-    const response = NextResponse.json({ ok: true, user: mergedUser });
+    const response = NextResponse.json({ ok: true, user: mergedUser, member });
     response.cookies.set(await refreshedSessionCookie({ ...user, avatar: avatarUrl, coverUrl }));
     return response;
   } catch (error) {

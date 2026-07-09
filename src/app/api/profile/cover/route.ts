@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     const file = form.get("file");
     const error = validateProfileImage(file instanceof File ? file : null);
     if (error) return NextResponse.json({ ok: false, error }, { status: 400 });
-    const imageUrl = await saveProfileImageFile(file as File, "cover");
+    const imageUrl = await saveProfileImageFile(file as File, "cover", session.id);
     await setProfileImage(session, "cover", imageUrl);
     return buildProfileImageResponse(session, "cover", imageUrl);
   } catch (error) {
