@@ -26,7 +26,7 @@ type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
 type EntityItem = Member | Task | Transaction | EventItem | Note;
 type Editor = { kind: EntityKind; item?: EntityItem } | null;
 type UserRole = "full_access" | "self_only";
-export interface AuthUser { id: string; username: string; displayName: string; avatar: string; coverUrl?: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; email?: string; passwordPlain?: string | null; }
+export interface AuthUser { id: string; username: string; displayName: string; avatar?: string; avatarUrl?: string; coverUrl?: string; role: "full_access" | "self_only"; mustChangePassword?: boolean; memberId?: string; member?: Member; email?: string; passwordPlain?: string | null; }
 
 export type AppLogType = "ERROR" | "WARN" | "INFO" | "ACTION" | "API";
 export interface AppLog {
@@ -188,8 +188,12 @@ function Circle({ children, color = "#fb7185" }: { children: React.ReactNode; co
 }
 function Avatar({ member, size = "size-10" }: { member: Member; size?: string }) {
   const displayName = member.nickname || member.name;
-  const src = member.avatarPreview || member.avatar;
-  return src ? <Image unoptimized width={96} height={96} className={`${size} shrink-0 rounded-full object-cover`} src={src} alt={displayName} /> : <span className={`grid ${size} shrink-0 place-items-center rounded-full bg-slate-200 text-sm font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-200`}>{displayName[0]?.toUpperCase() || "?"}</span>;
+  const avatarSrc = member.avatarPreview || member.avatarUrl || member.avatar;
+  const src = typeof avatarSrc === "string" && avatarSrc.startsWith("data:image") ? "" : avatarSrc;
+  const [error, setError] = useState(false);
+  useEffect(() => { setError(false); }, [src]);
+  if (src && !error) return <Image unoptimized width={96} height={96} className={`${size} shrink-0 rounded-full object-cover`} src={src} alt={displayName} onError={() => { console.error("Avatar failed to load:", src); setError(true); }} />;
+  return <span className={`grid ${size} shrink-0 place-items-center rounded-full bg-slate-200 text-sm font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-200`}>{displayName[0]?.toUpperCase() || "?"}</span>;
 }
 function AvatarEditor({ member, editable, onChange }: { member: Member; editable: boolean; onChange: (avatar: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -747,12 +751,12 @@ function visibleDataFor(user: AuthUser, data: AppData) {
 }
 
 function AccountAvatar({ user, size = "size-10" }: { user: any; size?: string }) {
-  const displayName = user.member?.name || user.displayName || "?";
-  const rawAvatar = user.member?.avatarUrl || user.member?.avatar_url || user.avatarUrl || user.avatar_url || user.member?.avatar || user.avatar || user.profileImage || user.image;
-  const avatar = typeof rawAvatar === "string" && rawAvatar.startsWith("data:image") ? "" : rawAvatar;
+  const displayName = user?.member?.name || user?.displayName || "?";
+  const avatarSrc = user?.profile?.avatarUrl || user?.avatarUrl || user?.member?.avatarUrl || user?.avatar || user?.member?.avatar || null;
+  const avatar = typeof avatarSrc === "string" && avatarSrc.startsWith("data:image") ? "" : avatarSrc;
   const [error, setError] = useState(false);
   useEffect(() => { setError(false); }, [avatar]);
-  if (avatar && !error) return <Image unoptimized width={96} height={96} src={avatar} className={`${size} shrink-0 rounded-full object-cover`} alt={displayName} onError={() => setError(true)} />;
+  if (avatar && !error) return <Image unoptimized width={96} height={96} src={avatar} className={`${size} shrink-0 rounded-full object-cover`} alt={displayName} onError={() => { console.error("AccountAvatar failed to load:", avatar); setError(true); }} />;
   return <span className={`grid ${size} shrink-0 place-items-center rounded-full bg-slate-200 text-sm font-bold text-slate-500 dark:bg-slate-700 dark:text-slate-200`}>{displayName[0]?.toUpperCase() || "?"}</span>;
 }
 
