@@ -838,6 +838,60 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
     if (syncedMember) update({ ...data, members: data.members.map(item => item.id === syncedMember.id ? syncedMember : item) });
   };
 
+  const allowedProfileImageTypes = ["image/jpeg", "image/png", "image/webp"];
+  const maxProfileImageBytes = 5 * 1024 * 1024;
+
+  function validateProfileImageFile(file: File) {
+    if (!allowedProfileImageTypes.includes(file.type)) return "Chi ho tro anh jpg, jpeg, png hoac webp.";
+    if (file.size > maxProfileImageBytes) return "Anh qua lon. Vui long chon anh toi da 5MB.";
+    return "";
+  }
+
+  async function applyProfileImageResult(kind: "avatar" | "cover", imageUrl: string, nextUser?: AuthUser, nextMember?: Member | null) {
+    const syncedMember = nextMember || (activeMember ? {
+      ...activeMember,
+      ...(kind === "avatar" ? { avatar: imageUrl, avatarUrl: imageUrl } : { coverUrl: imageUrl })
+    } : undefined);
+    const syncedUser = {
+      ...user,
+      ...(nextUser || {}),
+      ...(kind === "avatar" ? { avatar: imageUrl, avatarUrl: imageUrl } : { coverUrl: imageUrl }),
+      member: syncedMember || nextUser?.member
+    };
+    syncProfile(syncedUser as AuthUser, syncedMember || null);
+    await refreshCurrentUser();
+  }
+
+  async function uploadProfileImage(kind: "avatar" | "cover", file: File) {
+    const message = validateProfileImageFile(file);
+    if (message) return ui.toast(message, "error");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch(`/api/profile/${kind}`, { cache: "no-store", method: "POST", credentials: "include", body: form });
+      const result = await readJsonSafe<{ error?: string; imageUrl?: string; user?: AuthUser; member?: Member | null }>(response);
+      if (!response.ok || !result?.imageUrl) return ui.toast(result?.error || "Khong the upload anh.", "error");
+      await applyProfileImageResult(kind, result.imageUrl, result.user, result.member);
+      ui.toast(kind === "avatar" ? "Da cap nhat anh dai dien." : "Da cap nhat anh bia.", "success");
+    } catch (error) {
+      console.error(error);
+      ui.toast("Khong the upload anh.", "error");
+    }
+  }
+
+  async function deleteProfileImage(kind: "avatar" | "cover") {
+    try {
+      const response = await fetch(`/api/profile/${kind}`, { cache: "no-store", method: "DELETE", credentials: "include" });
+      const result = await readJsonSafe<{ error?: string; user?: AuthUser; member?: Member | null }>(response);
+      if (!response.ok) return ui.toast(result?.error || "Khong the xoa anh.", "error");
+      await applyProfileImageResult(kind, "", result?.user, result?.member);
+      ui.toast(kind === "avatar" ? "Da xoa anh dai dien." : "Da xoa anh bia.", "success");
+    } catch (error) {
+      console.error(error);
+      ui.toast("Khong the xoa anh.", "error");
+    }
+  }
+
   async function compressImage(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -870,96 +924,31 @@ function ProfilePage({ user, member, data, update, openChangePassword, logout, s
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    if (!file.type.startsWith("image/")) return ui.toast("Vui lòng chọn file hình ảnh", "error");
-    
-    try {
-      ui.toast("Đang xử lý ảnh...", "success");
-      const base64 = await compressImage(file);
-      
-      const payload = {
-        avatar: base64, 
-        avatarUrl: base64, 
-        displayName: displayName || "Quản trị viên",
-        name: activeMember?.name || displayName || "Quản trị viên",
-        nickname: activeMember?.nickname || "",
-        phone: activeMember?.phone || "",
-        birthday: activeMember?.birthday || null,
-        gender: activeMember?.gender || "",
-        notes: activeMember?.notes || ""
-      };
-
-      const response = await fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const result = await readJsonSafe<{ user?: AuthUser; error?: string }>(response);
-      
-      if (response.ok && result?.user) {
-        savedUser(result.user);
-        await refreshCurrentUser();
-        ui.toast("Đã cập nhật ảnh đại diện", "success");
-      } else {
-        console.error("Avatar upload error:", result?.error);
-        ui.toast(result?.error || "Lỗi khi cập nhật ảnh đại diện", "error");
-      }
-    } catch (e) {
-      console.error(e);
-      ui.toast("Lỗi xử lý ảnh", "error");
-    }
+    if (!file.type.startsWith("image/")) return ui.toast("Vui long chon file hinh anh", "error");
+    setAvatarMenuOpen(false);
+    await uploadProfileImage("avatar", file);
   }
 
   async function handleAvatarDelete() {
-    if (!await ui.confirm("Xóa ảnh đại diện?", "Bạn có chắc chắn muốn xóa ảnh đại diện hiện tại?")) return;
-    const response = await fetch("/api/auth/avatar", { cache: 'no-store',  method: "DELETE" });
-    if (response.ok) {
-      savedUser({ ...user, avatar: "", member: activeMember ? { ...activeMember, avatar: "", avatarUrl: "" } : undefined });
-      await refreshCurrentUser();
-      ui.toast("Đã xóa ảnh đại diện", "success");
-    } else {
-      ui.toast("Lỗi khi xóa ảnh đại diện", "error");
-    }
+    if (!await ui.confirm("Xoa anh dai dien?", "Ban co chac chan muon xoa anh dai dien hien tai?")) return;
+    setAvatarMenuOpen(false);
+    await deleteProfileImage("avatar");
   }
 
   async function handleCoverChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    if (!file.type.startsWith("image/")) return ui.toast("Vui lòng chọn file hình ảnh", "error");
-    try {
-      ui.toast("Đang xử lý ảnh...", "success");
-      const base64 = await compressImage(file);
-      const payload = { coverUrl: base64, displayName: displayName || "Quản trị viên", name: activeMember?.name || displayName || "Quản trị viên", nickname: activeMember?.nickname || "", phone: activeMember?.phone || "", birthday: activeMember?.birthday || null, gender: activeMember?.gender || "", notes: activeMember?.notes || "" };
-      const response = await fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const result = await readJsonSafe<{ user?: AuthUser; member?: Member; error?: string }>(response);
-      if (response.ok && result?.user) {
-        const nextMember = result.member || activeMember;
-        const nextUser = { ...result.user, coverUrl: base64, member: nextMember ? { ...nextMember, coverUrl: base64 } : undefined };
-        savedUser(nextUser as any);
-        await refreshCurrentUser();
-        ui.toast("Đã cập nhật ảnh bìa", "success");
-      } else {
-        ui.toast(result?.error || "Lỗi khi cập nhật ảnh bìa", "error");
-      }
-    } catch (e) {
-      ui.toast("Lỗi xử lý ảnh", "error");
-    }
+    if (!file.type.startsWith("image/")) return ui.toast("Vui long chon file hinh anh", "error");
+    setCoverMenuOpen(false);
+    await uploadProfileImage("cover", file);
   }
 
   async function handleCoverDelete() {
-    if (!await ui.confirm("Xóa ảnh bìa?", "Bạn có chắc chắn muốn xóa ảnh bìa hiện tại?")) return;
-    try {
-      const payload = { coverUrl: "", displayName: displayName || "Quản trị viên", name: activeMember?.name || displayName || "Quản trị viên", nickname: activeMember?.nickname || "", phone: activeMember?.phone || "", birthday: activeMember?.birthday || null, gender: activeMember?.gender || "", notes: activeMember?.notes || "" };
-      const response = await fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      if (response.ok) {
-        const nextUser = { ...user, coverUrl: "", member: activeMember ? { ...activeMember, coverUrl: "" } : undefined };
-        savedUser(nextUser as any);
-        await refreshCurrentUser();
-        ui.toast("Đã xóa ảnh bìa", "success");
-      } else {
-        ui.toast("Lỗi khi xóa ảnh bìa", "error");
-      }
-    } catch (e) {
-      ui.toast("Lỗi máy chủ", "error");
-    }
+    if (!await ui.confirm("Xoa anh bia?", "Ban co chac chan muon xoa anh bia hien tai?")) return;
+    setCoverMenuOpen(false);
+    await deleteProfileImage("cover");
   }
-
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return <div className="mx-auto max-w-md pb-8 w-full md:rounded-3xl bg-[#f8fafc] dark:bg-slate-950 min-h-full">
@@ -8854,31 +8843,13 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
   const genderLabel = formData.gender === "male" || formData.gender === "nam" ? "Nam" : formData.gender === "female" || formData.gender === "nu" ? "Nữ" : formData.gender === "other" || formData.gender === "khac" ? "Khác" : "Chưa cập nhật";
   const inputClass = "h-12 w-full rounded-xl border border-[#E8DCD5] bg-[#FFFFFF] px-3 text-[14px] text-[#171018] outline-none focus:border-[#800020] disabled:bg-[#F8F5F2] disabled:text-[#6B5E64]";
 
-  async function compressImage(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = e => {
-        const img = document.createElement("img");
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return reject("Canvas error");
-          let { width, height } = img;
-          const max = 500;
-          if (width > max || height > max) {
-            if (width > height) { height = Math.round((height * max) / width); width = max; }
-            else { width = Math.round((width * max) / height); height = max; }
-          }
-          canvas.width = width; canvas.height = height;
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/jpeg", 0.8));
-        };
-        img.onerror = () => reject("Image load error");
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => reject("File read error");
-      reader.readAsDataURL(file);
-    });
+  const allowedProfileImageTypes = ["image/jpeg", "image/png", "image/webp"];
+  const maxProfileImageBytes = 5 * 1024 * 1024;
+
+  function validateProfileImageFile(file: File) {
+    if (!allowedProfileImageTypes.includes(file.type)) return "Chi ho tro anh jpg, jpeg, png hoac webp.";
+    if (file.size > maxProfileImageBytes) return "Anh qua lon. Vui long chon anh toi da 5MB.";
+    return "";
   }
 
   async function mergeProfileState(nextUser: AuthUser, nextMember?: Member) {
@@ -8892,6 +8863,59 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
 
   const saveProfileRequest = (payload: any) =>
     fetch("/api/auth/profile", { cache: 'no-store',  method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+
+  async function applyProfileImageResult(kind: "avatar" | "cover", imageUrl: string, nextUser?: AuthUser, nextMember?: Member | null) {
+    const mergedMember = nextMember || (activeMember ? {
+      ...activeMember,
+      ...(kind === "avatar" ? { avatar: imageUrl, avatarUrl: imageUrl } : { coverUrl: imageUrl })
+    } : undefined);
+    const mergedUser = {
+      ...user,
+      ...(nextUser || {}),
+      ...(kind === "avatar" ? { avatar: imageUrl, avatarUrl: imageUrl } : { coverUrl: imageUrl }),
+      member: mergedMember || nextUser?.member
+    };
+    savedUser?.(mergedUser);
+    if (update && mergedMember) update({ ...data, members: data.members.map((m: any) => m.id === mergedMember.id ? mergedMember : m) });
+    setProfileDraft(prev => ({ ...prev, [kind === "avatar" ? "avatarUrl" : "coverUrl"]: imageUrl }));
+    await refreshCurrentUser?.();
+  }
+
+  async function uploadProfileImage(kind: "avatar" | "cover", file: File) {
+    const message = validateProfileImageFile(file);
+    if (message) return ui.toast(message, "error");
+    setIsSaving(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch(`/api/profile/${kind}`, { cache: "no-store", method: "POST", credentials: "include", body: form });
+      const result = await readJsonSafe<{ error?: string; imageUrl?: string; user?: AuthUser; member?: Member | null }>(response);
+      if (!response.ok || !result?.imageUrl) return ui.toast(result?.error || "Khong the upload anh.", "error");
+      await applyProfileImageResult(kind, result.imageUrl, result.user, result.member);
+      ui.toast(kind === "avatar" ? "Da cap nhat anh dai dien." : "Da cap nhat anh bia.", "success");
+    } catch (error) {
+      console.warn("[MobileProfileInfoSheet] Failed to upload profile image", error);
+      ui.toast("Khong the upload anh.", "error");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function deleteProfileImage(kind: "avatar" | "cover") {
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/profile/${kind}`, { cache: "no-store", method: "DELETE", credentials: "include" });
+      const result = await readJsonSafe<{ error?: string; user?: AuthUser; member?: Member | null }>(response);
+      if (!response.ok) return ui.toast(result?.error || "Khong the xoa anh.", "error");
+      await applyProfileImageResult(kind, "", result?.user, result?.member);
+      ui.toast(kind === "avatar" ? "Da xoa anh dai dien." : "Da xoa anh bia.", "success");
+    } catch (error) {
+      console.warn("[MobileProfileInfoSheet] Failed to delete profile image", error);
+      ui.toast("Khong the xoa anh.", "error");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   function beginEditProfile(e?: React.MouseEvent) {
     if (e) {
@@ -8918,16 +8942,13 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
     if (!file.type.startsWith("image/")) return ui.toast("Vui lòng chọn file hình ảnh", "error");
     
     try {
-      const base64 = await compressImage(file);
-      setProfileDraft(prev => ({ ...prev, avatarUrl: base64 }));
-      setIsEditing(true);
+      await uploadProfileImage("avatar", file);
     } catch (e) { ui.toast("Lỗi xử lý ảnh", "error"); }
   }
 
   async function handleAvatarDelete() {
     if (!await ui.confirm("Xóa avatar?", "Bạn có chắc chắn muốn xóa avatar hiện tại?")) return;
-    setProfileDraft(prev => ({ ...prev, avatarUrl: "" }));
-    setIsEditing(true);
+    await deleteProfileImage("avatar");
   }
 
   async function handleCoverChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -8936,16 +8957,13 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
     if (!file) return;
     if (!file.type.startsWith("image/")) return ui.toast("Vui lòng chọn file hình ảnh", "error");
     try {
-      const base64 = await compressImage(file);
-      setProfileDraft(prev => ({ ...prev, coverUrl: base64 }));
-      setIsEditing(true);
+      await uploadProfileImage("cover", file);
     } catch (e) { ui.toast("Lỗi xử lý ảnh", "error"); }
   }
 
   async function handleCoverDelete() {
     if (!await ui.confirm("Xóa ảnh bìa?", "Bạn có chắc chắn muốn xóa ảnh bìa hiện tại?")) return;
-    setProfileDraft(prev => ({ ...prev, coverUrl: "" }));
-    setIsEditing(true);
+    await deleteProfileImage("cover");
   }
 
   async function handleSave(e: React.MouseEvent<HTMLButtonElement>) {
@@ -9014,15 +9032,15 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
   ];
 
   return <FullScreenMobileSheet title="Thông tin cá nhân" close={isEditing ? cancelEditProfile : close} headerRight={!isEditing ? <button type="button" onClick={beginEditProfile} className="px-3 py-2 text-sm font-bold text-[#800020]">Sửa</button> : <button type="button" onClick={handleSave} disabled={isSaving} className="px-3 py-2 text-sm font-bold text-[#800020] disabled:opacity-50">{isSaving ? "Đang lưu..." : "Lưu"}</button>}>
-    <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
-    <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={handleCoverChange} />
+    <input type="file" ref={avatarInputRef} className="hidden" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handleAvatarChange} />
+    <input type="file" ref={coverInputRef} className="hidden" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" onChange={handleCoverChange} />
     
     <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[calc(116px+env(safe-area-inset-bottom))] text-[#171018]">
       <div className="relative min-h-[260px] overflow-hidden bg-[#800020]">
         <button type="button" onClick={openCoverMenu} className="absolute inset-0 text-left">
           {displayCover && <img src={displayCover} className="absolute inset-0 h-full w-full object-cover" alt="Ảnh bìa" />}
           <div className="absolute inset-0 bg-black/35" />
-          <span className="absolute bottom-4 right-4 rounded-full border border-white/25 bg-black/35 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur-sm">Đổi ảnh bìa</span>
+          <span className="absolute bottom-4 right-4 rounded-full border border-white/25 bg-black/35 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur-sm">{displayCover ? "Đổi ảnh bìa" : "Thêm ảnh bìa"}</span>
         </button>
         <div className="relative z-10 flex min-h-[260px] flex-col justify-end px-4 pb-5 pt-10">
           <button type="button" onClick={openAvatarMenu} className="relative size-24 rounded-full border-4 border-[#FFFFFF] bg-[#F8E7EC] shadow-lg">
