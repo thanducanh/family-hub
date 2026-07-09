@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Member } from "@/types";
+import { safeId } from "@/lib/safe-id";
 
 import { Solar } from "lunar-javascript";
 
@@ -372,7 +373,7 @@ export function TimeTreeCalendar({ members, user }: { members: Member[]; user?: 
   async function saveEvent(event: React.FormEvent) {
     event.preventDefault();
     if (!draft) return;
-    const id = draft.id || crypto.randomUUID();
+    const id = draft.id || safeId();
     const response = await fetch("/api/events", {
       method: draft.id ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },

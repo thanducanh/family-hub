@@ -17,6 +17,7 @@ import { translator } from "@/lib/i18n";
 import { fixVietnameseMojibake } from "@/lib/text-encoding";
 import { dataService, setCacheUserId, type SystemStatus } from "@/services/data-service";
 import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, CardReward, CardRewardType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberPermissions, MemberJob, MemberJobStatus, MemberSim, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
+import { safeId } from "@/lib/safe-id";
 import * as XLSX from "xlsx";
 import QRCode from "react-qr-code";
 
@@ -374,7 +375,7 @@ export function FamilyApp({ children }: { children?: React.ReactNode } = {}) {
                 const message = String(fixVietnameseMojibake(`Sắp đến sự kiện "${event.title}" lúc ${event.startTime}`));
                 
                 const notif = {
-                  id: crypto.randomUUID(),
+                  id: safeId(),
                   type: "calendar_event_reminder",
                   module: "Lịch",
                   title,
@@ -3137,7 +3138,7 @@ function MemberProfile({ member, data, user, close, saved, remove, personal = fa
   const [subTab, setSubTab] = useState<ProfileSubTab>("basic");
   const [error, setError] = useState("");
   const [linkedUsers, setLinkedUsers] = useState<ManagedUser[]>([]);
-  const [form, setForm] = useState<Member>(() => existing ?? { id: crypto.randomUUID(), name: "", nickname: "", birthday: "", gender: "", phone: "", avatar: "", notes: "", color: "#cbd5e1" });
+  const [form, setForm] = useState<Member>(() => existing ?? { id: safeId(), name: "", nickname: "", birthday: "", gender: "", phone: "", avatar: "", notes: "", color: "#cbd5e1" });
   const [detailsLoaded, setDetailsLoaded] = useState(!existing);
   const canManage = user.role === "full_access";
   const inputClass = "h-12 w-full min-w-0 max-w-full rounded-lg border border-[var(--app-border)] bg-[var(--app-card)] px-3 text-sm outline-none focus:border-indigo-400";
@@ -4358,7 +4359,7 @@ function MobileSavingsEditor({ item, close, onSaved, user, data, update }: any) 
     setLoading(true);
     try {
       const payload = {
-        id: item?.id || crypto.randomUUID(),
+        id: item?.id || safeId(),
         description: form.description.trim(),
         amount: parseVndInput(form.amount),
         year: Number(form.year),
@@ -4561,7 +4562,7 @@ function MobileInvestmentEditor({ item, close, onSaved, user, data, update }: an
       if (!res.ok) throw new Error("Lỗi khi lưu");
       if (data && update) {
         const records = toArray(data.investments);
-        const savedPayload = { ...payload, id: item?.id || (await res.clone().json().catch(() => null))?.id || crypto.randomUUID() };
+        const savedPayload = { ...payload, id: item?.id || (await res.clone().json().catch(() => null))?.id || safeId() };
         const newRecords = item?.id ? records.map((t:any) => t.id === item.id ? savedPayload : t) : [...records, savedPayload];
         update({ ...data, investments: newRecords as any });
       }
@@ -5941,7 +5942,7 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
     const paymentAccountId = record?.paymentAccountId || record?.payment_account_id || record?.bankAccountId || record?.bank_account_id || "";
     const simId = record?.simId || record?.sim_id || "";
     const transactionTime = normalizeTimeValue(record?.transactionTime || record?.transaction_time) || timeFromTimestamp(record?.createdAt || record?.created_at) || currentTimeValue();
-    return { id: record?.id || crypto.randomUUID(), memberId: record?.memberId || user.memberId || user.member?.id || members[0]?.id || "", date: record?.date || today, transactionTime, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod, paymentAccountId, simId, topupSimBalance: Boolean((record as any)?.simTopupApplied || (record as any)?.sim_topup_applied), reimbursementPerson: (record as any)?.reimbursementPerson || (record as any)?.reimbursement_person || "", reimbursementStatus: (record as any)?.reimbursementStatus || (record as any)?.reimbursement_status || (cat === "Thanh toán hộ" ? "pending" : "none"), reimbursedAmount: String((record as any)?.reimbursedAmount ?? (record as any)?.reimbursed_amount ?? ""), reimbursedAt: (record as any)?.reimbursedAt || (record as any)?.reimbursed_at || "" };
+    return { id: record?.id || safeId(), memberId: record?.memberId || user.memberId || user.member?.id || members[0]?.id || "", date: record?.date || today, transactionTime, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod, paymentAccountId, simId, topupSimBalance: Boolean((record as any)?.simTopupApplied || (record as any)?.sim_topup_applied), reimbursementPerson: (record as any)?.reimbursementPerson || (record as any)?.reimbursement_person || "", reimbursementStatus: (record as any)?.reimbursementStatus || (record as any)?.reimbursement_status || (cat === "Thanh toán hộ" ? "pending" : "none"), reimbursedAmount: String((record as any)?.reimbursedAmount ?? (record as any)?.reimbursed_amount ?? ""), reimbursedAt: (record as any)?.reimbursedAt || (record as any)?.reimbursed_at || "" };
   });
   const grossValue = Number(String(draft.grossAmount).replace(/\D/g, "") || 0);
   const discountValue = Number(String(draft.discountAmount).replace(/\D/g, "") || 0);
@@ -6307,7 +6308,7 @@ const waiverTypes = ["Không có", "Theo tổng chi tiêu năm", "Theo tổng ch
 const benefitCategories = ["Siêu thị", "Y tế", "Giáo dục", "Ăn uống", "Xăng xe", "Mua sắm online", "Thanh toán hóa đơn", "Khác"] as const;
 const benefitTypes = ["Hoàn tiền %", "Giảm tiền cố định", "Điểm thưởng"] as const;
 const bankRawContentTypes: BankRawNoteContentType[] = ["Ưu đãi", "Phí thường niên", "Điều khoản thẻ", "Sao kê", "Email ngân hàng", "Khác"];
-const emptyBenefit = (): BankCardBenefit => ({ id: crypto.randomUUID(), bankAccountId: "", name: "", category: "Khác", benefitType: "Hoàn tiền %", benefitValue: 0, monthlyCap: 0, minTransactionAmount: 0, conditionNote: "", active: true });
+const emptyBenefit = (): BankCardBenefit => ({ id: safeId(), bankAccountId: "", name: "", category: "Khác", benefitType: "Hoàn tiền %", benefitValue: 0, monthlyCap: 0, minTransactionAmount: 0, conditionNote: "", active: true });
 const emptyBankForm = (memberId = ""): BankAccount => ({ id: "", memberId, bankName: "BIDV", accountHolder: "", accountNumber: "", cardNumber: "", accountType: "Tài khoản ngân hàng", cardType: "Tài khoản ngân hàng", cardNetwork: "Không áp dụng", productName: "", branch: "", statementDay: "", dueDay: "", creditLimit: 0, expiryMonth: "", expiryYear: "", status: "Đang dùng", annualFeeEnabled: false, annualFeeAmount: 0, annualFeeWaiverType: "Không có", annualFeeWaiverTarget: 0, annualFeeCycle: "năm", annualFeeCycleStart: "", annualFeeCurrentSpending: 0, note: "", benefits: [], rewards: [] });
 function maskLast(value: string, prefix = "******") { const digits = value.replace(/\s+/g, ""); return digits ? `${prefix}${digits.slice(-4)}` : "Chưa cập nhật"; }
 function maskCard(value: string) { const digits = value.replace(/\D/g, ""); return digits ? `**** **** **** ${digits.slice(-4)}` : "Không có số thẻ"; }
@@ -6960,7 +6961,7 @@ export function BankAccountSheet({ account, members, close, saved, inline = fals
               type="button" 
               onClick={() => {
                 const newCampaigns = [...(fees.campaigns || []), {
-                  id: crypto.randomUUID(),
+                  id: safeId(),
                   name: "",
                   condition: "",
                   expectedValue: "",
@@ -7625,7 +7626,7 @@ function EditorSheet({ editor, actor, members, close, save, remove }: { editor: 
   const set = (key: string, value: string) => setForm(current => ({ ...current, [key]: value }));
   function submit(event: React.FormEvent) {
     event.preventDefault();
-    const id = existing?.id ?? crypto.randomUUID();
+    const id = existing?.id ?? safeId();
     const item = editor.kind === "members" ? { id, name: form.name, nickname: form.nickname, birthday: form.birthday, gender: form.gender as Member["gender"], phone: form.phone, avatar: form.avatar, notes: form.notes, color: form.color } :
       editor.kind === "tasks" ? { id, title: form.title, memberId: form.memberId, assignee: memberName(members, form.memberId), due: form.dueDate, dueDate: form.dueDate, priority: form.priority as Task["priority"], status: form.status as Task["status"] } :
       editor.kind === "transactions" ? { id, title: form.title, memberId: form.memberId, amount: Number(form.amount), type: form.type as Transaction["type"], category: form.category, date: form.date } :

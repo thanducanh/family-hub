@@ -6,6 +6,7 @@ import { ListIcon, ChevronRightIcon, ChevronDownIcon, ClockIcon, TypeIcon, Refre
 import { getNotificationSettings, addLocalNotification, triggerSystemNotification } from "@/lib/notifications";
 import { Solar } from "lunar-javascript";
 import { getLunarDate } from "@/lib/vietnamese-lunar";
+import { safeId } from "@/lib/safe-id";
 
 type Actor = { id: string; role: "full_access" | "self_only"; displayName?: string; avatar?: string; memberId?: string };
 type Calendar = { id: string; name: string; color: string; visible: boolean; type: string; ownerUserId: string; viewerUserIds: string[] };
@@ -557,7 +558,7 @@ export function TimeTreeCalendar({ members, user, t, onSaveEvent }: { members: M
   }
   
 async function pushAppNotification(notif: any, user: any) {
-  const finalNotif = { ...notif, createdAt: new Date().toISOString(), read: false, id: notif.id || crypto.randomUUID() };
+  const finalNotif = { ...notif, createdAt: new Date().toISOString(), read: false, id: notif.id || safeId() };
   try {
     const res = await fetch("/api/notifications", {
       method: "POST",
@@ -581,13 +582,7 @@ async function pushAppNotification(notif: any, user: any) {
 }
 
   function generateUUID() {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      return crypto.randomUUID();
-    }
-    return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => {
-      const random = typeof crypto !== "undefined" && crypto.getRandomValues ? crypto.getRandomValues(new Uint8Array(1))[0] : Math.random() * 256;
-      return (Number(c) ^ random & 15 >> Number(c) / 4).toString(16);
-    });
+    return safeId();
   }
 
   async function saveEvent(event: React.FormEvent) {

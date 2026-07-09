@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { safeId } from "@/lib/safe-id";
 import type { BankAccount, BankAccountStatus, BankCardType, Member } from "@/types";
 import { formatCardUsageDuration, formatISODateToVN, parseVNDateToISO } from "@/lib/utils";
 import { useUI } from "./ui-context";
@@ -48,7 +49,7 @@ async function readJsonSafe<T>(response: Response): Promise<T | null> {
 
 function emptyBankForm(memberId: string): BankAccount {
   return {
-    id: crypto.randomUUID(), memberId, bankName: "BIDV", accountHolder: "", accountNumber: "", cardNumber: "",
+    id: safeId(), memberId, bankName: "BIDV", accountHolder: "", accountNumber: "", cardNumber: "",
     accountType: "credit", cardType: "credit", cardNetwork: "Không áp dụng", productName: "", branch: "",
     statementDay: "", dueDay: "", creditLimit: 0, expiryMonth: "", expiryYear: "", status: "active",
     annualFeeEnabled: false, annualFeeAmount: 0, annualFeeWaiverType: "Không có", annualFeeWaiverTarget: 0, annualFeeCycle: "năm", annualFeeCycleStart: "", annualFeeCurrentSpending: 0, note: "", benefits: [], rewards: [], openedAt: "",
