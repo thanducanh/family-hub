@@ -37,8 +37,15 @@ export async function GET() {
          OR LOWER(COALESCE(account_type, '')) IN ('credit', 'credit_card', 'the tin dung', 'thẻ tín dụng')
     `);
 
+    const latestTransactions = await pool.query(
+      `SELECT t.title, t.amount, t.date, t.status, COALESCE(b.display_name, b.product_name, b.bank_name) as card_name
+       FROM transactions t
+       LEFT JOIN bank_accounts b ON t.bank_account_id = b.id
+       ORDER BY t.created_at DESC LIMIT 5`
+    );
+
     const pendingListQuery = await pool.query(`
-      SELECT t.title, t.amount, t.date, t.status, b.name as card_name
+      SELECT t.title, t.amount, t.date, t.status, COALESCE(b.display_name, b.product_name, b.bank_name) as card_name
       FROM card_pending_transactions t
       LEFT JOIN bank_accounts b ON t.bank_account_id = b.id
       ORDER BY t.created_at DESC

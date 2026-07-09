@@ -119,6 +119,12 @@ export async function GET(req: NextRequest) {
     
     await ensureSavingsRecordsTable();
     await ensureCardPendingTransactionsTable();
+    
+    const hasIncomeDate = await hasColumn("income_records", "date");
+    const incomeDateExpr = hasIncomeDate ? "date" : "received_date";
+    const hasIncomeStatus = await hasColumn("income_records", "status");
+    const incomeStatusCond = hasIncomeStatus ? "status = 'Đã nhận'" : "1=1";
+    
     await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS linked_savings_id UUID");
     await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS counts_for_personal_expense BOOLEAN NOT NULL DEFAULT TRUE");
     await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS counts_for_card_spending BOOLEAN NOT NULL DEFAULT TRUE");
@@ -132,7 +138,7 @@ export async function GET(req: NextRequest) {
     await ensureAdjustmentsTable();
 
     const [incomeResult, expensesResult, savingsInExpenseResult, investmentsBuyResult, investmentsSellResult, adjustmentsResult, pendingCreditResult, savingsRecordsResult] = await Promise.all([
-      pool.query(`SELECT EXTRACT(YEAR FROM date) as year, EXTRACT(MONTH FROM date) as month, SUM(amount) as total FROM income_records WHERE status = 'Đã nhận' AND date >= $1::date AND ${filter.where} GROUP BY year, month`, [settings.trackingStartDate, ...filter.params]),
+      pool.query(`SELECT EXTRACT(YEAR FROM ${incomeDateExpr}) as year, EXTRACT(MONTH FROM ${incomeDateExpr}) as month, SUM(amount) as total FROM income_records WHERE ${incomeStatusCond} AND ${incomeDateExpr} >= $1::date AND ${filter.where} GROUP BY year, month`, [settings.trackingStartDate, ...filter.params]),
       pool.query(
         `SELECT EXTRACT(YEAR FROM ${transactionDateExpr}) as year, EXTRACT(MONTH FROM ${transactionDateExpr}) as month, SUM(amount) as total
          FROM transactions

@@ -1,5 +1,10 @@
 import { FamilyApp } from "@/components/family-app";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 export default function Home() {
-  return <FamilyApp />;
+  return (
+    <ErrorBoundary>
+      <FamilyApp />
+    </ErrorBoundary>
+  );
 }
