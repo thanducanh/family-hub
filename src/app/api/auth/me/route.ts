@@ -29,8 +29,11 @@ export async function GET() {
       ? await pool.query(`SELECT ${memberProfileFields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [user.memberId])
       : { rows: [] };
     const member = result.rows[0] ? toMemberProfile(result.rows[0]) : null;
-    const avatarUrl = member?.avatarUrl || member?.avatar || account?.avatar || "";
-    const coverUrl = member?.coverUrl || account?.cover_url || "";
+    const rawAvatarUrl = member?.avatarUrl || member?.avatar || account?.avatar || "";
+    const rawCoverUrl = member?.coverUrl || account?.cover_url || "";
+    const avatarUrl = typeof rawAvatarUrl === 'string' && rawAvatarUrl.startsWith('data:image') ? '' : rawAvatarUrl;
+    const coverUrl = typeof rawCoverUrl === 'string' && rawCoverUrl.startsWith('data:image') ? '' : rawCoverUrl;
+    
     const mergedUser = {
       id: user.id,
       username: user.username,

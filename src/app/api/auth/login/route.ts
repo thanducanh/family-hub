@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   if (!username || !password) return NextResponse.json({ ok: false, error: "Vui lòng nhập tài khoản hoặc email và mật khẩu." }, { status: 400 });
   try {
     await initDatabase();
-    const result = await pool.query("SELECT id, username, display_name, avatar, password_hash, role, active, must_change_password, member_id FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)", [username.trim()]);
+    const result = await pool.query("SELECT id, username, display_name, avatar, cover_url, password_hash, role, active, must_change_password, member_id FROM users WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)", [username.trim()]);
     const row = result.rows[0];
     const passwordMatches = row && (password === row.password_hash || (row.password_hash.startsWith("$2") && await bcrypt.compare(password, row.password_hash)));
     if (!row || !passwordMatches) return NextResponse.json({ ok: false, error: "Tài khoản hoặc mật khẩu không đúng." }, { status: 401 });
@@ -19,12 +19,20 @@ export async function POST(request: NextRequest) {
     if (row.member_id) await ensureMemberAvatarUrlColumn();
     const memberResult = row.member_id ? await pool.query(`SELECT ${memberProfileFields} FROM members WHERE id = $1 AND deleted_at IS NULL`, [row.member_id]) : { rows: [] };
     const member = memberResult.rows[0] ? toMemberProfile(memberResult.rows[0]) : null;
-    const user: SessionUser = { id: row.id, username: row.username, displayName: member?.nickname || member?.name || fixVietnameseMojibakeString(row.display_name), avatar: "", role: normalizeUserRole(String(row.role)), mustChangePassword: row.must_change_password, memberId: member?.id || row.member_id || "" };
+    const rawAvatarUrl = member?.avatarUrl || member?.avatar || row.avatar || "";
+    const rawCoverUrl = member?.coverUrl || row.cover_url || "";
+    const avatarUrl = typeof rawAvatarUrl === 'string' && rawAvatarUrl.startsWith('data:image') ? '' : rawAvatarUrl;
+    const coverUrl = typeof rawCoverUrl === 'string' && rawCoverUrl.startsWith('data:image') ? '' : rawCoverUrl;
+    
+    const user: SessionUser = { id: row.id, username: row.username, displayName: member?.nickname || member?.name || fixVietnameseMojibakeString(row.display_name), avatar: avatarUrl, coverUrl: coverUrl, role: normalizeUserRole(String(row.role)), mustChangePassword: row.must_change_password, memberId: member?.id || row.member_id || "" };
     
     const slimUser = {
       id: user.id,
       username: user.username,
       displayName: user.displayName,
+      avatar: avatarUrl,
+      avatarUrl: avatarUrl,
+      coverUrl: coverUrl,
       role: user.role,
       memberId: user.memberId,
       permissions: member?.permissions || {}
