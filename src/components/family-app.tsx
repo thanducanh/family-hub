@@ -9042,18 +9042,18 @@ function MobileProfileInfoSheet({ user, data, close, update, savedUser, refreshC
     
     <div className="min-h-[100dvh] bg-[#F8F5F2] pb-[calc(116px+env(safe-area-inset-bottom))] text-[#171018]">
       <div className="relative min-h-[260px] overflow-hidden bg-[#800020]">
-        <button type="button" onClick={() => displayCover ? openCoverMenu() : coverInputRef.current?.click()} className="absolute inset-0 text-left">
+        <button type="button" onClick={() => { ui.toast("Đang mở chọn ảnh...", "success"); displayCover ? openCoverMenu() : coverInputRef.current?.click(); }} className="absolute inset-0 text-left w-full h-full block">
           {displayCover && <img src={displayCover} className="absolute inset-0 h-full w-full object-cover" alt="Ảnh bìa" />}
-          <div className="absolute inset-0 bg-black/35" />
-          <span className="absolute bottom-4 right-4 rounded-full border border-white/25 bg-black/35 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur-sm">{displayCover ? "Đổi ảnh bìa" : "Thêm ảnh bìa"}</span>
+          <div className="absolute inset-0 bg-black/35 pointer-events-none" />
+          <span className="absolute bottom-4 right-4 rounded-full border border-white/25 bg-black/35 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur-sm pointer-events-none">{displayCover ? "Đổi ảnh bìa" : "Thêm ảnh bìa"}</span>
         </button>
-        <div className="relative z-10 flex min-h-[260px] flex-col justify-end px-4 pb-5 pt-10">
-          <button type="button" onClick={openAvatarMenu} className="relative size-24 rounded-full border-4 border-[#FFFFFF] bg-[#F8E7EC] shadow-lg">
+        <div className="relative z-10 flex min-h-[260px] flex-col justify-end px-4 pb-5 pt-10 pointer-events-none">
+          <button type="button" onClick={openAvatarMenu} className="relative size-24 rounded-full border-4 border-[#FFFFFF] bg-[#F8E7EC] shadow-lg pointer-events-auto">
             <AccountAvatar user={{ avatar: displayAvatar, displayName }} size="size-full" />
             <span className="absolute bottom-0 right-0 grid size-8 place-items-center rounded-full border-2 border-[#FFFFFF] bg-[#800020] text-white shadow-sm"><CameraIcon /></span>
           </button>
-          <h2 className="mt-3 text-[24px] font-bold leading-tight text-white drop-shadow-sm">{displayName}</h2>
-          <p className="mt-1 text-[13px] font-semibold text-white/85">{roleLabel}</p>
+          <h2 className="mt-3 text-[24px] font-bold leading-tight text-white drop-shadow-sm pointer-events-auto">{displayName}</h2>
+          <p className="mt-1 text-[13px] font-semibold text-white/85 pointer-events-auto">{roleLabel}</p>
         </div>
       </div>
       
