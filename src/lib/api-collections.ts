@@ -57,6 +57,13 @@ async function ensureCollectionSchema(collection: Collection) {
   await pool.query("UPDATE transactions SET payment_account_id = bank_account_id WHERE payment_account_id IS NULL AND bank_account_id IS NOT NULL");
 }
 
+function normalizeUuid(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
 function toDb(collection: Collection, item: Record<string, unknown>) {
   if (collection === "notes") return { ...item, member_id: item.memberId || null, updated_at: item.updatedAt };
   if (collection === "members") {
@@ -65,9 +72,9 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
   }
   if (collection === "tasks") return { ...item, member_id: item.memberId || null, due_date_ui: toDatabaseDate(item.dueDate) };
   if (collection === "transactions") {
-    const paymentAccountId = item.paymentAccountId || item.payment_account_id || item.bankAccountId || item.bank_account_id || null;
+    const paymentAccountId = normalizeUuid(item.paymentAccountId || item.payment_account_id || item.bankAccountId || item.bank_account_id);
     const metadata = asRecord(item.metadata);
-    const simId = item.simId || item.sim_id || item.linkedSimId || item.linked_sim_id || metadata.simId || metadata.linkedSimId || metadata.sim_id || metadata.linked_sim_id || null;
+    const simId = normalizeUuid(item.simId || item.sim_id || item.linkedSimId || item.linked_sim_id || metadata.simId || metadata.linkedSimId || metadata.sim_id || metadata.linked_sim_id);
     const savingsApplied = String(item.category || "") === "Tiết kiệm" && String(item.type || "") === "expense";
     
     let counts_for_personal_expense = item.countsForPersonalExpense ?? item.counts_for_personal_expense ?? true;
@@ -87,7 +94,7 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
     
     return { 
       ...item, 
-      member_id: item.memberId || null, 
+      member_id: normalizeUuid(item.memberId || item.member_id), 
       gross_amount: item.grossAmount || item.amount, 
       discount_amount: item.discountAmount || 0, 
       date: toDatabaseDate(item.date), 
@@ -98,7 +105,7 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
       sim_topup_applied: Boolean(item.simTopupApplied || item.sim_topup_applied), 
       savings_applied: Boolean(item.savingsApplied || item.savings_applied || savingsApplied), 
       savings_holder: item.savingsHolder || item.savings_holder || item.subcategory || null, 
-      linked_savings_id: item.linkedSavingsId || item.linked_savings_id || null, 
+      linked_savings_id: normalizeUuid(item.linkedSavingsId || item.linked_savings_id), 
       estimated_cashback: item.estimatedCashback || 0, 
       actual_cashback: item.actualCashback || 0, 
       payment_method: item.paymentMethod || item.payment_method || "cash",
@@ -109,7 +116,8 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
       reimbursed_at: toDatabaseDate(item.reimbursedAt || item.reimbursed_at),
       counts_for_personal_expense,
       counts_for_card_spending,
-      group_id: item.groupId || item.group_id || null
+      converted_to_card_pending_id: normalizeUuid(item.convertedToCardPendingId || item.converted_to_card_pending_id),
+      group_id: normalizeUuid(item.groupId || item.group_id)
     };
   }
   if (collection === "expense_groups") {
@@ -439,10 +447,17 @@ async function syncTransactionItems(transactionId: string, payloadItems: any[]) 
   await pool.query(`DELETE FROM transaction_items WHERE transaction_id = $1`, [transactionId]);
   for (const item of payloadItems) {
     const dbItem = toDb("transaction_items", item);
+    const amount = Number(dbItem.amount) || 0;
+    const name = String(dbItem.name || "").trim();
+    if (!name && amount === 0) continue;
+    
+    const quantity = Number(dbItem.quantity) || 1;
+    const unitPrice = Number(dbItem.unit_price) || 0;
+
     await pool.query(
       `INSERT INTO transaction_items (transaction_id, name, quantity, unit_price, amount, category, note) 
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [transactionId, dbItem.name, dbItem.quantity || 1, dbItem.unit_price || 0, dbItem.amount || 0, dbItem.category || 'Khác', dbItem.note || '']
+      [transactionId, name, quantity, unitPrice, amount, dbItem.category || 'Khác', dbItem.note || '']
     );
   }
 }
