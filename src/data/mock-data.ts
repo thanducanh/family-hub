@@ -24,4 +24,5 @@ export const mockData: AppData = {
     { id: "00000000-0000-4000-8000-000000000041", title: "Danh sách mua sắm", memberId: "", kind: "general", important: true, tag: "mua sắm", content: "Sữa, trứng, rau xanh, trái cây", updatedAt: "Hôm nay" },
     { id: "00000000-0000-4000-8000-000000000042", title: "Kế hoạch cuối tuần", memberId: "", kind: "general", important: false, tag: "cuối tuần", content: "Đi công viên và ăn tối cùng ông bà", updatedAt: "Hôm qua" },
   ],
+  expenseGroups: [],
 };

@@ -5,14 +5,16 @@ import { ensureMemberSimsTable } from "@/lib/member-sims";
 import { apiErrorResponse, guardDatabaseWrite } from "@/lib/db-health";
 import { fixVietnameseMojibake } from "@/lib/text-encoding";
 
-export type Collection = "members" | "tasks" | "transactions" | "events" | "notes";
+export type Collection = "members" | "tasks" | "transactions" | "events" | "notes" | "expense_groups" | "transaction_items";
 
 const columns: Record<Collection, string[]> = {
   members: ["id", "name", "nickname", "birthday", "gender", "role", "phone", "avatar", "avatar_url", "notes", "color"],
   tasks: ["id", "title", "member_id", "assignee", "due", "due_date_ui", "priority", "status"],
-  transactions: ["id", "title", "member_id", "amount", "gross_amount", "discount_amount", "type", "category", "subcategory", "date", "transaction_time", "note", "bank_account_id", "payment_account_id", "sim_id", "sim_topup_applied", "savings_applied", "savings_holder", "linked_savings_id", "estimated_cashback", "actual_cashback", "payment_method", "is_reimbursable", "reimbursement_person", "reimbursement_status", "reimbursed_amount", "reimbursed_at", "counts_for_personal_expense", "counts_for_card_spending", "converted_to_card_pending_id", "excluded_from_expense"],
+  transactions: ["id", "title", "member_id", "amount", "gross_amount", "discount_amount", "type", "category", "subcategory", "date", "transaction_time", "note", "bank_account_id", "payment_account_id", "sim_id", "sim_topup_applied", "savings_applied", "savings_holder", "linked_savings_id", "estimated_cashback", "actual_cashback", "payment_method", "is_reimbursable", "reimbursement_person", "reimbursement_status", "reimbursed_amount", "reimbursed_at", "counts_for_personal_expense", "counts_for_card_spending", "converted_to_card_pending_id", "excluded_from_expense", "group_id"],
   events: ["id", "title", "member_id", "type", "date", "time", "color", "event_date"],
   notes: ["id", "title", "member_id", "kind", "important", "tag", "content", "updated_at"],
+  expense_groups: ["id", "member_id", "name", "type", "start_date", "end_date", "budget_amount", "note", "status", "created_at", "updated_at"],
+  transaction_items: ["id", "transaction_id", "name", "quantity", "unit_price", "amount", "category", "note", "created_at", "updated_at"]
 };
 
 async function ensureCollectionSchema(collection: Collection) {
@@ -49,6 +51,7 @@ async function ensureCollectionSchema(collection: Collection) {
   await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS counts_for_card_spending BOOLEAN NOT NULL DEFAULT TRUE");
   await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS converted_to_card_pending_id UUID");
   await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS excluded_from_expense BOOLEAN DEFAULT false");
+  await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS group_id UUID");
   await pool.query("UPDATE transactions SET is_reimbursable = TRUE, reimbursement_status = COALESCE(NULLIF(reimbursement_status, 'none'), 'pending'), reimbursed_amount = COALESCE(reimbursed_amount, 0), counts_for_personal_expense = FALSE, counts_for_card_spending = TRUE WHERE category = 'Thanh toán hộ'");
   await pool.query("UPDATE transactions SET is_reimbursable = FALSE, counts_for_personal_expense = FALSE, counts_for_card_spending = FALSE WHERE category = 'Tiết kiệm'");
   await pool.query("UPDATE transactions SET payment_account_id = bank_account_id WHERE payment_account_id IS NULL AND bank_account_id IS NOT NULL");
@@ -105,8 +108,15 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
       reimbursed_amount: item.reimbursedAmount || item.reimbursed_amount || 0,
       reimbursed_at: toDatabaseDate(item.reimbursedAt || item.reimbursed_at),
       counts_for_personal_expense,
-      counts_for_card_spending
+      counts_for_card_spending,
+      group_id: item.groupId || item.group_id || null
     };
+  }
+  if (collection === "expense_groups") {
+    return { ...item, member_id: item.memberId || item.member_id || null, start_date: toDatabaseDate(item.startDate || item.start_date), end_date: toDatabaseDate(item.endDate || item.end_date), budget_amount: item.budgetAmount || item.budget_amount || 0 };
+  }
+  if (collection === "transaction_items") {
+    return { ...item, transaction_id: item.transactionId || item.transaction_id || null, unit_price: item.unitPrice || item.unit_price || 0 };
   }
   if (collection === "events") {
     const date = toDatabaseDate(item.date);
@@ -124,10 +134,18 @@ function fromDb(collection: Collection, item: Record<string, unknown>) {
     return { ...rest, memberId: member_id || "", dueDate: due_date_ui || "" };
   }
   if (collection === "transactions") {
-    const { member_id, bank_account_id, payment_account_id, sim_id, sim_topup_applied, savings_applied, savings_holder, linked_savings_id, gross_amount, discount_amount, estimated_cashback, actual_cashback, created_at, payment_method, transaction_time, category, is_reimbursable, reimbursement_person, reimbursement_status, reimbursed_amount, reimbursed_at, counts_for_personal_expense, counts_for_card_spending, converted_to_card_pending_id, excluded_from_expense, ...rest } = item as any;
+    const { member_id, bank_account_id, payment_account_id, sim_id, sim_topup_applied, savings_applied, savings_holder, linked_savings_id, gross_amount, discount_amount, estimated_cashback, actual_cashback, created_at, payment_method, transaction_time, category, is_reimbursable, reimbursement_person, reimbursement_status, reimbursed_amount, reimbursed_at, counts_for_personal_expense, counts_for_card_spending, converted_to_card_pending_id, excluded_from_expense, group_id, ...rest } = item as any;
     const mappedCategory = category === "Nhà cửa & sinh hoạt" ? "Sinh hoạt" : category;
     const paymentAccountId = payment_account_id || bank_account_id || "";
-    return { ...rest, category: mappedCategory, memberId: member_id || "", grossAmount: Number(gross_amount || rest.amount || 0), discountAmount: Number(discount_amount || 0), bankAccountId: paymentAccountId, paymentAccountId, payment_account_id: paymentAccountId, bank_account_id: paymentAccountId, simId: sim_id || "", sim_id: sim_id || "", simTopupApplied: Boolean(sim_topup_applied), sim_topup_applied: Boolean(sim_topup_applied), savingsApplied: Boolean(savings_applied), savings_applied: Boolean(savings_applied), savingsHolder: savings_holder || "", savings_holder: savings_holder || "", linkedSavingsId: linked_savings_id || "", linked_savings_id: linked_savings_id || "", transactionTime: transaction_time || "", transaction_time: transaction_time || "", estimatedCashback: Number(estimated_cashback || 0), actualCashback: Number(actual_cashback || 0), createdAt: created_at, paymentMethod: payment_method || "cash", payment_method: payment_method || "cash", isReimbursable: Boolean(is_reimbursable), reimbursementPerson: reimbursement_person || "", reimbursementStatus: reimbursement_status || "none", reimbursedAmount: Number(reimbursed_amount || 0), reimbursedAt: reimbursed_at || "", countsForPersonalExpense: counts_for_personal_expense !== false, countsForCardSpending: counts_for_card_spending !== false, convertedToCardPendingId: converted_to_card_pending_id || "", converted_to_card_pending_id: converted_to_card_pending_id || "", excludedFromExpense: Boolean(excluded_from_expense), excluded_from_expense: Boolean(excluded_from_expense) };
+    return { ...rest, category: mappedCategory, memberId: member_id || "", grossAmount: Number(gross_amount || rest.amount || 0), discountAmount: Number(discount_amount || 0), bankAccountId: paymentAccountId, paymentAccountId, payment_account_id: paymentAccountId, bank_account_id: paymentAccountId, simId: sim_id || "", sim_id: sim_id || "", simTopupApplied: Boolean(sim_topup_applied), sim_topup_applied: Boolean(sim_topup_applied), savingsApplied: Boolean(savings_applied), savings_applied: Boolean(savings_applied), savingsHolder: savings_holder || "", savings_holder: savings_holder || "", linkedSavingsId: linked_savings_id || "", linked_savings_id: linked_savings_id || "", transactionTime: transaction_time || "", transaction_time: transaction_time || "", estimatedCashback: Number(estimated_cashback || 0), actualCashback: Number(actual_cashback || 0), createdAt: created_at, paymentMethod: payment_method || "cash", payment_method: payment_method || "cash", isReimbursable: Boolean(is_reimbursable), reimbursementPerson: reimbursement_person || "", reimbursementStatus: reimbursement_status || "none", reimbursedAmount: Number(reimbursed_amount || 0), reimbursedAt: reimbursed_at || "", countsForPersonalExpense: counts_for_personal_expense !== false, countsForCardSpending: counts_for_card_spending !== false, convertedToCardPendingId: converted_to_card_pending_id || "", converted_to_card_pending_id: converted_to_card_pending_id || "", excludedFromExpense: Boolean(excluded_from_expense), excluded_from_expense: Boolean(excluded_from_expense), groupId: group_id || "", group_id: group_id || "" };
+  }
+  if (collection === "expense_groups") {
+    const { member_id, start_date, end_date, budget_amount, created_at, updated_at, ...rest } = item as any;
+    return { ...rest, memberId: member_id || "", startDate: start_date || "", endDate: end_date || "", budgetAmount: Number(budget_amount || 0), createdAt: created_at, updatedAt: updated_at };
+  }
+  if (collection === "transaction_items") {
+    const { transaction_id, unit_price, created_at, updated_at, ...rest } = item as any;
+    return { ...rest, transactionId: transaction_id || "", unitPrice: Number(unit_price || 0), createdAt: created_at, updatedAt: updated_at };
   }
   if (collection === "events") {
     const { event_date, member_id, ...rest } = item;
@@ -229,10 +247,6 @@ function isSavingsExpense(row: Record<string, unknown>) {
   return String(row.type || "") === "expense" && String(row.category || "") === "Tiết kiệm";
 }
 
-function isSimDataExpense(row: Record<string, unknown>) {
-  return String(row.type || "") === "expense" && String(row.category || "") === "Sinh hoạt" && String(row.subcategory || "") === "SIM / Data";
-}
-
 function isSimDataExpenseFlexible(row: Record<string, unknown>) {
   if (compactText(row.type) !== "expense") return false;
   const detail = compactText(firstPresent(row.detail, row.subcategory, row.categoryDetail, row.category_detail, row.category));
@@ -312,7 +326,6 @@ async function syncSavingsForTransaction(row: Record<string, unknown>) {
       return row;
     }
   } else {
-    // Attempt to find an existing one to avoid duplicates due to frontend cache overriding linkedSavingsId with NULL
     const existing = await pool.query(
       `SELECT id FROM savings_records 
        WHERE member_id IS NOT DISTINCT FROM $1 
@@ -421,6 +434,19 @@ export async function syncSimPaymentForTransaction(row: Record<string, unknown>)
   return row;
 }
 
+async function syncTransactionItems(transactionId: string, payloadItems: any[]) {
+  if (!Array.isArray(payloadItems)) return;
+  await pool.query(`DELETE FROM transaction_items WHERE transaction_id = $1`, [transactionId]);
+  for (const item of payloadItems) {
+    const dbItem = toDb("transaction_items", item);
+    await pool.query(
+      `INSERT INTO transaction_items (transaction_id, name, quantity, unit_price, amount, category, note) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [transactionId, dbItem.name, dbItem.quantity || 1, dbItem.unit_price || 0, dbItem.amount || 0, dbItem.category || 'Khác', dbItem.note || '']
+    );
+  }
+}
+
 export function collectionHandlers(collection: Collection) {
   const fields = columns[collection];
   return {
@@ -446,7 +472,22 @@ export function collectionHandlers(collection: Collection) {
       }
       
       const result = await pool.query(`SELECT ${selectFields.join(", ")} FROM ${collection} WHERE ${where} ORDER BY id`, params);
-      return NextResponse.json(fixVietnameseMojibake(result.rows.map(row => fromDb(collection, row))));
+      
+      let items = result.rows.map(row => fromDb(collection, row));
+      
+      if (collection === "transactions" && items.length > 0) {
+        const txIds = items.map((tx: any) => tx.id);
+        const itemsResult = await pool.query(`SELECT * FROM transaction_items WHERE transaction_id = ANY($1::uuid[])`, [txIds]);
+        const itemsByTxId: Record<string, any[]> = {};
+        for (const row of itemsResult.rows) {
+          const formatted = fromDb("transaction_items", row);
+          if (!itemsByTxId[row.transaction_id]) itemsByTxId[row.transaction_id] = [];
+          itemsByTxId[row.transaction_id].push(formatted);
+        }
+        items = items.map((tx: any) => ({ ...tx, items: itemsByTxId[tx.id] || [] }));
+      }
+      
+      return NextResponse.json(fixVietnameseMojibake(items));
     },
     POST: async (request: NextRequest) => {
       try {
@@ -455,24 +496,23 @@ export function collectionHandlers(collection: Collection) {
       if (offline) return offline;
       await ensureCollectionSchema(collection);
       const payload = await request.json();
-      if (collection === "transactions") {
-        console.log("[SIM_SYNC_DEBUG] transaction payload", payload);
-        console.log("[SIM_SYNC_DEBUG] simId", payload.sim_id || payload.simId || payload.linkedSimId || payload.linked_sim_id);
-        console.log("[SIM_SYNC_DEBUG] detail", payload.detail || payload.subcategory || payload.categoryDetail || payload.category_detail);
-      }
       const item = toDb(collection, payload);
       const values = fields.map(field => item[field] ?? null);
       const params = fields.map((_, index) => `$${index + 1}`).join(", ");
       const updates = fields.filter(field => field !== "id").map(field => `${field} = EXCLUDED.${field}`).join(", ");
       const result = await pool.query(`INSERT INTO ${collection} (${fields.join(", ")}) VALUES (${params}) ON CONFLICT (id) DO UPDATE SET ${updates} RETURNING ${fields.join(", ")}`, values);
-      if (collection === "transactions") console.log("[SIM_SYNC_DEBUG] transaction result", result.rows[0]);
       if (collection === "transactions") {
         await revertSimTopupForTransaction(String(result.rows[0].id));
         await applySimTopupForTransaction(result.rows[0]);
         await syncSavingsForTransaction(result.rows[0]);
         await syncSimPaymentForTransaction(result.rows[0]);
+        await syncTransactionItems(String(result.rows[0].id), payload.items);
         const synced = await fetchTransactionRow(String(result.rows[0].id), fields);
-        if (synced) return NextResponse.json(fixVietnameseMojibake(fromDb(collection, synced)), { status: 201 });
+        if (synced) {
+          const syncedFormatted = fromDb(collection, synced) as any;
+          syncedFormatted.items = payload.items || [];
+          return NextResponse.json(fixVietnameseMojibake(syncedFormatted), { status: 201 });
+        }
       }
       return NextResponse.json(fixVietnameseMojibake(fromDb(collection, result.rows[0])), { status: 201 });
       } catch (error) {
@@ -486,24 +526,23 @@ export function collectionHandlers(collection: Collection) {
       if (offline) return offline;
       await ensureCollectionSchema(collection);
       const payload = await request.json();
-      if (collection === "transactions") {
-        console.log("[SIM_SYNC_DEBUG] transaction payload", payload);
-        console.log("[SIM_SYNC_DEBUG] simId", payload.sim_id || payload.simId || payload.linkedSimId || payload.linked_sim_id);
-        console.log("[SIM_SYNC_DEBUG] detail", payload.detail || payload.subcategory || payload.categoryDetail || payload.category_detail);
-      }
       const item = toDb(collection, payload);
       const values = fields.map(field => item[field] ?? null);
       const params = fields.map((_, index) => `$${index + 1}`).join(", ");
       const updates = fields.filter(field => field !== "id").map(field => `${field} = EXCLUDED.${field}`).join(", ");
       if (collection === "transactions" && item.id) await revertSimTopupForTransaction(String(item.id));
       const result = await pool.query(`INSERT INTO ${collection} (${fields.join(", ")}) VALUES (${params}) ON CONFLICT (id) DO UPDATE SET ${updates} RETURNING ${fields.join(", ")}`, values);
-      if (collection === "transactions") console.log("[SIM_SYNC_DEBUG] transaction result", result.rows[0]);
       if (collection === "transactions") {
         await applySimTopupForTransaction(result.rows[0]);
         await syncSavingsForTransaction(result.rows[0]);
         await syncSimPaymentForTransaction(result.rows[0]);
+        await syncTransactionItems(String(result.rows[0].id), payload.items);
         const synced = await fetchTransactionRow(String(result.rows[0].id), fields);
-        if (synced) return NextResponse.json(fixVietnameseMojibake(fromDb(collection, synced)));
+        if (synced) {
+          const syncedFormatted = fromDb(collection, synced) as any;
+          syncedFormatted.items = payload.items || [];
+          return NextResponse.json(fixVietnameseMojibake(syncedFormatted));
+        }
       }
       return NextResponse.json(fixVietnameseMojibake(fromDb(collection, result.rows[0])));
       } catch (error) {

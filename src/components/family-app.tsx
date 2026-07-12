@@ -16,10 +16,11 @@ import { requestNotificationPermission } from "@/lib/notifications";
 import { translator } from "@/lib/i18n";
 import { fixVietnameseMojibake } from "@/lib/text-encoding";
 import { dataService, setCacheUserId, type SystemStatus } from "@/services/data-service";
-import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, CardReward, CardRewardType, EventItem, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberPermissions, MemberJob, MemberJobStatus, MemberSim, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
+import type { AppData, BankAccount, BankAccountStatus, BankCardBenefit, BankCardType, BankRawNote, BankRawNoteContentType, CardReward, CardRewardType, EventItem, ExpenseGroup, IncomeCategory, IncomeFrequency, IncomeRecord, IncomeSource, IncomeSourceType, IncomeStatus, InvestmentTransaction, Language, Member, MemberPermissions, MemberJob, MemberJobStatus, MemberSim, Note, Task, Theme, Transaction, IncomeYearlySummaryRow } from "@/types";
 import { safeId } from "@/lib/safe-id";
 import * as XLSX from "xlsx";
 import QRCode from "react-qr-code";
+import { ExpenseGroupSelector, TransactionItemsEditor } from "./finance-groups";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications" | "system";
 type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
@@ -4076,7 +4077,7 @@ function MobileTransactionList({ data: appData, update, user, refreshTrigger, re
 
     {detail && <MobileTransactionDetail item={detail} close={() => setDetail(null)} onEdit={() => editItem(detail)} onDeleted={() => { refresh(); setDetail(null); }} data={appData} update={update} />}
     {editor && <MobileTransactionEditor item={editor.isNew ? null : editor} defaultType={editor.type} allowTypeChange={editor.isNew && subTab === "all"} close={() => setEditor(null)} onSaved={() => { refresh(); }} user={user} data={appData} update={update} />}
-    {showCreditSheet && <CreditCardSheet close={() => setShowCreditSheet(false)} user={user} refresh={refresh} />}
+    {showCreditSheet && <CreditCardSheet close={() => setShowCreditSheet(false)} user={user} refresh={refresh} expenseGroups={toArray(appData?.expenseGroups)} />}
   </div>;
 }
 
@@ -4207,7 +4208,7 @@ function MobileTransactionEditor({ item, defaultType, allowTypeChange = false, c
         <button type="button" onClick={() => setType("income")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "income" ? "bg-[#F8F5F2] text-[#059669] shadow-sm" : "text-[#6B5E64]"}`}>Thu nhập</button>
         <button type="button" onClick={() => setType("expense")} className={`flex-1 rounded-lg py-2 text-sm font-bold ${type === "expense" ? "bg-[#F8F5F2] text-[#E11D48] shadow-sm" : "text-[#6B5E64]"}`}>Chi tiêu</button>
       </div>}
-      {type === "income" ? <IncomeRecordForm record={incomeRecord} members={toArray(data?.members).map((member: Member) => ({ id: member.id, name: member.name }))} templates={incomeTemplates} user={user} back={close} saved={finish} notify={(message, toastType) => ui.toast(message, toastType)} compactMobile /> : <ExpenseForm record={expenseRecord} members={toArray(data?.members)} user={user} close={close} compactMobile onSubmittingChange={setExpenseSubmitting} onCreditSaved={finish} saved={(record) => {
+      {type === "income" ? <IncomeRecordForm record={incomeRecord} members={toArray(data?.members).map((member: Member) => ({ id: member.id, name: member.name }))} templates={incomeTemplates} user={user} back={close} saved={finish} notify={(message, toastType) => ui.toast(message, toastType)} compactMobile /> : <ExpenseForm record={expenseRecord} members={toArray(data?.members)} expenseGroups={toArray(data?.expenseGroups)} onExpenseGroupsChange={(expenseGroups) => update({ ...data, expenseGroups })} user={user} close={close} compactMobile onSubmittingChange={setExpenseSubmitting} onCreditSaved={finish} saved={(record) => {
         const transactions = toArray<Transaction>(data?.transactions);
         update({ ...data, transactions: transactions.some(current => current.id === record.id) ? transactions.map(current => current.id === record.id ? record : current) : [record, ...transactions] });
         finish();
@@ -5624,7 +5625,7 @@ const expenseCategoryTree: Record<string, string[]> = {
   "Khác": ["Khác"]
 };
 const expenseCategories = Object.keys(expenseCategoryTree);
-type ExpenseDraft = { id: string; memberId: string; date: string; transactionTime: string; category: string; subcategory: string; vendor: string; grossAmount: string; discountAmount: string; note: string; paymentMethod: import("../types").PaymentMethod; paymentAccountId: string; simId: string; topupSimBalance: boolean; reimbursementPerson?: string; reimbursementStatus?: string; reimbursedAmount?: string; reimbursedAt?: string; };
+type ExpenseDraft = { id: string; memberId: string; date: string; transactionTime: string; category: string; subcategory: string; vendor: string; grossAmount: string; discountAmount: string; note: string; paymentMethod: import("../types").PaymentMethod; paymentAccountId: string; simId: string; topupSimBalance: boolean; reimbursementPerson?: string; reimbursementStatus?: string; reimbursedAmount?: string; reimbursedAt?: string; groupId?: string; items?: import("../types").TransactionItem[]; };
 
 const currentTimeValue = () => new Date().toTimeString().slice(0, 5);
 const normalizeTimeValue = (value: unknown) => String(value || "").slice(0, 5);
@@ -5664,6 +5665,7 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
   const [deleting, setDeleting] = useState<Transaction | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Transaction | null>(null);
+  const [groupDetail, setGroupDetail] = useState<{ group: ExpenseGroup; records: Transaction[] } | null>(null);
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
 
   useEffect(() => {
@@ -5785,6 +5787,17 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
     });
     return { month: itemMonth, items: monthItems, total: monthItems.reduce((sum, record) => sum + (Number(record.amount) || 0), 0), count: monthItems.length };
   });
+  const expenseGroupsById = new Map((data.expenseGroups || []).map(group => [group.id, group]));
+  const monthlyGroupSummaries = Array.from(monthRecords.reduce<Map<string, { group: ExpenseGroup; records: Transaction[]; total: number }>>((map, record) => {
+    const groupId = record.groupId || record.group_id || "";
+    const group = groupId ? expenseGroupsById.get(groupId) : null;
+    if (!group) return map;
+    const current = map.get(groupId) || { group, records: [], total: 0 };
+    current.records.push(record);
+    current.total += Number(record.amount) || 0;
+    map.set(groupId, current);
+    return map;
+  }, new Map()).values()).sort((a, b) => b.total - a.total);
 
   function toggle(id: string) {
     setExpandedIds(current => {
@@ -5840,6 +5853,8 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
       <ExpenseForm
         record={editing === "new" ? null : editing}
         members={data.members}
+        expenseGroups={data.expenseGroups}
+        onExpenseGroupsChange={(expenseGroups) => update({ ...data, expenseGroups })}
         user={user}
         close={() => setEditing(null)}
         saved={(record) => {
@@ -5870,6 +5885,21 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
         <Card><p className="text-xs text-slate-400">Đang chờ hoàn</p><b className="font-semibold text-orange-500">{money(totalPendingReimbursement)}</b>{pendingByPerson.length > 0 && <p className="mt-1 text-[10px] font-semibold text-slate-500">{pendingByPerson.map(item => `${item.person}: ${money(item.total)}`).join(" · ")}</p>}</Card>
       </div>
 
+      {monthlyGroupSummaries.length > 0 && <Card className="p-0">
+        <div className="border-b border-[var(--app-border)] px-4 py-3"><b className="font-semibold text-slate-800 dark:text-slate-100">Nhóm chi tiêu tháng này</b></div>
+        <div className="divide-y divide-[var(--app-border)]">
+          {monthlyGroupSummaries.map(summary => (
+            <button key={summary.group.id} type="button" onClick={() => setGroupDetail({ group: summary.group, records: summary.records })} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/5">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{summary.group.name}</p>
+                <p className="mt-0.5 text-xs font-medium text-slate-500">{summary.records.length} khoản{Number(summary.group.budgetAmount || summary.group.budget_amount || 0) > 0 ? ` · Ngân sách ${money(Number(summary.group.budgetAmount || summary.group.budget_amount || 0))}` : ""}</p>
+              </div>
+              <b className="shrink-0 text-sm text-rose-500">{money(summary.total)}</b>
+            </button>
+          ))}
+        </div>
+      </Card>}
+
       <Card className="overflow-visible p-0">
           <div className="border-b border-[var(--app-border)] px-4 py-3"><b className="font-semibold text-slate-800 dark:text-slate-100">{"Danh sách theo tháng"}</b></div>
           <div className="divide-y divide-[var(--app-border)]">
@@ -5886,15 +5916,24 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
                 {row.items.length === 0 ? <div className="p-4 text-center text-sm font-medium text-slate-500">Chưa có khoản nào trong tháng này.</div> : row.items.map(record => {
                   const menuOpen = menuId === record.id;
                   const pm = getExpensePaymentLabel(record);
-                  return <div key={record.id} className="group relative border-b border-[var(--app-border)] px-3 py-3 hover:bg-slate-50 dark:hover:bg-white/5 sm:grid sm:grid-cols-[120px_180px_1fr_160px_140px_40px] sm:items-center sm:gap-0 sm:border-b-0 sm:py-2">
-                    <div className="flex items-start justify-between sm:contents">
+                  const groupName = record.groupId ? (data.expenseGroups || []).find(g => g.id === record.groupId)?.name : null;
+                  return <div key={record.id} className="group relative border-b border-[var(--app-border)] px-3 py-3 hover:bg-slate-50 dark:hover:bg-white/5 sm:flex sm:flex-col sm:gap-2 sm:border-b-0 sm:py-2">
+                    <div className="flex items-start justify-between sm:contents sm:grid sm:grid-cols-[120px_180px_1fr_160px_140px_40px] sm:items-center sm:gap-0">
                       <div className="min-w-0 flex-1 sm:hidden">
-                        <div className="truncate text-sm font-bold flex items-center text-slate-900 dark:text-slate-100" title={record.title || "Khác"}>{record.title || "Khác"}{record.category === 'Thanh toán hộ' && <span className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>{(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'Đã hoàn' : `Chờ ${getReimbursementPerson(record)} hoàn`}</span>}</div>
+                        <div className="text-sm font-bold flex flex-wrap items-center gap-1.5 text-slate-900 dark:text-slate-100" title={record.title || "Khác"}>
+                          <span className="truncate">{record.title || "Khác"}</span>
+                          {record.category === 'Thanh toán hộ' && <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>{(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'Đã hoàn' : `Chờ ${getReimbursementPerson(record)} hoàn`}</span>}
+                          {groupName && <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600 border border-blue-100" title="Nhóm chi tiêu">Nhóm: {groupName}</span>}
+                        </div>
                         <div className="mt-0.5 text-xs text-slate-500">{formatExpenseDateTime(record)} · {record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</div>
                       </div>
                       <div className="hidden min-w-0 truncate pr-3 text-xs font-medium text-slate-500 sm:block">{formatExpenseDateTime(record)}</div>
                       <div className="hidden min-w-0 truncate pr-3 text-xs font-semibold text-slate-600 dark:text-slate-400 sm:block" title={`${record.category}${record.subcategory ? ` / ${record.subcategory}` : ""}`}>{record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</div>
-                      <div className="hidden min-w-0 truncate pr-3 text-sm font-medium flex items-center text-slate-900 dark:text-slate-100 sm:flex" title={record.title || "Khác"}>{record.title || "Khác"}{record.category === 'Thanh toán hộ' && <span className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>{(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'Đã hoàn' : `Chờ ${getReimbursementPerson(record)} hoàn`}</span>}</div>
+                      <div className="hidden min-w-0 pr-3 text-sm font-medium flex flex-wrap items-center gap-1.5 text-slate-900 dark:text-slate-100 sm:flex" title={record.title || "Khác"}>
+                        <span className="truncate">{record.title || "Khác"}</span>
+                        {record.category === 'Thanh toán hộ' && <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>{(record as any).reimbursementStatus === 'reimbursed' || (record as any).reimbursement_status === 'reimbursed' ? 'Đã hoàn' : `Chờ ${getReimbursementPerson(record)} hoàn`}</span>}
+                        {groupName && <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600 border border-blue-100" title="Nhóm chi tiêu">Nhóm: {groupName}</span>}
+                      </div>
                       <div className="hidden min-w-0 truncate pr-3 text-left text-xs font-medium text-slate-500 sm:block" title={pm}>{pm}</div>
                       <div className="flex shrink-0 items-center gap-2 sm:contents">
                         <div className="text-sm font-bold text-rose-500 sm:text-right">{money(record.amount)}</div>
@@ -5909,6 +5948,20 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
                         </div>
                       </div>
                     </div>
+                    {record.items && record.items.length > 0 && (
+                      <div className="mt-1 pl-4 sm:pl-[300px] text-[13px] text-slate-600 dark:text-slate-400 border-t border-dashed border-[var(--app-border)] pt-2 sm:border-0 sm:pt-0">
+                        <ul className="list-disc pl-4 space-y-1">
+                          {record.items.map((item, idx) => (
+                            <li key={item.id || idx}>
+                              <div className="flex justify-between items-center max-w-sm">
+                                <span>{item.name} <span className="text-slate-400 text-xs">x{item.quantity}</span></span>
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">{money(item.amount)}</span>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>;
                 })}
               </div>}
@@ -5918,15 +5971,19 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
       </Card>
 
       {detail && <ExpenseDetail record={detail} close={() => setDetail(null)} edit={() => { setDetail(null); setEditing(detail); }} remove={() => { setDetail(null); setDeleting(detail); }} />}
+      {groupDetail && <ExpenseGroupDetailSheet group={groupDetail.group} records={groupDetail.records} close={() => setGroupDetail(null)} />}
       {deleting && <ExpenseDeleteDialog record={deleting} close={() => setDeleting(null)} confirm={() => void remove(deleting)} />}
     </div>
   );
 }
 
-function ExpenseForm({ record, members, user, close, saved, compactMobile = false, onSubmittingChange, onCreditSaved }: { record: Transaction | null; members: Member[]; user: AuthUser; close: () => void; saved: (record: Transaction) => void; compactMobile?: boolean; onSubmittingChange?: (submitting: boolean) => void; onCreditSaved?: () => void }) {
+function ExpenseForm({ record, members, expenseGroups = [], onExpenseGroupsChange, user, close, saved, compactMobile = false, onSubmittingChange, onCreditSaved }: { record: Transaction | null; members: Member[]; expenseGroups?: ExpenseGroup[]; onExpenseGroupsChange?: (groups: ExpenseGroup[]) => void; user: AuthUser; close: () => void; saved: (record: Transaction) => void; compactMobile?: boolean; onSubmittingChange?: (submitting: boolean) => void; onCreditSaved?: () => void }) {
   const ui = useUI();
   const today = new Date().toISOString().slice(0, 10);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localExpenseGroups, setLocalExpenseGroups] = useState<ExpenseGroup[]>(expenseGroups);
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const [manualAmountEdited, setManualAmountEdited] = useState(false);
   const [draft, setDraft] = useState<ExpenseDraft>(() => {
     const cat = record?.category || expenseCategories[0];
     const subcat = record?.subcategory || expenseCategoryTree[cat]?.[0] || "Khác";
@@ -5936,12 +5993,14 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
     const paymentAccountId = record?.paymentAccountId || record?.payment_account_id || record?.bankAccountId || record?.bank_account_id || "";
     const simId = record?.simId || record?.sim_id || "";
     const transactionTime = normalizeTimeValue(record?.transactionTime || record?.transaction_time) || timeFromTimestamp(record?.createdAt || record?.created_at) || currentTimeValue();
-    return { id: record?.id || safeId(), memberId: record?.memberId || user.memberId || user.member?.id || members[0]?.id || "", date: record?.date || today, transactionTime, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod, paymentAccountId, simId, topupSimBalance: Boolean((record as any)?.simTopupApplied || (record as any)?.sim_topup_applied), reimbursementPerson: (record as any)?.reimbursementPerson || (record as any)?.reimbursement_person || "", reimbursementStatus: (record as any)?.reimbursementStatus || (record as any)?.reimbursement_status || (cat === "Thanh toán hộ" ? "pending" : "none"), reimbursedAmount: String((record as any)?.reimbursedAmount ?? (record as any)?.reimbursed_amount ?? ""), reimbursedAt: (record as any)?.reimbursedAt || (record as any)?.reimbursed_at || "" };
+    return { id: record?.id || safeId(), memberId: record?.memberId || user.memberId || user.member?.id || members[0]?.id || "", date: record?.date || today, transactionTime, category: cat, subcategory: subcat, vendor: record?.title || "", grossAmount: gross, discountAmount: discount, note: record?.note || "", paymentMethod, paymentAccountId, simId, topupSimBalance: Boolean((record as any)?.simTopupApplied || (record as any)?.sim_topup_applied), reimbursementPerson: (record as any)?.reimbursementPerson || (record as any)?.reimbursement_person || "", reimbursementStatus: (record as any)?.reimbursementStatus || (record as any)?.reimbursement_status || (cat === "Thanh toán hộ" ? "pending" : "none"), reimbursedAmount: String((record as any)?.reimbursedAmount ?? (record as any)?.reimbursed_amount ?? ""), reimbursedAt: (record as any)?.reimbursedAt || (record as any)?.reimbursed_at || "", groupId: record?.groupId || (record as any)?.group_id || "", items: record?.items || [] };
   });
   const grossValue = Number(String(draft.grossAmount).replace(/\D/g, "") || 0);
   const discountValue = Number(String(draft.discountAmount).replace(/\D/g, "") || 0);
-  const totalAmount = grossValue - discountValue;
-  const isError = discountValue > grossValue;
+  const itemsTotal = draft.items && draft.items.length > 0 ? draft.items.reduce((s, i) => s + ((Number(i.quantity) || 0) * (Number(i.unitPrice ?? i.unit_price) || 0)), 0) : 0;
+  const effectiveGrossValue = itemsTotal > 0 && !manualAmountEdited ? itemsTotal : grossValue;
+  const totalAmount = effectiveGrossValue - discountValue;
+  const isError = discountValue > effectiveGrossValue;
   const bankAccountsState = useState<any[]>([]);
   const bankAccounts = bankAccountsState[0];
   const setBankAccounts = bankAccountsState[1];
@@ -6069,7 +6128,25 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
     }).catch(() => setMemberSims([]));
   }, [user.memberId, user.member?.id, draft.memberId]);
 
+  useEffect(() => setLocalExpenseGroups(expenseGroups), [expenseGroups]);
+  useEffect(() => {
+    if (itemsTotal <= 0 || manualAmountEdited) return;
+    const nextGross = String(itemsTotal);
+    setDraft(current => current.grossAmount === nextGross ? current : { ...current, grossAmount: nextGross });
+  }, [itemsTotal, manualAmountEdited]);
+
   function patch(value: Partial<ExpenseDraft>) { setDraft(current => ({ ...current, ...value })); }
+  function updateExpenseGroups(groups: ExpenseGroup[]) {
+    setLocalExpenseGroups(groups);
+    onExpenseGroupsChange?.(groups);
+  }
+  function handleGroupCreated(group: ExpenseGroup) {
+    const nextGroups = [group, ...localExpenseGroups.filter(item => item.id !== group.id)];
+    updateExpenseGroups(nextGroups);
+    patch({ groupId: group.id });
+    setShowGroupForm(false);
+    ui.toast("Da tao nhom chi tieu", "success");
+  }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (isSubmitting) return;
@@ -6129,8 +6206,12 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
       else close();
       return;
     }
-
-    const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, transactionTime: draft.transactionTime, transaction_time: draft.transactionTime, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: grossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, payment_method: draft.paymentMethod, paymentAccountId: finalPaymentAccountId || undefined, payment_account_id: finalPaymentAccountId || undefined, bankAccountId: finalPaymentAccountId || undefined, bank_account_id: finalPaymentAccountId || undefined, simId: finalSimId || undefined, sim_id: finalSimId || undefined, simTopupApplied: shouldTopupSim, sim_topup_applied: shouldTopupSim, isReimbursable: isReimbursement, is_reimbursable: isReimbursement, reimbursementPerson: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursement_person: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursementStatus, reimbursement_status: reimbursementStatus, reimbursedAmount: reimbursementAmount, reimbursed_amount: reimbursementAmount, reimbursedAt: isReimbursement ? draft.reimbursedAt || null : null, reimbursed_at: isReimbursement ? draft.reimbursedAt || null : null, countsForPersonalExpense: !isReimbursement && !isSavingExpense, counts_for_personal_expense: !isReimbursement && !isSavingExpense, countsForCardSpending: isReimbursement || !isSavingExpense, counts_for_card_spending: isReimbursement || !isSavingExpense } as Transaction & { simTopupApplied: boolean; sim_topup_applied: boolean; reimbursementPerson?: string | null; reimbursementStatus?: string; reimbursedAmount?: number };
+    const normalizedItems = (draft.items || []).map(item => {
+      const quantity = Number(item.quantity) || 0;
+      const unitPrice = Number(item.unitPrice ?? item.unit_price) || 0;
+      return { ...item, quantity, unitPrice, unit_price: unitPrice, amount: quantity * unitPrice };
+    }).filter(item => item.name.trim() || item.amount > 0);
+    const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, transactionTime: draft.transactionTime, transaction_time: draft.transactionTime, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: effectiveGrossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, payment_method: draft.paymentMethod, paymentAccountId: finalPaymentAccountId || undefined, payment_account_id: finalPaymentAccountId || undefined, bankAccountId: finalPaymentAccountId || undefined, bank_account_id: finalPaymentAccountId || undefined, simId: finalSimId || undefined, sim_id: finalSimId || undefined, simTopupApplied: shouldTopupSim, sim_topup_applied: shouldTopupSim, isReimbursable: isReimbursement, is_reimbursable: isReimbursement, reimbursementPerson: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursement_person: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursementStatus, reimbursement_status: reimbursementStatus, reimbursedAmount: reimbursementAmount, reimbursed_amount: reimbursementAmount, reimbursedAt: isReimbursement ? draft.reimbursedAt || null : null, reimbursed_at: isReimbursement ? draft.reimbursedAt || null : null, countsForPersonalExpense: !isReimbursement && !isSavingExpense, counts_for_personal_expense: !isReimbursement && !isSavingExpense, countsForCardSpending: isReimbursement || !isSavingExpense, counts_for_card_spending: isReimbursement || !isSavingExpense, groupId: draft.groupId || undefined, group_id: draft.groupId || undefined, items: normalizedItems } as Transaction & { simTopupApplied: boolean; sim_topup_applied: boolean; reimbursementPerson?: string | null; reimbursementStatus?: string; reimbursedAmount?: number };
     const response = await fetch("/api/transactions", { cache: 'no-store',  method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
     if (!response.ok) {
       const result = await readJsonSafe<{ error?: string }>(response);
@@ -6168,6 +6249,18 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
           patch({ category, subcategory: expenseCategoryTree[category]?.[0] || "Khác", simId: "", topupSimBalance: false, reimbursementStatus: category === "Thanh toán hộ" ? "pending" : "none", reimbursedAmount: category === "Thanh toán hộ" ? "0" : "", reimbursedAt: "" });
         }}>{expenseCategories.map(category => <option key={category}>{category}</option>)}</select></Field>
         <Field label="Loại chi tiết"><select className={inputClass} value={draft.subcategory} onChange={event => patch({ subcategory: event.target.value, simId: event.target.value === "Sim / Data" ? draft.simId : "", topupSimBalance: event.target.value === "Sim / Data" ? draft.topupSimBalance : false })}>{(expenseCategoryTree[draft.category] || ["Khác"]).map(sub => <option key={sub}>{sub}</option>)}</select></Field>
+        
+        <ExpenseGroupSelector
+          value={draft.groupId || ""}
+          onChange={(val) => patch({ groupId: val })}
+          expenseGroups={localExpenseGroups}
+          onAddGroup={() => setShowGroupForm(true)}
+        />
+        
+        <TransactionItemsEditor
+          items={draft.items || []}
+          onChange={(items) => patch({ items })}
+        />
         {isSimDataExpense && (
           <Field label="SIM liên kết">
             <select
@@ -6213,8 +6306,8 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
           </>
         )}
         <Field label="Nội dung chi"><input required className={inputClass} value={draft.vendor} onChange={event => patch({ vendor: event.target.value })} placeholder="Ví dụ: Đi chợ, Thanh toán tiền điện..." /></Field>
-        <Field label="Giá gốc"><input required className={inputClass} value={draft.grossAmount} onChange={event => patch({ grossAmount: event.target.value.replace(/\D/g, "") })} /></Field>
-        <Field label="Giảm giá"><input className={inputClass} value={draft.discountAmount} onChange={event => patch({ discountAmount: event.target.value.replace(/\D/g, "") })} placeholder="0" /></Field>
+        <Field label="Giá gốc"><input required inputMode="numeric" className={inputClass} value={draft.grossAmount} onChange={event => { setManualAmountEdited(true); patch({ grossAmount: event.target.value.replace(/\D/g, "") }); }} /></Field>
+        <Field label="Giảm giá"><input inputMode="numeric" className={inputClass} value={draft.discountAmount} onChange={event => patch({ discountAmount: event.target.value.replace(/\D/g, "") })} placeholder="0" /></Field>
         <Field label="Thực trả"><div className={`flex h-11 w-full items-center rounded-xl bg-slate-50 px-3 font-semibold ${isError || totalAmount < 0 ? "text-rose-500" : "text-emerald-600"} dark:bg-white/5`}>{money(totalAmount)}{isError && " (Lỗi: Giảm giá > Giá gốc)"}</div></Field>
         <Field label="Phương thức thanh toán"><select className={inputClass} value={draft.paymentMethod} onChange={event => {
           const paymentMethod = event.target.value as import("../types").PaymentMethod;
@@ -6254,7 +6347,128 @@ function ExpenseForm({ record, members, user, close, saved, compactMobile = fals
         })()}
         <div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} placeholder="Coopmart: rau 30k, thịt 120k, sữa 70k" /></Field></div>
       </div></Card>
+      {showGroupForm && <ExpenseGroupCreateSheet memberId={draft.memberId} close={() => setShowGroupForm(false)} saved={handleGroupCreated} />}
       {!compactMobile && <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={close} disabled={isSubmitting} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold disabled:opacity-50">Hủy</button><button type="submit" disabled={isSubmitting} className="rounded-xl bg-rose-500 px-6 py-3 text-sm font-bold text-white disabled:opacity-50">{isSubmitting ? "Đang lưu..." : "Lưu phiếu chi"}</button></div>}
+    </form>
+  </div>;
+}
+
+function ExpenseGroupDetailSheet({ group, records, close }: { group: ExpenseGroup; records: Transaction[]; close: () => void }) {
+  const total = records.reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
+  const budget = Number(group.budgetAmount || group.budget_amount || 0);
+  const byCategory = Object.values(records.reduce<Record<string, { category: string; total: number }>>((result, record) => {
+    const category = record.category || "Khác";
+    result[category] = { category, total: (result[category]?.total || 0) + (Number(record.amount) || 0) };
+    return result;
+  }, {})).sort((a, b) => b.total - a.total);
+
+  return <div className="fixed inset-0 z-[60] flex justify-end bg-black/45 p-0 md:p-4" onMouseDown={close}>
+    <div onMouseDown={event => event.stopPropagation()} className="flex h-full w-full max-w-lg flex-col overflow-hidden bg-[var(--app-card)] shadow-2xl md:rounded-2xl">
+      <div className="flex shrink-0 items-center justify-between gap-3 p-5 pb-4">
+        <div className="min-w-0">
+          <h3 className="truncate text-lg font-bold">{group.name}</h3>
+          <p className="mt-0.5 text-xs font-medium text-slate-500">{group.type || "Nhóm chi tiêu"}</p>
+        </div>
+        <button onClick={close} className="grid size-9 shrink-0 place-items-center rounded-full border border-[var(--app-border)]">×</button>
+      </div>
+      <div className="flex-1 space-y-4 overflow-y-auto p-5 pt-0">
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-xl bg-slate-50 p-3 dark:bg-white/5"><p className="text-xs text-slate-400">Tổng đã chi</p><b className="text-rose-500">{money(total)}</b></div>
+          <div className="rounded-xl bg-slate-50 p-3 dark:bg-white/5"><p className="text-xs text-slate-400">Ngân sách</p><b>{budget > 0 ? money(budget) : "-"}</b></div>
+          <div className="rounded-xl bg-slate-50 p-3 dark:bg-white/5"><p className="text-xs text-slate-400">Số khoản</p><b>{records.length}</b></div>
+        </div>
+        {byCategory.length > 0 && <div className="rounded-xl border border-[var(--app-border)] p-4">
+          <p className="text-xs font-bold uppercase text-slate-400">Tổng theo category</p>
+          <div className="mt-3 space-y-2">
+            {byCategory.map(item => <div key={item.category} className="flex justify-between gap-3 text-sm"><span>{item.category}</span><b>{money(item.total)}</b></div>)}
+          </div>
+        </div>}
+        <div className="rounded-xl border border-[var(--app-border)]">
+          <div className="border-b border-[var(--app-border)] px-4 py-3 text-sm font-bold">Khoản chi thuộc nhóm</div>
+          <div className="divide-y divide-[var(--app-border)]">
+            {records.map(record => <div key={record.id} className="px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{record.title || "Khác"}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">{formatExpenseDateTime(record)} · {record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</p>
+                </div>
+                <b className="shrink-0 text-sm text-rose-500">{money(record.amount)}</b>
+              </div>
+            </div>)}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+function ExpenseGroupCreateSheet({ memberId, close, saved }: { memberId: string; close: () => void; saved: (group: ExpenseGroup) => void }) {
+  const ui = useUI();
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    type: "Du lich",
+    budgetAmount: "",
+    startDate: "",
+    endDate: "",
+    note: ""
+  });
+  const groupTypes = ["Du lich", "Sieu thi", "Gym", "Sua nha", "Sinh nhat", "Khac"];
+  const patch = (value: Partial<typeof form>) => setForm(current => ({ ...current, ...value }));
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (submitting) return;
+    const name = form.name.trim();
+    if (!name) {
+      ui.toast("Nhap ten nhom chi tieu", "error");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payload: ExpenseGroup = {
+        id: safeId(),
+        memberId,
+        name,
+        type: form.type,
+        budgetAmount: Number(String(form.budgetAmount).replace(/\D/g, "") || 0),
+        startDate: form.startDate || "",
+        endDate: form.endDate || "",
+        note: form.note,
+        status: "active"
+      };
+      const response = await fetch("/api/expense-groups", { cache: "no-store", method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await readJsonSafe<ExpenseGroup & { error?: string }>(response);
+      if (!response.ok || !result || (result as any).error) {
+        ui.toast((result as any)?.error || "Khong the tao nhom chi tieu", "error");
+        return;
+      }
+      saved(result);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/45 md:items-center md:p-6" onMouseDown={close}>
+    <form onSubmit={submit} onMouseDown={event => event.stopPropagation()} className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-[var(--app-card)] p-5 shadow-2xl md:max-w-lg md:rounded-3xl">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-lg font-bold">Tao nhom chi tieu</h3>
+        <button type="button" onClick={close} className="grid size-9 place-items-center rounded-full border border-[var(--app-border)]">×</button>
+      </div>
+      <div className="mt-5 grid gap-4">
+        <Field label="Ten nhom"><input required className={inputClass} value={form.name} onChange={event => patch({ name: event.target.value })} placeholder="Vi du: Du lich Vinh Hy" /></Field>
+        <Field label="Loai nhom"><select className={inputClass} value={form.type} onChange={event => patch({ type: event.target.value })}>{groupTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></Field>
+        <Field label="Ngan sach du kien"><input inputMode="numeric" className={inputClass} value={form.budgetAmount} onChange={event => patch({ budgetAmount: event.target.value.replace(/\D/g, "") })} placeholder="0" /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Ngay bat dau"><DateVNInput value={form.startDate} onChange={value => patch({ startDate: value })} /></Field>
+          <Field label="Ngay ket thuc"><DateVNInput value={form.endDate} onChange={value => patch({ endDate: value })} /></Field>
+        </div>
+        <Field label="Ghi chu"><textarea rows={3} className={inputClass} value={form.note} onChange={event => patch({ note: event.target.value })} /></Field>
+      </div>
+      <div className="mt-5 flex justify-end gap-3">
+        <button type="button" onClick={close} disabled={submitting} className="rounded-xl border border-[var(--app-border)] px-4 py-3 text-sm font-bold disabled:opacity-50">Huy</button>
+        <button type="submit" disabled={submitting} className="rounded-xl bg-rose-500 px-5 py-3 text-sm font-bold text-white disabled:opacity-50">{submitting ? "Dang luu..." : "Luu nhom"}</button>
+      </div>
     </form>
   </div>;
 }
@@ -9639,7 +9853,7 @@ function MobileHome({
 }
 
 
-function CreditCardSheet({ close, user, refresh }: { close: () => void, user: any, refresh: () => void }) {
+function CreditCardSheet({ close, user, refresh, expenseGroups = [] }: { close: () => void, user: any, refresh: () => void, expenseGroups?: import("../types").ExpenseGroup[] }) {
   const ui = useUI();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<{ cards: any[], pendingCreditTotal: number }>({ cards: [], pendingCreditTotal: 0 });
@@ -9696,12 +9910,22 @@ function CreditCardSheet({ close, user, refresh }: { close: () => void, user: an
                 </div>
                 {c.pendingTransactions?.length > 0 ? (
                   <div className="mb-3 space-y-2 border-t border-[#F8F5F2] pt-2.5">
-                    {c.pendingTransactions.map((t: any) => (
-                      <div key={t.id} className="flex justify-between gap-3 text-[13px]">
-                        <span className="truncate pr-2 text-[#171018]">{t.description || "Giao dịch"}</span>
-                        <span className="shrink-0 font-medium text-[#E11D48]">{money(t.amount)}</span>
-                      </div>
-                    ))}
+                    {c.pendingTransactions.map((t: any) => {
+                      const groupName = t.groupId || t.group_id ? expenseGroups.find(g => g.id === (t.groupId || t.group_id))?.name : null;
+                      return (
+                        <div key={t.id} className="flex justify-between gap-3 text-[13px]">
+                          <div className="flex-1 min-w-0 pr-2">
+                            <span className="truncate text-[#171018]">{t.description || "Giao dịch"}</span>
+                            {groupName && (
+                              <span className="ml-1.5 shrink-0 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold text-blue-600 border border-blue-100">
+                                {groupName}
+                              </span>
+                            )}
+                          </div>
+                          <span className="shrink-0 font-medium text-[#E11D48]">{money(t.amount)}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="mb-3 mt-2 text-[12px] italic text-[#6B5E64]">Chưa có khoản tạm tính cần thanh toán.</p>
@@ -9867,3 +10091,4 @@ function CreditCardPaymentModal({ card, close, onSuccess }: any) {
     </div>
   </div>;
 }
+

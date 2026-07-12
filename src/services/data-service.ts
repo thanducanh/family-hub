@@ -11,7 +11,7 @@ export interface DataService {
   loadPreferences(): Preferences;
   savePreferences(preferences: Preferences): void;
 }
-export interface NasCounts { members: number; tasks: number; transactions: number; events: number; notes: number; }
+export interface NasCounts { members: number; tasks: number; transactions: number; events: number; notes: number; expense_groups: number; }
 export interface SystemStatus { source: "nas" | "localStorage"; lastSyncedAt: string | null; message: string; counts: NasCounts | null; }
 
 const PREFERENCES_KEY = "family-hub:preferences";
@@ -30,7 +30,8 @@ const emptyData: AppData = {
   tasks: [],
   transactions: [],
   events: [],
-  notes: []
+  notes: [],
+  expenseGroups: []
 };
 
 function getInitialData(): AppData {
@@ -70,7 +71,7 @@ export class LocalStorageDataService implements DataService {
   savePreferences(preferences: Preferences) { localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences)); }
 }
 
-const collections = ["members", "tasks", "transactions", "events", "notes"] as const;
+const collections = ["members", "tasks", "transactions", "events", "notes", "expense_groups"] as const;
 
 export class ApiDataService implements DataService {
   private current: AppData | null = null;
@@ -160,7 +161,11 @@ export class ApiDataService implements DataService {
       this.setStatus("localStorage", "Đang xem dữ liệu đã lưu lần cuối.");
     }
     const extractedValues = values.map(val => (val && typeof val === "object" && val.ok !== undefined && val.data !== undefined) ? val.data : val);
-    const data = Object.fromEntries(collections.map((collection, index) => [collection, extractedValues[index]])) as unknown as AppData;
+    const data = Object.fromEntries(collections.map((collection, index) => {
+      // Map expense_groups to expenseGroups in AppData
+      const key = collection === "expense_groups" ? "expenseGroups" : collection;
+      return [key, extractedValues[index]];
+    })) as unknown as AppData;
     
     if (this.current?.members) {
       data.members = data.members.map(newM => {
@@ -177,8 +182,18 @@ export class ApiDataService implements DataService {
   }
   private async writeNas(data: AppData, includeDeletes: boolean) {
     const writableCollections = collections.filter(collection => collection !== "events");
-    const writes = writableCollections.flatMap(collection => data[collection].map(item => fetch(`/api/${collection}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item) })));
-    const deletes = includeDeletes && this.current ? writableCollections.filter(collection => collection !== "members").flatMap(collection => this.current![collection].filter(item => !data[collection].some(current => current.id === item.id)).map(item => fetch(`/api/${collection}?id=${encodeURIComponent(item.id)}`, { method: "DELETE" }))) : [];
+    const getAppKey = (col: string) => col === "expense_groups" ? "expenseGroups" : col;
+    const writes = writableCollections.flatMap(collection => {
+      const appKey = getAppKey(collection) as keyof AppData;
+      const arr = (data[appKey] || []) as any[];
+      return arr.map(item => fetch(`/api/${collection}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(item) }));
+    });
+    const deletes = includeDeletes && this.current ? writableCollections.filter(collection => collection !== "members").flatMap(collection => {
+      const appKey = getAppKey(collection) as keyof AppData;
+      const currArr = (this.current![appKey] || []) as any[];
+      const dataArr = (data[appKey] || []) as any[];
+      return currArr.filter(item => !dataArr.some(current => current.id === item.id)).map(item => fetch(`/api/${collection}?id=${encodeURIComponent(item.id)}`, { method: "DELETE" }));
+    }) : [];
     const responses = await Promise.all([...writes, ...deletes]);
     if (responses.some(response => !response.ok)) throw new Error("Database API unavailable");
   }
@@ -191,18 +206,19 @@ export class ApiDataService implements DataService {
 function isAppData(data: unknown): data is AppData {
   if (!data || typeof data !== "object") return false;
   const value = data as Record<string, unknown>;
-  return ["members", "tasks", "transactions", "events", "notes"].every(key => Array.isArray(value[key]));
+  return ["members", "tasks", "transactions", "events", "notes"].every(key => Array.isArray(value[key])) && Array.isArray(value.expenseGroups || []);
 }
 
 function normalizeData(data: AppData): AppData {
   const fixed = fixVietnameseMojibake(data) as AppData;
   return {
     ...fixed,
-    members: fixed.members.map(member => ({ ...normalizeMember(member), id: normalizeId(member.id) })),
-    tasks: fixed.tasks.map(task => ({ ...normalizeTask(task), id: normalizeId(task.id) })),
-    transactions: fixed.transactions.map(transaction => ({ ...normalizeTransaction(transaction), id: normalizeId(transaction.id) })),
-    events: fixed.events.map(event => ({ ...normalizeEvent(event), id: normalizeId(event.id) })),
-    notes: fixed.notes.map(note => ({ ...normalizeNote(note), id: normalizeId(note.id) })),
+    members: (fixed.members || []).map(member => ({ ...normalizeMember(member), id: normalizeId(member.id) })),
+    tasks: (fixed.tasks || []).map(task => ({ ...normalizeTask(task), id: normalizeId(task.id) })),
+    transactions: (fixed.transactions || []).map(transaction => ({ ...normalizeTransaction(transaction), id: normalizeId(transaction.id) })),
+    events: (fixed.events || []).map(event => ({ ...normalizeEvent(event), id: normalizeId(event.id) })),
+    notes: (fixed.notes || []).map(note => ({ ...normalizeNote(note), id: normalizeId(note.id) })),
+    expenseGroups: (fixed.expenseGroups || []).map(group => ({ ...group, id: normalizeId(group.id) })),
   };
 }
 
@@ -250,11 +266,17 @@ function loadCache(): AppData {
 }
 
 function isEmpty(data: AppData) {
-  return collections.every(collection => data[collection].length === 0);
+  return collections.every(collection => {
+    const key = collection === "expense_groups" ? "expenseGroups" : collection;
+    return (data[key as keyof AppData] as any[] || []).length === 0;
+  });
 }
 
 function countsOf(data: AppData): NasCounts {
-  return Object.fromEntries(collections.map(collection => [collection, data[collection].length])) as unknown as NasCounts;
+  return Object.fromEntries(collections.map(collection => {
+    const key = collection === "expense_groups" ? "expenseGroups" : collection;
+    return [collection, (data[key as keyof AppData] as any[] || []).length];
+  })) as unknown as NasCounts;
 }
 
 export const dataService = new ApiDataService();
