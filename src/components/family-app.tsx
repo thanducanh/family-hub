@@ -6347,9 +6347,9 @@ function ExpenseForm({ record, members, expenseGroups = [], onExpenseGroupsChang
         })()}
         <div className="md:col-span-2"><Field label="Ghi chú"><textarea rows={3} className={inputClass} value={draft.note} onChange={event => patch({ note: event.target.value })} placeholder="Coopmart: rau 30k, thịt 120k, sữa 70k" /></Field></div>
       </div></Card>
-      {showGroupForm && <ExpenseGroupCreateSheet memberId={draft.memberId} close={() => setShowGroupForm(false)} saved={handleGroupCreated} />}
       {!compactMobile && <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={close} disabled={isSubmitting} className="rounded-xl border border-[var(--app-border)] px-5 py-3 text-sm font-bold disabled:opacity-50">Hủy</button><button type="submit" disabled={isSubmitting} className="rounded-xl bg-rose-500 px-6 py-3 text-sm font-bold text-white disabled:opacity-50">{isSubmitting ? "Đang lưu..." : "Lưu phiếu chi"}</button></div>}
     </form>
+      {showGroupForm && <ExpenseGroupCreateSheet memberId={draft.memberId} close={() => setShowGroupForm(false)} saved={handleGroupCreated} />}
   </div>;
 }
 
