@@ -3,6 +3,11 @@ import { ExpenseGroup, TransactionItem } from "../types";
 import { safeId } from "../lib/safe-id";
 
 const inputClass = "w-full min-w-0 max-w-full rounded-xl border border-[var(--app-border)] bg-[var(--app-background)] px-3 py-3 text-sm outline-none focus:border-rose-400";
+const parseMoneyInput = (value: string) => Math.max(0, Math.round(Number(value.replace(/\D/g, "")) || 0));
+const formatMoneyInput = (value: unknown) => {
+  const amount = Math.round(Number(value) || 0);
+  return amount > 0 ? new Intl.NumberFormat("vi-VN").format(amount) : "";
+};
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -60,7 +65,7 @@ export function TransactionItemsEditor({
   items: TransactionItem[];
   onChange: (items: TransactionItem[]) => void;
 }) {
-  const itemTotal = (item: TransactionItem) => (Number(item.quantity) || 0) * (Number(item.unitPrice ?? item.unit_price) || 0);
+  const itemTotal = (item: TransactionItem) => Math.round((Number(item.quantity) || 0) * (Number(item.unitPrice ?? item.unit_price) || 0));
   const total = items.reduce((sum, item) => sum + itemTotal(item), 0);
 
   const handleAdd = () => {
@@ -71,7 +76,7 @@ export function TransactionItemsEditor({
     const next = [...items];
     const current = { ...next[index] };
     if (field === "quantity" || field === "unitPrice" || field === "unit_price") {
-      const numericValue = Number(value.replace(/\D/g, "") || 0);
+      const numericValue = field === "quantity" ? Math.max(0, Number(value) || 0) : parseMoneyInput(value);
       if (field === "unit_price") {
         current.unitPrice = numericValue;
         current.unit_price = numericValue;
@@ -137,12 +142,13 @@ export function TransactionItemsEditor({
               </Field>
               <Field label="Don gia">
                 <input
-                  type="number"
+                  type="text"
                   inputMode="numeric"
                   min="0"
                   className={inputClass}
-                  value={item.unitPrice ?? item.unit_price ?? ""}
+                  value={formatMoneyInput(item.unitPrice ?? item.unit_price)}
                   onChange={(event) => handleUpdate(index, "unitPrice", event.target.value)}
+                  onBlur={(event) => { event.currentTarget.value = formatMoneyInput(item.unitPrice ?? item.unit_price); }}
                 />
               </Field>
             </div>

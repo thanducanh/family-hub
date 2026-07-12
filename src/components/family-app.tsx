@@ -5650,6 +5650,13 @@ const formatExpenseDateTime = (record: Transaction) => {
   const time = normalizeTimeValue(record.transactionTime || record.transaction_time) || timeFromTimestamp(record.createdAt || record.created_at);
   return `${formatDateVN(record.date || record.createdAt || record.created_at || "")}${time ? ` · ${time}` : ""}`;
 };
+const expenseItemAmount = (item: import("../types").TransactionItem) => Math.round((Number(item.quantity) || 0) * (Number(item.unitPrice ?? item.unit_price) || 0));
+const suggestExpenseTitleFromItems = (items: import("../types").TransactionItem[]) => {
+  const names = items.map(item => item.name.trim()).filter(Boolean);
+  if (names.length === 0) return "";
+  if (names.length <= 3) return `Mua ${names.join(", ")}`;
+  return "Hóa đơn nhiều món";
+};
 
 const getExpenseDate = (record: any) => parseDate(record.date || record.expense_date || record.created_at || record.createdAt || "");
 
@@ -5916,7 +5923,8 @@ function ExpenseSheetManagement({ data, update, user }: { data: AppData; update:
                 {row.items.length === 0 ? <div className="p-4 text-center text-sm font-medium text-slate-500">Chưa có khoản nào trong tháng này.</div> : row.items.map(record => {
                   const menuOpen = menuId === record.id;
                   const pm = getExpensePaymentLabel(record);
-                  const groupName = record.groupId ? (data.expenseGroups || []).find(g => g.id === record.groupId)?.name : null;
+                  const recordGroupId = record.groupId || record.group_id || "";
+                  const groupName = recordGroupId ? (data.expenseGroups || []).find(g => g.id === recordGroupId)?.name : null;
                   return <div key={record.id} className="group relative border-b border-[var(--app-border)] px-3 py-3 hover:bg-slate-50 dark:hover:bg-white/5 sm:flex sm:flex-col sm:gap-2 sm:border-b-0 sm:py-2">
                     <div className="flex items-start justify-between sm:contents sm:grid sm:grid-cols-[120px_180px_1fr_160px_140px_40px] sm:items-center sm:gap-0">
                       <div className="min-w-0 flex-1 sm:hidden">
@@ -5997,7 +6005,7 @@ function ExpenseForm({ record, members, expenseGroups = [], onExpenseGroupsChang
   });
   const grossValue = Number(String(draft.grossAmount).replace(/\D/g, "") || 0);
   const discountValue = Number(String(draft.discountAmount).replace(/\D/g, "") || 0);
-  const itemsTotal = draft.items && draft.items.length > 0 ? draft.items.reduce((s, i) => s + ((Number(i.quantity) || 0) * (Number(i.unitPrice ?? i.unit_price) || 0)), 0) : 0;
+  const itemsTotal = draft.items && draft.items.length > 0 ? draft.items.reduce((s, item) => s + expenseItemAmount(item), 0) : 0;
   const effectiveGrossValue = itemsTotal > 0 && !manualAmountEdited ? itemsTotal : grossValue;
   const totalAmount = effectiveGrossValue - discountValue;
   const isError = discountValue > effectiveGrossValue;
@@ -6188,7 +6196,7 @@ function ExpenseForm({ record, members, expenseGroups = [], onExpenseGroupsChang
         memberId: draft.memberId,
         bankAccountId: finalPaymentAccountId,
         title: draft.vendor.trim() || "Khác",
-        amount: totalAmount,
+        amount: Math.round(totalAmount),
         date: draft.date,
         category: draft.category,
         subcategory: draft.subcategory,
@@ -6208,8 +6216,8 @@ function ExpenseForm({ record, members, expenseGroups = [], onExpenseGroupsChang
     }
     const normalizedItems = (draft.items || []).map(item => {
       const quantity = Number(item.quantity) || 0;
-      const unitPrice = Number(item.unitPrice ?? item.unit_price) || 0;
-      return { ...item, quantity, unitPrice, unit_price: unitPrice, amount: quantity * unitPrice };
+      const unitPrice = Math.round(Number(item.unitPrice ?? item.unit_price) || 0);
+      return { ...item, quantity, unitPrice, unit_price: unitPrice, amount: Math.round(quantity * unitPrice) };
     }).filter(item => item.name.trim() || item.amount > 0);
     const expense: Transaction = { id: draft.id, memberId: draft.memberId, date: draft.date, transactionTime: draft.transactionTime, transaction_time: draft.transactionTime, category: draft.category, subcategory: draft.subcategory, title: draft.vendor.trim() || "Khác", amount: totalAmount, grossAmount: effectiveGrossValue, discountAmount: discountValue, type: "expense", note: draft.note, paymentMethod: draft.paymentMethod, payment_method: draft.paymentMethod, paymentAccountId: finalPaymentAccountId || undefined, payment_account_id: finalPaymentAccountId || undefined, bankAccountId: finalPaymentAccountId || undefined, bank_account_id: finalPaymentAccountId || undefined, simId: finalSimId || undefined, sim_id: finalSimId || undefined, simTopupApplied: shouldTopupSim, sim_topup_applied: shouldTopupSim, isReimbursable: isReimbursement, is_reimbursable: isReimbursement, reimbursementPerson: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursement_person: isReimbursement ? draft.reimbursementPerson || "Mẹ" : null, reimbursementStatus, reimbursement_status: reimbursementStatus, reimbursedAmount: reimbursementAmount, reimbursed_amount: reimbursementAmount, reimbursedAt: isReimbursement ? draft.reimbursedAt || null : null, reimbursed_at: isReimbursement ? draft.reimbursedAt || null : null, countsForPersonalExpense: !isReimbursement && !isSavingExpense, counts_for_personal_expense: !isReimbursement && !isSavingExpense, countsForCardSpending: isReimbursement || !isSavingExpense, counts_for_card_spending: isReimbursement || !isSavingExpense, groupId: draft.groupId || undefined, group_id: draft.groupId || undefined, items: normalizedItems } as Transaction & { simTopupApplied: boolean; sim_topup_applied: boolean; reimbursementPerson?: string | null; reimbursementStatus?: string; reimbursedAmount?: number };
     const response = await fetch("/api/transactions", { cache: 'no-store',  method: record ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(expense) });
@@ -6259,7 +6267,10 @@ function ExpenseForm({ record, members, expenseGroups = [], onExpenseGroupsChang
         
         <TransactionItemsEditor
           items={draft.items || []}
-          onChange={(items) => patch({ items })}
+          onChange={(items) => {
+            const titleSuggestion = draft.vendor.trim() ? {} : { vendor: suggestExpenseTitleFromItems(items) };
+            patch({ items, ...titleSuggestion });
+          }}
         />
         {isSimDataExpense && (
           <Field label="SIM liên kết">
@@ -6356,6 +6367,20 @@ function ExpenseForm({ record, members, expenseGroups = [], onExpenseGroupsChang
 function ExpenseGroupDetailSheet({ group, records, close }: { group: ExpenseGroup; records: Transaction[]; close: () => void }) {
   const total = records.reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
   const budget = Number(group.budgetAmount || group.budget_amount || 0);
+  const startDate = parseDate(group.startDate || group.start_date || "");
+  const dayLabel = (dateKey: string) => {
+    const parsed = parseDate(dateKey);
+    if (!parsed || !startDate) return "";
+    const diff = Math.floor((parsed.getTime() - startDate.getTime()) / 86400000) + 1;
+    return diff > 0 ? `Ngay ${diff}` : "";
+  };
+  const groupedByDate = Object.values(records.reduce<Record<string, { dateKey: string; records: Transaction[]; total: number }>>((result, record) => {
+    const dateKey = String(record.date || record.createdAt || record.created_at || "").slice(0, 10) || "unknown";
+    result[dateKey] = result[dateKey] || { dateKey, records: [], total: 0 };
+    result[dateKey].records.push(record);
+    result[dateKey].total += Number(record.amount) || 0;
+    return result;
+  }, {})).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
   const byCategory = Object.values(records.reduce<Record<string, { category: string; total: number }>>((result, record) => {
     const category = record.category || "Khác";
     result[category] = { category, total: (result[category]?.total || 0) + (Number(record.amount) || 0) };
@@ -6386,13 +6411,21 @@ function ExpenseGroupDetailSheet({ group, records, close }: { group: ExpenseGrou
         <div className="rounded-xl border border-[var(--app-border)]">
           <div className="border-b border-[var(--app-border)] px-4 py-3 text-sm font-bold">Khoản chi thuộc nhóm</div>
           <div className="divide-y divide-[var(--app-border)]">
-            {records.map(record => <div key={record.id} className="px-4 py-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{record.title || "Khác"}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">{formatExpenseDateTime(record)} · {record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</p>
-                </div>
-                <b className="shrink-0 text-sm text-rose-500">{money(record.amount)}</b>
+            {groupedByDate.map(day => <div key={day.dateKey}>
+              <div className="flex items-center justify-between gap-3 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-500 dark:bg-white/5">
+                <span>{day.dateKey === "unknown" ? "Khong ro ngay" : formatDateVN(day.dateKey)}{dayLabel(day.dateKey) ? ` · ${dayLabel(day.dateKey)}` : ""}</span>
+                <span>{money(day.total)}</span>
+              </div>
+              <div className="divide-y divide-[var(--app-border)]">
+                {day.records.map(record => <div key={record.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{record.title || "KhÃ¡c"}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{formatExpenseDateTime(record)} Â· {record.category}{record.subcategory ? ` / ${record.subcategory}` : ""}</p>
+                    </div>
+                    <b className="shrink-0 text-sm text-rose-500">{money(record.amount)}</b>
+                  </div>
+                </div>)}
               </div>
             </div>)}
           </div>
@@ -10091,4 +10124,3 @@ function CreditCardPaymentModal({ card, close, onSuccess }: any) {
     </div>
   </div>;
 }
-
