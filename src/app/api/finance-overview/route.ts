@@ -138,7 +138,7 @@ export async function GET(req: NextRequest) {
     await ensureAdjustmentsTable();
 
     const [incomeResult, expensesResult, savingsInExpenseResult, investmentsBuyResult, investmentsSellResult, adjustmentsResult, pendingCreditResult, savingsRecordsResult] = await Promise.all([
-      pool.query(`SELECT EXTRACT(YEAR FROM ${incomeDateExpr}) as year, EXTRACT(MONTH FROM ${incomeDateExpr}) as month, SUM(amount) as total FROM income_records WHERE ${incomeStatusCond} AND ${incomeDateExpr} >= $1::date AND ${filter.where} GROUP BY year, month`, [settings.trackingStartDate, ...filter.params]),
+      pool.query(`SELECT EXTRACT(YEAR FROM ${incomeDateExpr}) as year, EXTRACT(MONTH FROM ${incomeDateExpr}) as month, SUM(amount) as total FROM income_records WHERE ${incomeStatusCond} AND ${incomeDateExpr} >= $1::date AND ${filter.where} GROUP BY EXTRACT(YEAR FROM ${incomeDateExpr}), EXTRACT(MONTH FROM ${incomeDateExpr})`, [settings.trackingStartDate, ...filter.params]),
       pool.query(
         `SELECT EXTRACT(YEAR FROM ${transactionDateExpr}) as year, EXTRACT(MONTH FROM ${transactionDateExpr}) as month, SUM(amount) as total
          FROM transactions
@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
            AND ${realExpenseCondition}
            AND ${transactionDateExpr} >= $1::date
            AND ${filter.where}
-         GROUP BY year, month`,
+         GROUP BY EXTRACT(YEAR FROM ${transactionDateExpr}), EXTRACT(MONTH FROM ${transactionDateExpr})`,
         [settings.trackingStartDate, ...filter.params]
       ),
       pool.query(
@@ -157,14 +157,14 @@ export async function GET(req: NextRequest) {
            AND linked_savings_id IS NULL
            AND ${transactionDateExpr} >= $1::date
            AND ${filter.where}
-         GROUP BY year, month`,
+         GROUP BY EXTRACT(YEAR FROM ${transactionDateExpr}), EXTRACT(MONTH FROM ${transactionDateExpr})`,
         [settings.trackingStartDate, ...filter.params]
       ),
-      pool.query(`SELECT EXTRACT(YEAR FROM trade_date) as year, EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price + fee) as total FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date AND ${filter.where} GROUP BY year, month`, [settings.trackingStartDate, ...filter.params]),
-      pool.query(`SELECT EXTRACT(YEAR FROM trade_date) as year, EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price - fee) as total FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND ${filter.where} GROUP BY year, month`, [settings.trackingStartDate, ...filter.params]),
-      pool.query(`SELECT year, month, SUM(amount) as total FROM finance_adjustments WHERE make_date(year::integer, month::integer, 1) >= make_date((EXTRACT(YEAR FROM $1::date))::integer, (EXTRACT(MONTH FROM $1::date))::integer, 1) GROUP BY year, month`, [settings.trackingStartDate]),
-      pool.query(`SELECT EXTRACT(MONTH FROM date) as month, SUM(amount) as total FROM card_pending_transactions WHERE status = 'pending' AND EXTRACT(YEAR FROM date) = $2 AND ${filter.where} GROUP BY month`, [settings.trackingStartDate, targetYear, ...filter.params]),
-      pool.query(`SELECT EXTRACT(YEAR FROM date) as year, EXTRACT(MONTH FROM date) as month, SUM(CASE WHEN type = 'withdraw' THEN -amount ELSE amount END) as total FROM savings_records WHERE date >= $1::date AND ${filter.where} GROUP BY year, month`, [settings.trackingStartDate, ...filter.params])
+      pool.query(`SELECT EXTRACT(YEAR FROM trade_date) as year, EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price + fee) as total FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date AND ${filter.where} GROUP BY EXTRACT(YEAR FROM trade_date), EXTRACT(MONTH FROM trade_date)`, [settings.trackingStartDate, ...filter.params]),
+      pool.query(`SELECT EXTRACT(YEAR FROM trade_date) as year, EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price - fee) as total FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND ${filter.where} GROUP BY EXTRACT(YEAR FROM trade_date), EXTRACT(MONTH FROM trade_date)`, [settings.trackingStartDate, ...filter.params]),
+      pool.query(`SELECT EXTRACT(YEAR FROM make_date(year::integer, month::integer, 1)) as year, EXTRACT(MONTH FROM make_date(year::integer, month::integer, 1)) as month, SUM(amount) as total FROM finance_adjustments WHERE make_date(year::integer, month::integer, 1) >= make_date((EXTRACT(YEAR FROM $1::date))::integer, (EXTRACT(MONTH FROM $1::date))::integer, 1) GROUP BY EXTRACT(YEAR FROM make_date(year::integer, month::integer, 1)), EXTRACT(MONTH FROM make_date(year::integer, month::integer, 1))`, [settings.trackingStartDate]),
+      pool.query(`SELECT EXTRACT(MONTH FROM date) as month, SUM(amount) as total FROM card_pending_transactions WHERE status = 'pending' AND EXTRACT(YEAR FROM date) = $2 AND ${filter.where} GROUP BY EXTRACT(MONTH FROM date)`, [settings.trackingStartDate, targetYear, ...filter.params]),
+      pool.query(`SELECT EXTRACT(YEAR FROM date) as year, EXTRACT(MONTH FROM date) as month, SUM(CASE WHEN type = 'withdraw' THEN -amount ELSE amount END) as total FROM savings_records WHERE date >= $1::date AND ${filter.where} GROUP BY EXTRACT(YEAR FROM date), EXTRACT(MONTH FROM date)`, [settings.trackingStartDate, ...filter.params])
     ]);
 
     const hasNewFields = settings.openingCashAmount !== undefined && settings.openingCashAmount !== null;
