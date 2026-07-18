@@ -36,7 +36,6 @@ export async function GET(request: NextRequest) {
       account.accountNumber = "";
       return NextResponse.json({ ok: true, data: account });
     }
-
     const memberId = request.nextUrl.searchParams.get("memberId");
     if (memberId) {
       if (!await canAccessBankMember(user, memberId)) return NextResponse.json({ ok: false, error: "Không có quyền." }, { status: 403 });
@@ -51,6 +50,7 @@ export async function GET(request: NextRequest) {
     const result = await pool.query(`SELECT ${bankAccountFields} FROM bank_accounts WHERE ${where} ORDER BY created_at DESC`, params);
     const accounts = await bankAccountsFromRows(result.rows);
     accounts.forEach(a => { a.cardNumber = ""; a.accountNumber = ""; });
+    console.log("Bank Accounts API result:", accounts);
     return NextResponse.json({ ok: true, data: accounts });
   } catch (error: any) {
     logBankAccountsError(error, queryName);

@@ -1,0 +1,43 @@
+{
+  "database_raw": {
+    "id": "5a787785-eaaa-48fd-92dc-620763cc2714",
+    "member_id": "c0941d47-bdfc-4622-a3f7-1bcc646d2813",
+    "bank_name": "BIDV",
+    "account_holder": "THAN DUC ANH",
+    "account_number": "",
+    "card_number": "",
+    "card_type": "Thẻ ghi nợ / ATM",
+    "branch": "",
+    "expiry_month": "11",
+    "expiry_year": "2028",
+    "status": "Đang dùng",
+    "note": "",
+    "created_at": "2026-06-12T09:13:35.290Z",
+    "updated_at": "2026-06-12T09:13:35.290Z",
+    "account_type": "Thẻ ghi nợ / ATM",
+    "card_network": "Napas",
+    "product_name": "",
+    "statement_day": "",
+    "due_day": "",
+    "credit_limit": "0",
+    "annual_fee_enabled": false,
+    "annual_fee_amount": "0",
+    "annual_fee_waiver_type": "Không có",
+    "annual_fee_waiver_target": "0",
+    "annual_fee_cycle": "nĒm",
+    "annual_fee_cycle_start": null,
+    "annual_fee_current_spending": "0",
+    "display_name": "BIDV",
+    "last4": "3189",
+    "annual_fee_cycle_start_month": 1,
+    "annual_fee_cycle_start_day": 1,
+    "opened_at": null
+  },
+  "api_response": {
+    "id": "5a787785-eaaa-48fd-92dc-620763cc2714",
+    "bankName": "BIDV",
+    "accountType": "debit",
+    "cardType": "debit",
+    "status": "Đang dùng"
+  }
+}

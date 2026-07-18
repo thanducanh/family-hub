@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     const dateObj = new Date(paymentDate);
     const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
     const yyyy = dateObj.getFullYear();
-    const title = `Thanh toán thẻ ${card.name} - Tháng ${mm}/${yyyy}`;
+    const title = `Thanh toán thẻ ${card.name} tháng ${mm}/${yyyy}`;
 
     const client = await pool.connect();
     try {
@@ -70,9 +70,9 @@ export async function POST(req: NextRequest) {
         INSERT INTO transactions (
           type, amount, date, title, category, subcategory, member_id, bank_account_id, note
         ) VALUES (
-          'expense', $1, $2, $3, 'Thanh toán thẻ', $4, $5, $6, 'Thanh toán dư nợ thẻ tín dụng'
+          'expense', $1, $2, $3, 'Thanh toán thẻ tín dụng', $4, $5, $6, $7
         ) RETURNING id
-      `, [totalAmount, paymentDate, title, card.name, card.member_id, sourceId]);
+      `, [totalAmount, paymentDate, title, card.name, card.member_id, sourceId, title]);
 
       const paymentTxId = insertTxQuery.rows[0].id;
 

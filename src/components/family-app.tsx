@@ -21,6 +21,7 @@ import { safeId } from "@/lib/safe-id";
 import * as XLSX from "xlsx";
 import QRCode from "react-qr-code";
 import { ExpenseGroupSelector, TransactionItemsEditor } from "./finance-groups";
+import { sortCreditCardTransactions } from "@/utils/sort-credit-card-transactions";
 
 type Screen = "dashboard" | "members" | "tasks" | "finance" | "chat" | "calendar" | "notes" | "settings" | "notifications" | "system";
 type EntityKind = "members" | "tasks" | "transactions" | "events" | "notes";
@@ -9943,10 +9944,13 @@ function CreditCardSheet({ close, user, refresh, expenseGroups = [] }: { close: 
                 </div>
                 {c.pendingTransactions?.length > 0 ? (
                   <div className="mb-3 space-y-2 border-t border-[#F8F5F2] pt-2.5">
-                    {c.pendingTransactions.map((t: any) => {
+                    {sortCreditCardTransactions(c.pendingTransactions).map((t: any) => {
                       const groupName = t.groupId || t.group_id ? expenseGroups.find(g => g.id === (t.groupId || t.group_id))?.name : null;
+                      const dt = t.purchaseDate || t.date || t.createdAt || t.created_at;
+                      const dateStr = dt ? `${String(new Date(dt).getDate()).padStart(2, '0')}/${String(new Date(dt).getMonth() + 1).padStart(2, '0')}` : "";
                       return (
                         <div key={t.id} className="flex justify-between gap-3 text-[13px]">
+                          <span className="shrink-0 w-10 text-[12px] text-[#6B5E64] font-medium">{dateStr}</span>
                           <div className="flex-1 min-w-0 pr-2">
                             <span className="truncate text-[#171018]">{t.description || "Giao dịch"}</span>
                             {groupName && (
@@ -9955,7 +9959,7 @@ function CreditCardSheet({ close, user, refresh, expenseGroups = [] }: { close: 
                               </span>
                             )}
                           </div>
-                          <span className="shrink-0 font-medium text-[#E11D48]">{money(t.amount)}</span>
+                          <span className="shrink-0 font-medium text-[#E11D48] text-right">{money(t.amount)}</span>
                         </div>
                       );
                     })}
@@ -9989,12 +9993,19 @@ function CreditCardSheet({ close, user, refresh, expenseGroups = [] }: { close: 
                 </div>
                 {c.pendingTransactions?.length > 0 ? (
                   <div className="mb-3 space-y-2 border-t border-[#F8F5F2] pt-2.5">
-                    {c.pendingTransactions.map((t: any) => (
-                      <div key={t.id} className="flex justify-between gap-3 text-[13px]">
-                        <span className="truncate pr-2 text-[#171018]">{t.description || "Giao dịch"}</span>
-                        <span className="shrink-0 font-medium text-[#E11D48]">{money(t.amount)}</span>
-                      </div>
-                    ))}
+                    {sortCreditCardTransactions(c.pendingTransactions).map((t: any) => {
+                      const dt = t.purchaseDate || t.date || t.createdAt || t.created_at;
+                      const dateStr = dt ? `${String(new Date(dt).getDate()).padStart(2, '0')}/${String(new Date(dt).getMonth() + 1).padStart(2, '0')}` : "";
+                      return (
+                        <div key={t.id} className="flex justify-between gap-3 text-[13px]">
+                          <span className="shrink-0 w-10 text-[12px] text-[#6B5E64] font-medium">{dateStr}</span>
+                          <div className="flex-1 min-w-0 pr-2">
+                            <span className="block truncate text-[#171018]">{t.description || "Giao dịch"}</span>
+                          </div>
+                          <span className="shrink-0 font-medium text-[#E11D48] text-right">{money(t.amount)}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="mb-3 mt-2 text-[12px] italic text-[#6B5E64]">Chưa có khoản tạm tính cần thanh toán.</p>
@@ -10030,6 +10041,7 @@ function CreditCardPaymentModal({ card, close, onSuccess }: any) {
     fetch('/api/bank-accounts', { cache: 'no-store' }).then(r => r.json()).then(res => {
       if (res.ok) {
         const list = Array.isArray(res.data) ? res.data : [];
+        console.log("Bank Accounts", list);
         // filter out credit cards
         const normalizeCardType = (value: string) => {
           if (!value) return "other";
@@ -10043,22 +10055,22 @@ function CreditCardPaymentModal({ card, close, onSuccess }: any) {
         };
 
         const isValidCreditPaymentSource = (account: any) => {
-          const t = normalizeCardType(account.card_type);
+          console.log("[CreditCardPaymentModal] filtering account", account);
+          const rawType = account.cardType || account.accountType || account.card_type;
+          const t = normalizeCardType(rawType);
           const st = String(account.status || "").toLowerCase().trim();
           if (t === "credit") return false;
           if (st === "inactive" || st === "disabled" || st === "ngừng dùng") return false;
-          return t === "cash" || t === "bank_account" || t === "debit" || t === "wallet";
+          return t === "debit" || t === "bank_account";
         };
 
         const validSources = list.filter(isValidCreditPaymentSource);
-        if (validSources.length === 0) {
-          validSources.push({ id: "cash", name: "Tiền mặt", card_type: "cash" });
-        }
         
-        // Auto select first debit card if possible, else first item
-        const defaultSource = validSources.find((x: any) => normalizeCardType(x.card_type) === "debit") || validSources[0];
-        setSources(validSources);
-        setSourceId(defaultSource.id);
+        // Auto select first item
+        if (validSources.length > 0) {
+          setSources(validSources);
+          setSourceId(validSources[0].id);
+        }
       }
     });
   }, []);
@@ -10098,18 +10110,13 @@ function CreditCardPaymentModal({ card, close, onSuccess }: any) {
 
       <div className="space-y-4">
         <label className="block">
-          <span className="mb-1.5 block text-[13px] font-semibold text-[#6B5E64]">Nguồn tiền thanh toán (Tiền mặt, ATM, Ví)</span>
+          <span className="mb-1.5 block text-[13px] font-semibold text-[#6B5E64]">Nguồn tiền thanh toán</span>
           <select value={sourceId} onChange={e => setSourceId(e.target.value)} className="h-12 w-full rounded-xl border border-[#E8DCD5] bg-white px-3 text-[14px] text-[#171018] outline-none focus:border-[#800020] focus:ring-2 focus:ring-[#800020]/10">
-            {sources.map(s => {
-              const t = String(s.card_type || "").toLowerCase().trim();
-              const isCash = t === "cash" || t === "tiền mặt";
-              const isWallet = t === "wallet" || t === "ví điện tử";
-              const isDebit = t === "debit" || t.includes("thẻ ghi nợ") || t === "atm";
-              const typeStr = isCash ? "Tiền mặt" : isWallet ? "Ví điện tử" : isDebit ? "Thẻ ghi nợ / ATM" : "Tài khoản";
-              return <option key={s.id} value={s.id}>{s.name}{isCash && s.id === "cash" ? "" : ` · ${typeStr}`}</option>;
-            })}
+            {sources.map(s => (
+              <option key={s.id} value={s.id}>{s.name} {s.bank_name ? `(${s.bank_name})` : ''}</option>
+            ))}
           </select>
-          {sources.length === 1 && sources[0].id === "cash" && <p className="mt-2 text-[11px] text-[#6B5E64]">Bạn chưa có thẻ ghi nợ/tài khoản thanh toán. Có thể thêm trong Thẻ ngân hàng.</p>}
+          {sources.length === 0 && <p className="mt-2 text-[11px] text-[#E11D48]">Bạn chưa có thẻ ghi nợ/tài khoản thanh toán nào.</p>}
         </label>
         <label className="block">
           <span className="mb-1.5 block text-[13px] font-semibold text-[#6B5E64]">Ngày thanh toán</span>

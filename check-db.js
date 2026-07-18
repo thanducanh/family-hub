@@ -1,17 +1,7 @@
 const { Pool } = require('pg');
 require('dotenv').config({ path: '.env.local' });
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
+pool.query("SELECT * FROM bank_accounts WHERE bank_name = 'BIDV'").then(res => {
+  console.log('DB Row:', res.rows[0]);
+  process.exit(0);
 });
-
-async function main() {
-  const result = await pool.query(`
-    UPDATE transactions
-    SET date = '2026-06-23'
-    WHERE id = 'e65caa25-27dd-432b-8bad-76511bae4ab2';
-  `);
-  console.log("Updated", result.rowCount, "rows");
-}
-
-main().catch(console.error).finally(() => pool.end());
