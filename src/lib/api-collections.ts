@@ -5,7 +5,7 @@ import { ensureMemberSimsTable } from "@/lib/member-sims";
 import { apiErrorResponse, guardDatabaseWrite } from "@/lib/db-health";
 import { fixVietnameseMojibake } from "@/lib/text-encoding";
 
-export type Collection = "members" | "tasks" | "transactions" | "events" | "notes" | "expense_groups" | "transaction_items";
+export type Collection = "members" | "tasks" | "transactions" | "events" | "notes" | "transaction_items";
 
 const columns: Record<Collection, string[]> = {
   members: ["id", "name", "nickname", "birthday", "gender", "role", "phone", "avatar", "avatar_url", "notes", "color"],
@@ -13,7 +13,6 @@ const columns: Record<Collection, string[]> = {
   transactions: ["id", "title", "member_id", "amount", "gross_amount", "discount_amount", "type", "category", "subcategory", "date", "transaction_time", "note", "bank_account_id", "payment_account_id", "sim_id", "sim_topup_applied", "savings_applied", "savings_holder", "linked_savings_id", "estimated_cashback", "actual_cashback", "payment_method", "is_reimbursable", "reimbursement_person", "reimbursement_status", "reimbursed_amount", "reimbursed_at", "counts_for_personal_expense", "counts_for_card_spending", "converted_to_card_pending_id", "excluded_from_expense", "group_id"],
   events: ["id", "title", "member_id", "type", "date", "time", "color", "event_date"],
   notes: ["id", "title", "member_id", "kind", "important", "tag", "content", "updated_at"],
-  expense_groups: ["id", "member_id", "name", "type", "start_date", "end_date", "budget_amount", "note", "status", "created_at", "updated_at"],
   transaction_items: ["id", "transaction_id", "name", "quantity", "unit_price", "amount", "category", "note", "created_at", "updated_at"]
 };
 
@@ -120,9 +119,7 @@ function toDb(collection: Collection, item: Record<string, unknown>) {
       group_id: normalizeUuid(item.groupId || item.group_id)
     };
   }
-  if (collection === "expense_groups") {
-    return { ...item, member_id: item.memberId || item.member_id || null, start_date: toDatabaseDate(item.startDate || item.start_date), end_date: toDatabaseDate(item.endDate || item.end_date), budget_amount: item.budgetAmount || item.budget_amount || 0 };
-  }
+ 
   if (collection === "transaction_items") {
     return { ...item, transaction_id: item.transactionId || item.transaction_id || null, unit_price: item.unitPrice || item.unit_price || 0 };
   }
@@ -147,10 +144,7 @@ function fromDb(collection: Collection, item: Record<string, unknown>) {
     const paymentAccountId = payment_account_id || bank_account_id || "";
     return { ...rest, category: mappedCategory, memberId: member_id || "", grossAmount: Number(gross_amount || rest.amount || 0), discountAmount: Number(discount_amount || 0), bankAccountId: paymentAccountId, paymentAccountId, payment_account_id: paymentAccountId, bank_account_id: paymentAccountId, simId: sim_id || "", sim_id: sim_id || "", simTopupApplied: Boolean(sim_topup_applied), sim_topup_applied: Boolean(sim_topup_applied), savingsApplied: Boolean(savings_applied), savings_applied: Boolean(savings_applied), savingsHolder: savings_holder || "", savings_holder: savings_holder || "", linkedSavingsId: linked_savings_id || "", linked_savings_id: linked_savings_id || "", transactionTime: transaction_time || "", transaction_time: transaction_time || "", estimatedCashback: Number(estimated_cashback || 0), actualCashback: Number(actual_cashback || 0), createdAt: created_at, paymentMethod: payment_method || "cash", payment_method: payment_method || "cash", isReimbursable: Boolean(is_reimbursable), reimbursementPerson: reimbursement_person || "", reimbursementStatus: reimbursement_status || "none", reimbursedAmount: Number(reimbursed_amount || 0), reimbursedAt: reimbursed_at || "", countsForPersonalExpense: counts_for_personal_expense !== false, countsForCardSpending: counts_for_card_spending !== false, convertedToCardPendingId: converted_to_card_pending_id || "", converted_to_card_pending_id: converted_to_card_pending_id || "", excludedFromExpense: Boolean(excluded_from_expense), excluded_from_expense: Boolean(excluded_from_expense), groupId: group_id || "", group_id: group_id || "" };
   }
-  if (collection === "expense_groups") {
-    const { member_id, start_date, end_date, budget_amount, created_at, updated_at, ...rest } = item as any;
-    return { ...rest, memberId: member_id || "", startDate: start_date || "", endDate: end_date || "", budgetAmount: Number(budget_amount || 0), createdAt: created_at, updatedAt: updated_at };
-  }
+
   if (collection === "transaction_items") {
     const { transaction_id, unit_price, created_at, updated_at, ...rest } = item as any;
     return { ...rest, transactionId: transaction_id || "", unitPrice: Number(unit_price || 0), createdAt: created_at, updatedAt: updated_at };

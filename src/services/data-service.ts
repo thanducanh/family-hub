@@ -11,7 +11,7 @@ export interface DataService {
   loadPreferences(): Preferences;
   savePreferences(preferences: Preferences): void;
 }
-export interface NasCounts { members: number; tasks: number; transactions: number; events: number; notes: number; expense_groups: number; }
+export interface NasCounts { members: number; tasks: number; transactions: number; events: number; notes: number; }
 export interface SystemStatus { source: "nas" | "localStorage"; lastSyncedAt: string | null; message: string; counts: NasCounts | null; }
 
 const PREFERENCES_KEY = "family-hub:preferences";
@@ -71,7 +71,7 @@ export class LocalStorageDataService implements DataService {
   savePreferences(preferences: Preferences) { localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences)); }
 }
 
-const collections = ["members", "tasks", "transactions", "events", "notes", "expense_groups"] as const;
+const collections = ["members", "tasks", "transactions", "events", "notes"] as const;
 
 export class ApiDataService implements DataService {
   private current: AppData | null = null;
@@ -163,7 +163,7 @@ export class ApiDataService implements DataService {
     const extractedValues = values.map(val => (val && typeof val === "object" && val.ok !== undefined && val.data !== undefined) ? val.data : val);
     const data = Object.fromEntries(collections.map((collection, index) => {
       // Map expense_groups to expenseGroups in AppData
-      const key = collection === "expense_groups" ? "expenseGroups" : collection;
+      const key = collection;
       return [key, extractedValues[index]];
     })) as unknown as AppData;
     
@@ -267,14 +267,14 @@ function loadCache(): AppData {
 
 function isEmpty(data: AppData) {
   return collections.every(collection => {
-    const key = collection === "expense_groups" ? "expenseGroups" : collection;
+    const key = collection; // Sửa lại thành dòng này
     return (data[key as keyof AppData] as any[] || []).length === 0;
   });
 }
 
 function countsOf(data: AppData): NasCounts {
   return Object.fromEntries(collections.map(collection => {
-    const key = collection === "expense_groups" ? "expenseGroups" : collection;
+    const key = collection; // Sửa lại thành dòng này
     return [collection, (data[key as keyof AppData] as any[] || []).length];
   })) as unknown as NasCounts;
 }

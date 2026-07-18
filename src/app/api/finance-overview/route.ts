@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { requireSession, getSessionUser, buildDataFilter } from "@/lib/auth";
+import { getSessionUser, buildDataFilter } from "@/lib/auth";
 import { ensureCardPendingTransactionsTable } from "@/lib/card-pending-transactions";
 
 export const dynamic = 'force-dynamic';
@@ -112,18 +112,27 @@ export async function GET(req: NextRequest) {
   try {
     const filter = await buildDataFilter(user, '', 2, 'member_id', 'finance');
     const settings = await getFinanceSettings();
-    const hasExpenseDate = await hasColumn("transactions", "expense_date");
-    const transactionDateExpr = hasExpenseDate
-      ? "COALESCE(date, expense_date, created_at)"
-      : "COALESCE(date, created_at)";
+    
+    // --- XỬ LÝ LỖI MISSING COLUMN THÔNG MINH ---
+    const hasTransDate = await hasColumn("transactions", "date");
+    const hasTransExpenseDate = await hasColumn("transactions", "expense_date");
+    let transactionDateExpr = "created_at";
+    if (hasTransDate && hasTransExpenseDate) transactionDateExpr = "COALESCE(date, expense_date, created_at)";
+    else if (hasTransDate) transactionDateExpr = "COALESCE(date, created_at)";
+    else if (hasTransExpenseDate) transactionDateExpr = "COALESCE(expense_date, created_at)";
+
+    const hasIncDate = await hasColumn("income_records", "date");
+    const hasIncReceivedDate = await hasColumn("income_records", "received_date");
+    let incomeDateExpr = "created_at";
+    if (hasIncDate) incomeDateExpr = "COALESCE(date, created_at)";
+    else if (hasIncReceivedDate) incomeDateExpr = "COALESCE(received_date, created_at)";
+
+    const hasIncomeStatus = await hasColumn("income_records", "status");
+    const incomeStatusCond = hasIncomeStatus ? "status = 'Đã nhận'" : "1=1";
+    // ------------------------------------------
     
     await ensureSavingsRecordsTable();
     await ensureCardPendingTransactionsTable();
-    
-    const hasIncomeDate = await hasColumn("income_records", "date");
-    const incomeDateExpr = hasIncomeDate ? "date" : "received_date";
-    const hasIncomeStatus = await hasColumn("income_records", "status");
-    const incomeStatusCond = hasIncomeStatus ? "status = 'Đã nhận'" : "1=1";
     
     await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS linked_savings_id UUID");
     await pool.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS counts_for_personal_expense BOOLEAN NOT NULL DEFAULT TRUE");
@@ -163,7 +172,7 @@ export async function GET(req: NextRequest) {
       pool.query(`SELECT EXTRACT(YEAR FROM trade_date) as year, EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price + fee) as total FROM investment_transactions WHERE action = 'buy' AND trade_date >= $1::date AND ${filter.where} GROUP BY EXTRACT(YEAR FROM trade_date), EXTRACT(MONTH FROM trade_date)`, [settings.trackingStartDate, ...filter.params]),
       pool.query(`SELECT EXTRACT(YEAR FROM trade_date) as year, EXTRACT(MONTH FROM trade_date) as month, SUM(quantity * price - fee) as total FROM investment_transactions WHERE action = 'sell' AND trade_date >= $1::date AND ${filter.where} GROUP BY EXTRACT(YEAR FROM trade_date), EXTRACT(MONTH FROM trade_date)`, [settings.trackingStartDate, ...filter.params]),
       pool.query(`SELECT EXTRACT(YEAR FROM make_date(year::integer, month::integer, 1)) as year, EXTRACT(MONTH FROM make_date(year::integer, month::integer, 1)) as month, SUM(amount) as total FROM finance_adjustments WHERE make_date(year::integer, month::integer, 1) >= make_date((EXTRACT(YEAR FROM $1::date))::integer, (EXTRACT(MONTH FROM $1::date))::integer, 1) GROUP BY EXTRACT(YEAR FROM make_date(year::integer, month::integer, 1)), EXTRACT(MONTH FROM make_date(year::integer, month::integer, 1))`, [settings.trackingStartDate]),
-      pool.query(`SELECT EXTRACT(MONTH FROM date) as month, SUM(amount) as total FROM card_pending_transactions WHERE status = 'pending' AND EXTRACT(YEAR FROM date) = $2 AND ${filter.where} GROUP BY EXTRACT(MONTH FROM date)`, [settings.trackingStartDate, targetYear, ...filter.params]),
+      pool.query(`SELECT EXTRACT(MONTH FROM date) as month, SUM(amount) as total FROM card_pending_transactions WHERE status = 'pending' AND EXTRACT(YEAR FROM date) = $1::integer AND ${filter.where} GROUP BY EXTRACT(MONTH FROM date)`, [targetYear, ...filter.params]),
       pool.query(`SELECT EXTRACT(YEAR FROM date) as year, EXTRACT(MONTH FROM date) as month, SUM(CASE WHEN type = 'withdraw' THEN -amount ELSE amount END) as total FROM savings_records WHERE date >= $1::date AND ${filter.where} GROUP BY EXTRACT(YEAR FROM date), EXTRACT(MONTH FROM date)`, [settings.trackingStartDate, ...filter.params])
     ]);
 
